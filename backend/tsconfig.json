@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2024",
+    "module": "commonjs",
+    "moduleResolution": "node",
+
+    "rootDir": ".",
+    "outDir": "./dist",
+
+    "types": ["node"],
+    "esModuleInterop": true,
+
+    "strict": true,
+    "skipLibCheck": true,
+    "sourceMap": true
+  },
+  "include": ["index.ts", "routes/**/*.ts"],
+  "exclude": ["node_modules", "dist", "prisma.config.ts"]
+}

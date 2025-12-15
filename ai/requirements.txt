@@ -1,0 +1,11 @@
+numpy>=1.23,<3
+opencv-python>=4.8,<5
+pyyaml>=6,<7
+tqdm>=4.64,<5
+insightface>=0.7.3
+onnxruntime>=1.16
+# If you have NVIDIA GPU, install this instead of onnxruntime:
+# onnxruntime-gpu>=1.16
+
+requests>=2.31,<3
+rich>=13,<14

@@ -1,0 +1,38 @@
+camera:
+  rtsp_url: '0'
+  camera_id: laptop_camera
+  width: 1280
+  height: 720
+runtime:
+  use_gpu: true
+  ai_fps: 10
+  detect_every_n_frames: 2
+  display_scale: 1.0
+recognition:
+  model_name: buffalo_l
+  similarity_threshold: 0.35
+  min_face_size: 40
+pose:
+  enable_pose_check: true
+  yaw_left_deg: -15
+  yaw_right_deg: 15
+  pitch_up_deg: -10
+  pitch_down_deg: 10
+  tolerance_deg: 10
+enrollment:
+  angles:
+  - front
+  - left
+  - right
+  - up
+  - down
+  samples_per_angle: 8
+  min_quality_score: 5
+  allow_manual_override: true
+attendance:
+  cooldown_seconds: 60
+  stable_hits_required: 3
+  save_snapshots: true
+  snapshot_dir: data/snapshots
+backend:
+  base_url: http://127.0.0.1:4000

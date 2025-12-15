@@ -1,0 +1,24 @@
+# Backend (Node/Express/Prisma/TS)
+node_modules/
+dist/
+build/
+.cache/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Prisma
+prisma/dev.db
+prisma/dev.db-journal
+prisma/migrations/**/migration.sql
+
+# Env
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,35 @@
+# AI (FastAPI/Python)
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+ENV/
+.env
+.env.*
+pip-wheel-metadata/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Model/cache
+models/
+*.onnx
+*.pt
+*.pth
+
+# Data artifacts
+data/recordings/
+data/snapshots/
+*.sqlite3
+*.db
+*.db-journal
+
+# OS
+.DS_Store
+Thumbs.db
