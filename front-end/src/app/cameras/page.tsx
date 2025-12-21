@@ -27,8 +27,6 @@ export default function CamerasPage() {
 
   useEffect(() => {
     load();
-    const t = setInterval(load, 3000);
-    return () => clearInterval(t);
   }, []);
 
   // ---------------- Camera CRUD ----------------
