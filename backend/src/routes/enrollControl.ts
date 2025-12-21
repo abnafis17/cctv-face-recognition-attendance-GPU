@@ -22,8 +22,11 @@ function isAllowedAngle(v: any): v is AllowedAngle {
  * START ENROLL SESSION
  * - Supports:
  *   1) New employee scan: { name, cameraId }
- *   2) Existing employee scan: { employeeId, cameraId } (name optional; we'll fetch it)
- *   3) Create employee without scanning: { name, allowNoScan: true } (cameraId optional)
+ *   2) Existing employee scan: { employeeId, cameraId }
+ *   3) Create employee without scanning: { name, allowNoScan: true }
+ *
+ * IMPORTANT FIX:
+ * - If employeeId is missing, reuse employee by exact name to prevent duplicates.
  */
 r.post("/start", async (req, res) => {
   try {
@@ -38,12 +41,17 @@ r.post("/start", async (req, res) => {
     const camId = (cameraId ?? "").toString().trim();
     const nm = (name ?? "").toString().trim();
 
-    // Case: "Enroll without scanning" -> create employee only
+    // Case: "Enroll without scanning" -> create/reuse employee only
     if (allowNoScan) {
       if (!nm)
         return res
           .status(400)
           .json({ error: "name is required for no-scan enrollment" });
+
+      // ✅ reuse by name first
+      const existing = await prisma.employee.findFirst({ where: { name: nm } });
+      if (existing)
+        return res.json({ ok: true, mode: "no-scan", employee: existing });
 
       const emp = await prisma.employee.create({ data: { name: nm } });
       return res.json({ ok: true, mode: "no-scan", employee: emp });
@@ -57,7 +65,7 @@ r.post("/start", async (req, res) => {
     });
     if (!cam) return res.status(404).json({ error: "Camera not found" });
 
-    // Resolve employee (new or existing)
+    // Resolve employee
     let employee = null;
 
     if (empId) {
@@ -65,15 +73,18 @@ r.post("/start", async (req, res) => {
       if (!employee)
         return res.status(404).json({ error: "Employee not found" });
     } else {
-      // New employee scan requires name
       if (!nm)
         return res
           .status(400)
           .json({ error: "name is required for new employee enrollment" });
-      employee = await prisma.employee.create({ data: { name: nm } });
+
+      // ✅ reuse by name first to prevent duplicates
+      const existing = await prisma.employee.findFirst({ where: { name: nm } });
+      employee =
+        existing ?? (await prisma.employee.create({ data: { name: nm } }));
     }
 
-    // Start AI enroll session
+    // Start AI enroll session (AI will capture + save templates via BackendClient)
     const ai = await axios.post(`${AI}/enroll/session/start`, {
       name: employee.name,
       employeeId: employee.id,
@@ -82,7 +93,6 @@ r.post("/start", async (req, res) => {
 
     return res.json({ ok: true, employee, ai: ai.data });
   } catch (e: any) {
-    // Ensure we return JSON, not HTML error pages
     return res
       .status(500)
       .json({ error: e?.message ?? "Failed to start enroll" });
@@ -109,10 +119,6 @@ r.get("/status", async (_req, res) => {
   }
 });
 
-// --------------------------
-// NEW: Change angle
-// Body: { angle: "front|left|right|up|down" }
-// --------------------------
 r.post("/angle", async (req, res) => {
   try {
     const angleRaw = req.body?.angle;
@@ -122,7 +128,6 @@ r.post("/angle", async (req, res) => {
       });
     }
     const angle = angleRaw.toLowerCase();
-
     const ai = await axios.post(`${AI}/enroll/session/angle`, { angle });
     res.json(ai.data);
   } catch (e: any) {
@@ -130,32 +135,22 @@ r.post("/angle", async (req, res) => {
   }
 });
 
-// --------------------------
-// NEW: Capture
-// Body: optional { angle } -> AI will set angle then capture
-// --------------------------
 r.post("/capture", async (req, res) => {
   try {
     const angleRaw = req.body?.angle;
-
     if (angleRaw && !isAllowedAngle(angleRaw)) {
       return res.status(400).json({
         error: `Invalid angle. Allowed: ${ALLOWED_ANGLES.join(", ")}`,
       });
     }
-
     const payload = angleRaw ? { angle: angleRaw.toLowerCase() } : undefined;
     const ai = await axios.post(`${AI}/enroll/session/capture`, payload);
-
     res.json(ai.data);
   } catch (e: any) {
     res.status(500).json({ error: e?.message ?? "Failed to capture" });
   }
 });
 
-// --------------------------
-// NEW: Save staged angles to DB
-// --------------------------
 r.post("/save", async (_req, res) => {
   try {
     const ai = await axios.post(`${AI}/enroll/session/save`);
@@ -167,9 +162,6 @@ r.post("/save", async (_req, res) => {
   }
 });
 
-// --------------------------
-// NEW: Cancel staged captures (undo)
-// --------------------------
 r.post("/cancel", async (_req, res) => {
   try {
     const ai = await axios.post(`${AI}/enroll/session/cancel`);

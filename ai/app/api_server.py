@@ -8,6 +8,8 @@ from fastapi.responses import StreamingResponse, Response
 from .camera_runtime import CameraRuntime
 from .enroll_service import EnrollmentService
 from .attendance_runtime import AttendanceRuntime
+from .utils import draw_enroll_hud  # ✅ NEW
+
 
 # --------------------------------------------------
 # App
@@ -77,6 +79,7 @@ def camera_snapshot(camera_id: str):
 
 # --------------------------------------------------
 # RAW MJPEG stream (no recognition)
+# BUT: shows enrollment HUD when enrollment session is active for this camera
 # --------------------------------------------------
 def mjpeg_generator_raw(camera_id: str):
     for _ in range(60):
@@ -90,6 +93,15 @@ def mjpeg_generator_raw(camera_id: str):
             if frame is None:
                 time.sleep(0.05)
                 continue
+
+            # ✅ If enrollment session is running for THIS camera, draw HUD overlay
+            s = enroller.status()
+            if s and getattr(s, "status", None) == "running" and getattr(s, "camera_id", None) == camera_id:
+                try:
+                    frame = draw_enroll_hud(frame, s, enroller.cfg.angles)
+                except Exception:
+                    # never break streaming if overlay fails
+                    pass
 
             ok, jpg = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 75])
             if not ok:
@@ -236,8 +248,7 @@ def enroll_session_status():
     return {"ok": True, "session": (s.__dict__ if s else None)}
 
 # --------------------------------------------------
-# Enrollment (UI Controls) - NEW
-# Buttons: change angle, capture, save, cancel
+# Enrollment UI Actions
 # --------------------------------------------------
 @app.post("/enroll/session/angle")
 def enroll_session_set_angle(payload: dict = Body(...)):
@@ -267,11 +278,7 @@ def enroll_session_capture(payload: dict = Body(None)):
 
         result = enroller.capture()
         s = enroller.status()
-        return {
-            "ok": True,
-            "result": result,
-            "session": (s.__dict__ if s else None),
-        }
+        return {"ok": True, "result": result, "session": (s.__dict__ if s else None)}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -285,11 +292,7 @@ def enroll_session_save():
     try:
         result = enroller.save()
         s = enroller.status()
-        return {
-            "ok": True,
-            "result": result,
-            "session": (s.__dict__ if s else None),
-        }
+        return {"ok": True, "result": result, "session": (s.__dict__ if s else None)}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -302,14 +305,10 @@ def enroll_session_cancel():
     try:
         result = enroller.cancel()
         s = enroller.status()
-        return {
-            "ok": True,
-            "result": result,
-            "session": (s.__dict__ if s else None),
-        }
+        return {"ok": True, "result": result, "session": (s.__dict__ if s else None)}
     except Exception as e:
         return {"ok": False, "error": str(e)}
-    
+
 
 @app.post("/enroll/session/clear-angle")
 def enroll_session_clear_angle(payload: dict = Body(...)):
@@ -320,4 +319,3 @@ def enroll_session_clear_angle(payload: dict = Body(...)):
         return {"ok": True, "result": result, "session": (s.__dict__ if s else None)}
     except Exception as e:
         return {"ok": False, "error": str(e)}
-

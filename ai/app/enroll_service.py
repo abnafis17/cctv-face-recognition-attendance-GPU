@@ -3,12 +3,18 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 
 import numpy as np
 
 from .recognizer import FaceRecognizer
-from .utils import quality_score, now_iso, estimate_head_pose_deg, pose_label
+from .utils import (
+    quality_score,
+    now_iso,
+    estimate_head_pose_deg,
+    pose_label,
+    pose_matches,   # ✅ NEW: use tolerance-based match like manual script
+)
 from .backend_client import BackendClient
 from .camera_runtime import CameraRuntime
 
@@ -22,7 +28,7 @@ class EnrollConfig:
     angles: List[str] = field(default_factory=lambda: ["front", "left", "right", "up", "down"])
 
     # Minimum quality gate (keep same default behavior)
-    min_quality_score: float = 35.0
+    min_quality_score: float = 15.0
 
     # Require pose match for angle
     pose_required: bool = True
@@ -33,6 +39,10 @@ class EnrollConfig:
     pitch_up_deg: float = -12.0
     pitch_down_deg: float = 12.0
     tolerance_deg: float = 15.0
+
+    # ✅ Optional (browser preview often mirrored on webcams)
+    # Set True only if left/right are reversed in browser enrollment.
+    flip_yaw: bool = False
 
 
 @dataclass
@@ -57,6 +67,11 @@ class EnrollSession:
     last_pose: Optional[str] = None
     last_message: Optional[str] = None
     last_update_at: str = field(default_factory=now_iso)
+
+    # ✅ Debug info (for browser HUD, like manual OpenCV window)
+    last_yaw: Optional[float] = None
+    last_pitch: Optional[float] = None
+    last_roll: Optional[float] = None
 
 
 # -----------------------------
@@ -168,16 +183,16 @@ class EnrollmentService:
             if not self._session or self._session.status != "running":
                 raise RuntimeError("No running enrollment session")
             session = self._session
-            angle = session.current_angle
+            required_angle = session.current_angle
 
         frame = self.camera_rt.get_frame(session.camera_id)
         if frame is None:
-            return {"ok": False, "error": "No frame yet from camera", "angle": angle}
+            return {"ok": False, "error": "No frame yet from camera", "angle": required_angle}
 
         dets = self.rec.detect_and_embed(frame)
         if not dets:
-            self._update_last(q=0.0, pose=None, msg="No face detected")
-            return {"ok": False, "error": "No face detected", "angle": angle}
+            self._update_last(q=0.0, pose=None, msg="No face detected", pose_deg=None)
+            return {"ok": False, "error": "No face detected", "angle": required_angle}
 
         # Pick largest face
         det = max(dets, key=lambda d: float((d.bbox[2] - d.bbox[0]) * (d.bbox[3] - d.bbox[1])))
@@ -186,10 +201,17 @@ class EnrollmentService:
 
         pose_name: Optional[str] = None
         pose_ok = True
+        pose_deg: Optional[Tuple[float, float, float]] = None
+
         if self.cfg.pose_required and det.kps is not None:
-            pose = estimate_head_pose_deg(det.kps, frame.shape)
-            if pose:
-                yaw, pitch, _roll = pose
+            pose_deg = estimate_head_pose_deg(det.kps, frame.shape)
+            if pose_deg:
+                yaw, pitch, roll = pose_deg
+
+                # ✅ Browser webcam mirroring fix if needed
+                if self.cfg.flip_yaw:
+                    yaw = -yaw
+
                 pose_name = pose_label(
                     yaw,
                     pitch,
@@ -201,23 +223,60 @@ class EnrollmentService:
                         "tolerance_deg": self.cfg.tolerance_deg,
                     },
                 )
-                pose_ok = (pose_name == angle)
 
-        # Update live feedback
-        self._update_last(q=q, pose=pose_name, msg="")
+                # ✅ FIX: use tolerance-based matching like manual script
+                pose_ok = pose_matches(
+                    required_angle,
+                    yaw,
+                    pitch,
+                    {
+                        "yaw_left_deg": self.cfg.yaw_left_deg,
+                        "yaw_right_deg": self.cfg.yaw_right_deg,
+                        "pitch_up_deg": self.cfg.pitch_up_deg,
+                        "pitch_down_deg": self.cfg.pitch_down_deg,
+                        "tolerance_deg": self.cfg.tolerance_deg,
+                    },
+                )
+
+                self._update_last(q=q, pose=pose_name, msg="", pose_deg=(yaw, pitch, roll))
+            else:
+                # Could not compute pose; don’t block capture (behaves nicer)
+                self._update_last(q=q, pose=None, msg="Pose not available", pose_deg=None)
+                pose_ok = True
+
+        else:
+            self._update_last(q=q, pose=pose_name, msg="", pose_deg=None)
 
         if q < self.cfg.min_quality_score:
-            self._update_last(q=q, pose=pose_name, msg=f"Low quality ({q:.1f})")
-            return {"ok": False, "error": f"Low quality ({q:.1f})", "angle": angle, "quality": q, "pose": pose_name}
-
-        if self.cfg.pose_required and not pose_ok:
-            self._update_last(q=q, pose=pose_name, msg=f"Pose mismatch: saw '{pose_name}', need '{angle}'")
+            self._update_last(q=q, pose=pose_name, msg=f"Low quality ({q:.1f})", pose_deg=pose_deg)
             return {
                 "ok": False,
-                "error": f"Pose mismatch: saw '{pose_name}', need '{angle}'",
-                "angle": angle,
+                "error": f"Low quality ({q:.1f})",
+                "angle": required_angle,
                 "quality": q,
                 "pose": pose_name,
+            }
+
+        if self.cfg.pose_required and not pose_ok:
+            # include yaw/pitch for debugging (shows in HUD)
+            with self._lock:
+                yaw = self._session.last_yaw if self._session else None
+                pitch = self._session.last_pitch if self._session else None
+
+            msg = f"Pose mismatch: saw '{pose_name}', need '{required_angle}'"
+            if yaw is not None and pitch is not None:
+                msg += f" (yaw={yaw:.0f}, pitch={pitch:.0f})"
+
+            self._update_last(q=q, pose=pose_name, msg=msg, pose_deg=pose_deg)
+
+            return {
+                "ok": False,
+                "error": msg,
+                "angle": required_angle,
+                "quality": q,
+                "pose": pose_name,
+                "yaw": yaw,
+                "pitch": pitch,
             }
 
         # Stage embedding
@@ -225,18 +284,20 @@ class EnrollmentService:
             if not self._session or self._session.status != "running":
                 raise RuntimeError("Enrollment session ended")
 
-            self._embs[angle].append(det.emb)
-            self._session.collected[angle] = len(self._embs[angle])
-            self._session.last_message = f"Captured {angle} ({self._session.collected[angle]})"
+            self._embs[required_angle].append(det.emb)
+            self._session.collected[required_angle] = len(self._embs[required_angle])
+            self._session.last_message = f"Captured {required_angle} ({self._session.collected[required_angle]})"
             self._session.last_update_at = now_iso()
 
             return {
                 "ok": True,
-                "angle": angle,
+                "angle": required_angle,
                 "quality": q,
                 "pose": pose_name,
-                "count_for_angle": self._session.collected[angle],
+                "count_for_angle": self._session.collected[required_angle],
                 "staged": dict(self._session.collected),
+                "yaw": self._session.last_yaw,
+                "pitch": self._session.last_pitch,
             }
 
     def save(self) -> Dict[str, Any]:
@@ -283,16 +344,20 @@ class EnrollmentService:
         return {"ok": True, "saved_angles": saved_angles, "skipped_angles": skipped_angles}
 
     # -------- internal helpers --------
-    def _update_last(self, q: float, pose: Optional[str], msg: str):
+    def _update_last(self, q: float, pose: Optional[str], msg: str, pose_deg: Optional[Tuple[float, float, float]]):
         with self._lock:
             if not self._session:
                 return
             self._session.last_quality = float(q)
             self._session.last_pose = pose
+            if pose_deg:
+                yaw, pitch, roll = pose_deg
+                self._session.last_yaw = float(yaw)
+                self._session.last_pitch = float(pitch)
+                self._session.last_roll = float(roll)
             if msg:
                 self._session.last_message = msg
             self._session.last_update_at = now_iso()
-
 
     # -------- Clear Angle --------
     def clear_angle(self, angle: str) -> Dict[str, Any]:

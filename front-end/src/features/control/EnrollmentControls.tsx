@@ -213,31 +213,51 @@ export default function EnrollmentControls({ cameras }: { cameras: Camera[] }) {
       setErr("");
       setBusy(true);
 
-      await postJSON("/api/enroll/capture", { angle: currentAngle });
+      const resp = await postJSON<any>("/api/enroll/capture", {
+        angle: currentAngle,
+      });
 
-      // ✅ optimistic local update (progress updates instantly + never resets)
-      setStaged((prev) => ({
-        ...prev,
-        [currentAngle]: (prev[currentAngle] ?? 0) + 1,
-      }));
+      // ✅ IMPORTANT: AI capture success is resp.result.ok, not resp.ok
+      if (!resp?.ok || !resp?.result?.ok) {
+        const msg =
+          resp?.result?.error ||
+          resp?.error ||
+          resp?.session?.last_message ||
+          "Capture failed";
+        setErr(msg);
+        toast.error(msg);
 
-      toast.success(`Captured: ${angleLabel(currentAngle)}`);
+        // keep UI in sync with server
+        await refreshStatus();
+        return;
+      }
 
-      // ✅ auto-next based on the UPDATED staged (use ref-safe snapshot)
-      const stagedSnapshot = {
-        ...stagedRef.current,
-        [currentAngle]: (stagedRef.current[currentAngle] ?? 0) + 1,
-      };
+      // ✅ Use server truth for counts (no optimistic fake progress)
+      const s = resp?.session;
+      if (s?.collected) {
+        setStaged((prev) => {
+          const next = { ...prev };
+          for (const k of Object.keys(s.collected)) {
+            next[k] = Math.max(next[k] ?? 0, Number(s.collected[k] ?? 0));
+          }
+          return next;
+        });
+      }
+
+      toast.success(`Captured: ${currentAngle}`);
+
+      // Auto-next based on UPDATED staged (from server)
+      const stagedSnapshot = { ...stagedRef.current, ...(s?.collected || {}) };
       const next = nextAngleAfter(currentAngle, stagedSnapshot);
 
       await postJSON("/api/enroll/angle", { angle: next });
       setCurrentAngle(next);
 
-      // final sync (merge, not replace)
       await refreshStatus();
     } catch (e: any) {
-      setErr(e?.message ?? "Failed to capture");
-      toast.error("Capture failed");
+      const msg = e?.message ?? "Capture failed";
+      setErr(msg);
+      toast.error(msg);
     } finally {
       setBusy(false);
     }
@@ -249,7 +269,7 @@ export default function EnrollmentControls({ cameras }: { cameras: Camera[] }) {
       setBusy(true);
 
       if (!canSave) {
-        toast("Capture at least 1 angle to enable Save", { icon: "ℹ️" });
+        toast.error("Capture at least 1 angle to enable Save", { icon: "ℹ️" });
         return;
       }
 
