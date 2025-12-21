@@ -4,6 +4,8 @@ import time
 import cv2
 from fastapi import FastAPI, Body
 from fastapi.responses import StreamingResponse, Response
+from .recognition_worker import RecognitionWorker
+
 
 from .camera_runtime import CameraRuntime
 from .enroll_service import EnrollmentService
@@ -32,6 +34,9 @@ attendance_rt = AttendanceRuntime(
     cooldown_s=10,               # seconds between marks
     stable_hits_required=3,      # frames needed
 )
+
+rec_worker = RecognitionWorker(camera_rt=camera_rt, attendance_rt=attendance_rt)
+
 
 # --------------------------------------------------
 # Health
@@ -136,7 +141,14 @@ def camera_stream(camera_id: str):
 # --------------------------------------------------
 # RECOGNITION + ATTENDANCE STREAM
 # --------------------------------------------------
+
 def mjpeg_generator_recognition(camera_id: str):
+    # ✅ Start background recognition for this camera.
+    # For single camera CPU test: 6–8 is good.
+    # For many cameras CPU: reduce per camera (e.g. 2).
+    rec_worker.start(camera_id, ai_fps=6.0)
+
+    # Wait a bit for camera frames
     for _ in range(60):
         if camera_rt.get_frame(camera_id) is not None:
             break
@@ -144,26 +156,23 @@ def mjpeg_generator_recognition(camera_id: str):
 
     try:
         while True:
-            frame = camera_rt.get_frame(camera_id)
-            if frame is None:
-                time.sleep(0.05)
-                continue
+            # Prefer cached JPEG (fastest, no per-client encode)
+            jpg_bytes = rec_worker.get_latest_jpeg(camera_id)
 
-            annotated = attendance_rt.process_frame(
-                frame_bgr=frame,
-                camera_id=camera_id,
-            )
-
-            ok, jpg = cv2.imencode(".jpg", annotated, [int(cv2.IMWRITE_JPEG_QUALITY), 75])
-            if not ok:
-                continue
+            if jpg_bytes is None:
+                # fallback: show raw if annotated not ready yet
+                raw = camera_rt.get_frame(camera_id)
+                if raw is None:
+                    time.sleep(0.01)
+                    continue
+                ok, jpg = cv2.imencode(".jpg", raw, [int(cv2.IMWRITE_JPEG_QUALITY), 65])
+                if not ok:
+                    continue
+                jpg_bytes = jpg.tobytes()
 
             yield (
                 b"--frame\r\n"
-                b"Content-Type: image/jpeg\r\n"
-                b"Content-Length: " + str(len(jpg)).encode() + b"\r\n\r\n" +
-                jpg.tobytes() +
-                b"\r\n"
+                b"Content-Type: image/jpeg\r\n\r\n" + jpg_bytes + b"\r\n"
             )
             time.sleep(0.01)
 
@@ -173,12 +182,6 @@ def mjpeg_generator_recognition(camera_id: str):
 
 @app.get("/camera/recognition/stream/{camera_id}")
 def camera_recognition_stream(camera_id: str):
-    """
-    Browser-visible stream with:
-    - face boxes
-    - name + similarity
-    - automatic attendance logging
-    """
     return StreamingResponse(
         mjpeg_generator_recognition(camera_id),
         media_type="multipart/x-mixed-replace; boundary=frame",
@@ -189,6 +192,8 @@ def camera_recognition_stream(camera_id: str):
             "Connection": "keep-alive",
         },
     )
+
+
 
 # --------------------------------------------------
 # Attendance enable / disable per camera (optional)
