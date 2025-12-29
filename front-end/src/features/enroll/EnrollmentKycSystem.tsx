@@ -31,24 +31,21 @@ import Image from "next/image";
 type Angle = "front" | "left" | "right" | "up" | "down";
 const ANGLES: Angle[] = ["front", "left", "right", "up", "down"];
 
-function nextAngleAfter(current: Angle, staged: Record<string, number>): Angle {
-  const idx = ANGLES.indexOf(current);
-
-  // Prefer next missing angle
-  for (let step = 1; step <= ANGLES.length; step++) {
-    const a = ANGLES[(idx + step) % ANGLES.length];
-    if ((staged[a] ?? 0) === 0) return a;
-  }
-
-  // If all captured at least once, cycle normally
-  return ANGLES[(idx + 1) % ANGLES.length];
-}
+type NormBBox = { x: number; y: number; w: number; h: number } | null;
 
 function angleLabel(a: Angle) {
   return a.charAt(0).toUpperCase() + a.slice(1);
 }
 
-export default function EnrollmentControls({ cameras }: { cameras: Camera[] }) {
+function clamp(n: number, lo: number, hi: number) {
+  return Math.max(lo, Math.min(hi, n));
+}
+
+export default function EnrollmentKycSystem({
+  cameras,
+}: {
+  cameras: Camera[];
+}) {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [cameraId, setCameraId] = useState("");
 
@@ -60,7 +57,18 @@ export default function EnrollmentControls({ cameras }: { cameras: Camera[] }) {
   const [running, setRunning] = useState(false);
   const [currentAngle, setCurrentAngle] = useState<Angle>("front");
 
-  // ✅ IMPORTANT: local staged is source-of-truth for progress UI
+  // KYC / autoscan UI
+  const [kycEnabled, setKycEnabled] = useState(true);
+  const [autoScan, setAutoScan] = useState(true);
+  const [samplesPerAngle, setSamplesPerAngle] = useState<number>(3);
+
+  const [kycOk, setKycOk] = useState(false);
+  const [kycReason, setKycReason] = useState<string>("");
+
+  // face rectangle overlay (normalized)
+  const [faceBox, setFaceBox] = useState<NormBBox>(null);
+
+  // local staged is source-of-truth for progress UI
   const [staged, setStaged] = useState<Record<string, number>>({});
   const stagedRef = useRef<Record<string, number>>({});
   useEffect(() => {
@@ -71,6 +79,11 @@ export default function EnrollmentControls({ cameras }: { cameras: Camera[] }) {
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
 
+  // Auto-scan loop control
+  const autoTimerRef = useRef<number | null>(null);
+  const tickInFlightRef = useRef(false);
+  const lastSpokenRef = useRef<string>("");
+
   const aiBase = process.env.NEXT_PUBLIC_AI_URL || "http://127.0.0.1:8000";
 
   const selectedCamera = useMemo(
@@ -78,27 +91,58 @@ export default function EnrollmentControls({ cameras }: { cameras: Camera[] }) {
     [cameras, cameraId]
   );
 
-  const doneAngles = useMemo(() => {
-    return ANGLES.filter((a) => (staged?.[a] ?? 0) > 0);
-  }, [staged]);
+  const need = useMemo(() => clamp(samplesPerAngle, 1, 10), [samplesPerAngle]);
 
-  const doneCount = doneAngles.length;
-  const progressPct = Math.round((doneCount / ANGLES.length) * 100);
-  const canSave = doneCount > 0;
+  const doneCount = useMemo(() => {
+    return ANGLES.filter((a) => (staged?.[a] ?? 0) >= need).length;
+  }, [staged, need]);
+
+  const progressPct = useMemo(() => {
+    return Math.round((doneCount / ANGLES.length) * 100);
+  }, [doneCount]);
+
+  const canSave = useMemo(() => {
+    return Object.values(staged || {}).some((v) => (v ?? 0) > 0);
+  }, [staged]);
 
   async function loadEmployees() {
     const emps = await fetchJSON<Employee[]>("/api/employees");
     setEmployees(emps);
   }
 
-  // ✅ Merge server status WITHOUT resetting progress
   function applyServerSession(s: any) {
-    // running + angle + message
     setRunning(s?.status === "running");
-    if (s?.current_angle) setCurrentAngle(s.current_angle);
+
+    if (s?.current_angle) setCurrentAngle(s.current_angle as Angle);
     if (typeof s?.last_message === "string") setMsg(s.last_message);
 
-    // ✅ merge collected into local staged, keep max per angle
+    // KYC fields from AI session
+    if (typeof s?.kyc_ok === "boolean") setKycOk(!!s.kyc_ok);
+    if (typeof s?.kyc_reason === "string") setKycReason(s.kyc_reason || "");
+
+    // normalized bbox for rectangle overlay
+    if (s?.last_bbox && typeof s.last_bbox === "object") {
+      const b = s.last_bbox;
+      if (
+        typeof b.x === "number" &&
+        typeof b.y === "number" &&
+        typeof b.w === "number" &&
+        typeof b.h === "number"
+      ) {
+        setFaceBox({
+          x: clamp(b.x, 0, 1),
+          y: clamp(b.y, 0, 1),
+          w: clamp(b.w, 0, 1),
+          h: clamp(b.h, 0, 1),
+        });
+      } else {
+        setFaceBox(null);
+      }
+    } else {
+      setFaceBox(null);
+    }
+
+    // collected counts
     const serverCollected: Record<string, number> = s?.collected || {};
     if (serverCollected && typeof serverCollected === "object") {
       setStaged((prev) => {
@@ -123,11 +167,44 @@ export default function EnrollmentControls({ cameras }: { cameras: Camera[] }) {
       }
       applyServerSession(s);
     } catch (e: any) {
-      // don’t spam; show once
       setErr(e?.message ?? "Failed to refresh status");
     }
   }
 
+  // -------------------------
+  // Audio helpers (browser)
+  // -------------------------
+  function speak(text: string) {
+    try {
+      if (!text) return;
+      if (lastSpokenRef.current === text) return;
+      lastSpokenRef.current = text;
+
+      const synth = window.speechSynthesis;
+      if (!synth) return;
+
+      synth.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.rate = 1.0;
+      u.pitch = 1.0;
+      u.volume = 1.0;
+      synth.speak(u);
+    } catch {
+      // no-op
+    }
+  }
+
+  function instructionForAngle(a: Angle) {
+    if (a === "front") return "Hold your face in front";
+    if (a === "left") return "Turn left";
+    if (a === "right") return "Turn right";
+    if (a === "up") return "Look up";
+    return "Look down";
+  }
+
+  // -------------------------
+  // Start/Stop
+  // -------------------------
   async function startEnroll() {
     try {
       setErr("");
@@ -139,7 +216,6 @@ export default function EnrollmentControls({ cameras }: { cameras: Camera[] }) {
       if (mode === "existing" && !employeeId)
         throw new Error("Select employee");
 
-      // Raw preview needs camera runtime started
       if (!noScan) {
         await postJSON(`/api/cameras/${cameraId}/start`);
       }
@@ -149,6 +225,8 @@ export default function EnrollmentControls({ cameras }: { cameras: Camera[] }) {
         name: mode === "new" ? name.trim() : undefined,
         employeeId: mode === "existing" ? employeeId : undefined,
         allowNoScan: noScan,
+        kycEnabled,
+        samplesPerAngle: clamp(samplesPerAngle, 1, 10),
       });
 
       if (noScan) {
@@ -161,8 +239,19 @@ export default function EnrollmentControls({ cameras }: { cameras: Camera[] }) {
       }
 
       toast.success("Enrollment started");
+
+      // reset UI
+      setStaged({});
+      setFaceBox(null);
+      setKycOk(false);
+      setKycReason("");
+      setCurrentAngle("front");
+      lastSpokenRef.current = "";
+
       await loadEmployees();
       await refreshStatus();
+
+      speak(instructionForAngle("front"));
     } catch (e: any) {
       setErr(e?.message ?? "Failed to start enroll");
       toast.error("Start failed");
@@ -179,11 +268,14 @@ export default function EnrollmentControls({ cameras }: { cameras: Camera[] }) {
       await postJSON("/api/enroll/stop");
       if (cameraId) await postJSON(`/api/cameras/${cameraId}/stop`);
 
-      // ✅ explicit reset
       setRunning(false);
       setStaged({});
+      setFaceBox(null);
       setMsg("");
+      setErr("");
       setCurrentAngle("front");
+      setKycOk(false);
+      setKycReason("");
 
       toast("Enrollment stopped", { icon: "🛑" });
     } catch (e: any) {
@@ -200,6 +292,7 @@ export default function EnrollmentControls({ cameras }: { cameras: Camera[] }) {
       setBusy(true);
       await postJSON("/api/enroll/angle", { angle: a });
       setCurrentAngle(a);
+      speak(instructionForAngle(a));
       await refreshStatus();
     } catch (e: any) {
       setErr(e?.message ?? "Failed to change angle");
@@ -209,7 +302,10 @@ export default function EnrollmentControls({ cameras }: { cameras: Camera[] }) {
     }
   }
 
-  async function capture() {
+  // -------------------------
+  // Manual capture (non-auto)
+  // -------------------------
+  async function captureManual() {
     try {
       setErr("");
       setBusy(true);
@@ -218,47 +314,26 @@ export default function EnrollmentControls({ cameras }: { cameras: Camera[] }) {
         angle: currentAngle,
       });
 
-      // ✅ IMPORTANT: AI capture success is resp.result.ok, not resp.ok
       if (!resp?.ok || !resp?.result?.ok) {
-        const msg =
+        const m =
           resp?.result?.error ||
           resp?.error ||
           resp?.session?.last_message ||
           "Capture failed";
-        setErr(msg);
-        toast.error(msg);
-
-        // keep UI in sync with server
+        setErr(m);
+        setMsg(m);
+        toast.error(m);
         await refreshStatus();
         return;
       }
 
-      // ✅ Use server truth for counts (no optimistic fake progress)
-      const s = resp?.session;
-      if (s?.collected) {
-        setStaged((prev) => {
-          const next = { ...prev };
-          for (const k of Object.keys(s.collected)) {
-            next[k] = Math.max(next[k] ?? 0, Number(s.collected[k] ?? 0));
-          }
-          return next;
-        });
-      }
-
       toast.success(`Captured: ${currentAngle}`);
-
-      // Auto-next based on UPDATED staged (from server)
-      const stagedSnapshot = { ...stagedRef.current, ...(s?.collected || {}) };
-      const next = nextAngleAfter(currentAngle, stagedSnapshot);
-
-      await postJSON("/api/enroll/angle", { angle: next });
-      setCurrentAngle(next);
-
-      await refreshStatus();
+      if (resp?.session) applyServerSession(resp.session);
+      else await refreshStatus();
     } catch (e: any) {
-      const msg = e?.message ?? "Capture failed";
-      setErr(msg);
-      toast.error(msg);
+      const m = e?.message ?? "Capture failed";
+      setErr(m);
+      toast.error(m);
     } finally {
       setBusy(false);
     }
@@ -280,15 +355,16 @@ export default function EnrollmentControls({ cameras }: { cameras: Camera[] }) {
       if (saved.length > 0) toast.success(`Saved: ${saved.join(", ")}`);
       else toast("Nothing saved", { icon: "ℹ️" });
 
-      // ✅ auto stop after save
       await postJSON("/api/enroll/stop");
       if (cameraId) await postJSON(`/api/cameras/${cameraId}/stop`);
 
-      // ✅ explicit reset UI
       setRunning(false);
       setStaged({});
+      setFaceBox(null);
       setMsg("");
       setCurrentAngle("front");
+      setKycOk(false);
+      setKycReason("");
 
       await refreshStatus();
     } catch (e: any) {
@@ -306,12 +382,19 @@ export default function EnrollmentControls({ cameras }: { cameras: Camera[] }) {
 
       await postJSON("/api/enroll/cancel");
 
-      // ✅ explicit reset staged (user asked cancel)
+      // ✅ local reset to match server hard reset (front + clear box)
       setStaged({});
-      setMsg("Canceled staged captures");
+      setFaceBox(null);
+      setCurrentAngle("front");
+      setKycOk(false);
+      setKycReason("canceled");
+      setMsg("Canceled. Restart scanning from Front.");
+      lastSpokenRef.current = "";
 
       toast("Canceled staged captures", { icon: "↩️" });
+
       await refreshStatus();
+      speak(instructionForAngle("front"));
     } catch (e: any) {
       setErr(e?.message ?? "Failed to cancel");
       toast.error("Cancel failed");
@@ -320,21 +403,18 @@ export default function EnrollmentControls({ cameras }: { cameras: Camera[] }) {
     }
   }
 
-  // Requires /api/enroll/clear-angle (you already enabled earlier)
   async function rescanCurrentAngle() {
     try {
       setErr("");
       setBusy(true);
 
       await postJSON("/api/enroll/clear-angle", { angle: currentAngle });
-
-      // ✅ explicitly clear only this angle locally
       setStaged((prev) => ({ ...prev, [currentAngle]: 0 }));
-
       toast(`Cleared ${angleLabel(currentAngle)}. Capture again.`, {
         icon: "🧹",
       });
       await refreshStatus();
+      speak(instructionForAngle(currentAngle));
     } catch (e: any) {
       setErr(e?.message ?? "Failed to clear angle");
       toast.error("Re-scan failed");
@@ -343,28 +423,154 @@ export default function EnrollmentControls({ cameras }: { cameras: Camera[] }) {
     }
   }
 
+  // -------------------------
+  // ✅ Auto-scan loop (KYC) — uses /api/enroll/kyc/tick
+  // -------------------------
+
+  const liveRef = useRef({
+    running: false,
+    noScan: false,
+    autoScan: true,
+    kycEnabled: true,
+    busy: false,
+    currentAngle: "front" as Angle,
+    cameraId: "",
+  });
+
+  useEffect(() => {
+    liveRef.current.running = running;
+    liveRef.current.noScan = noScan;
+    liveRef.current.autoScan = autoScan;
+    liveRef.current.kycEnabled = kycEnabled;
+    liveRef.current.busy = busy;
+    liveRef.current.currentAngle = currentAngle;
+    liveRef.current.cameraId = cameraId;
+  }, [running, noScan, autoScan, kycEnabled, busy, currentAngle, cameraId]);
+
+  async function tickAutoScan() {
+    const live = liveRef.current;
+
+    // ✅ gate before request (avoid useless network calls)
+    if (!live.running || live.noScan || !live.autoScan) return;
+    if (!live.kycEnabled) return;
+    if (live.busy) return; // optional: keep, but don’t use it after response
+    if (tickInFlightRef.current) return;
+
+    try {
+      tickInFlightRef.current = true;
+
+      const resp = await postJSON<any>("/api/enroll/kyc/tick");
+      const out = resp?.result;
+
+      // ✅ if server returned a session, always apply it (even when error/throttled)
+      const prevAngle = liveRef.current.currentAngle;
+      if (resp?.session) {
+        applyServerSession(resp.session);
+
+        const nextAngle = resp.session?.current_angle as Angle | undefined;
+        if (nextAngle && nextAngle !== prevAngle) {
+          speak(instructionForAngle(nextAngle));
+        }
+      }
+
+      // ✅ now validate outer+inner ok
+      if (!resp?.ok || !out?.ok) {
+        const m =
+          out?.error ||
+          resp?.error ||
+          resp?.session?.last_message ||
+          "KYC tick failed";
+        setErr(m);
+        setMsg(m);
+        return;
+      }
+
+      // ✅ throttled is normal
+      if (out?.throttled) return;
+
+      // if session missing (rare), fallback refresh
+      if (!resp?.session) {
+        await refreshStatus();
+      }
+
+      // ✅ completion check
+      const s = resp?.session;
+      const stage = String(s?.kyc_stage || "");
+      const passed = !!s?.kyc_ok;
+
+      if (stage === "done" && passed) {
+        toast.success("KYC passed & saved ✅");
+        speak("Verification complete.");
+
+        await postJSON("/api/enroll/stop");
+
+        const camToStop = liveRef.current.cameraId; // ✅ always in-scope
+        if (camToStop) await postJSON(`/api/cameras/${camToStop}/stop`);
+
+        setRunning(false);
+        setStaged({});
+        setFaceBox(null);
+        setMsg("KYC passed & saved");
+        setCurrentAngle("front");
+        setKycOk(false);
+        setKycReason("");
+      }
+    } finally {
+      tickInFlightRef.current = false;
+    }
+  }
+
+  function startAutoLoop() {
+    stopAutoLoop();
+    autoTimerRef.current = window.setInterval(() => {
+      tickAutoScan();
+    }, 250); // smooth UI; AI side throttles with KYC_TICK_FPS anyway
+  }
+
+  function stopAutoLoop() {
+    if (autoTimerRef.current) {
+      window.clearInterval(autoTimerRef.current);
+      autoTimerRef.current = null;
+    }
+  }
+
+  // Poll status
   useEffect(() => {
     loadEmployees();
     refreshStatus();
 
-    const t = setInterval(() => {
+    const t = window.setInterval(() => {
       if (running) refreshStatus();
     }, 1500);
 
-    return () => clearInterval(t);
+    return () => window.clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [running]);
 
+  // Auto loop lifecycle
+  useEffect(() => {
+    if (running && autoScan && kycEnabled && !noScan) startAutoLoop();
+    else stopAutoLoop();
+    return () => stopAutoLoop();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [running, autoScan, kycEnabled, noScan]);
+
+  // Per-angle progress
+  const angleProgress = useMemo(() => {
+    const v = staged[currentAngle] ?? 0;
+    return clamp(v, 0, need);
+  }, [staged, currentAngle, need]);
+
   return (
     <div className="grid gap-6 lg:grid-cols-2">
-      {/* LEFT: Preview */}
+      {/* LEFT: Preview (Portrait) */}
       <Card className="overflow-hidden">
         <CardHeader className="space-y-1">
           <div className="flex items-start justify-between gap-3">
             <div>
               <CardTitle className="text-xl">Enrollment Preview</CardTitle>
               <CardDescription className="text-sm">
-                Raw camera stream (no recognition overlays).
+                Portrait preview + face rectangle overlay.
               </CardDescription>
             </div>
 
@@ -381,9 +587,9 @@ export default function EnrollmentControls({ cameras }: { cameras: Camera[] }) {
         </CardHeader>
 
         <CardContent className="space-y-4">
-          {/* Portrait container: 9:16 (best for face scan framing) */}
-          <div className="mx-auto w-full overflow-hidden rounded-xl border bg-muted">
-            <div className="relative w-full aspect-9/16 overflow-hidden bg-black max-h-[70vh] sm:max-h-130 md:max-h-150">
+          {/* Portrait container: 9:16 */}
+          <div className="relative overflow-hidden rounded-xl border bg-muted">
+            <div className="relative w-full overflow-hidden rounded-lg bg-black aspect-[9/16] max-h-[70vh] sm:max-h-[520px] md:max-h-[600px]">
               {running && cameraId && !noScan ? (
                 <Image
                   src={`${aiBase}/camera/stream/${cameraId}`}
@@ -391,24 +597,58 @@ export default function EnrollmentControls({ cameras }: { cameras: Camera[] }) {
                   fill
                   className="object-cover"
                   unoptimized
-                  priority
                   sizes="(max-width: 640px) 100vw, (max-width: 1024px) 60vw, 420px"
                 />
               ) : (
-                <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
+                <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">
                   {noScan ? "No-scan mode enabled" : "Camera OFF"}
                 </div>
               )}
+
+              {/* ✅ Face rectangle overlay (no circles) */}
+              {running && !noScan && faceBox ? (
+                <div className="pointer-events-none absolute inset-0">
+                  <div
+                    className="absolute rounded-md border-2 border-white/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.18)]"
+                    style={{
+                      left: `${faceBox.x * 100}%`,
+                      top: `${faceBox.y * 100}%`,
+                      width: `${faceBox.w * 100}%`,
+                      height: `${faceBox.h * 100}%`,
+                    }}
+                  />
+                </div>
+              ) : null}
+
+              {/* Status chip */}
+              {running && !noScan ? (
+                <div className="pointer-events-none absolute left-3 top-3 rounded-lg bg-black/55 px-3 py-2 text-white">
+                  <div className="text-xs font-semibold">
+                    {autoScan && kycEnabled ? "Auto KYC Scanning" : "Manual"}
+                  </div>
+                  <div className="mt-0.5 text-[11px] opacity-90">
+                    {angleLabel(currentAngle)} • {angleProgress}/{need}
+                  </div>
+                  {kycEnabled ? (
+                    <div className="mt-0.5 text-[11px] opacity-90">
+                      {kycOk ? "KYC PASS ✅" : `KYC… ${kycReason || ""}`}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           </div>
 
-          {/* Progress */}
+          {/* Overall Progress */}
           <div className="space-y-2">
             <div className="flex items-center justify-between text-sm">
               <div>
                 <span className="text-muted-foreground">Angle: </span>
                 <span className="font-semibold">
                   {angleLabel(currentAngle)}
+                </span>
+                <span className="ml-2 text-muted-foreground">
+                  ({angleProgress}/{need})
                 </span>
               </div>
               <div className="text-muted-foreground">
@@ -442,7 +682,7 @@ export default function EnrollmentControls({ cameras }: { cameras: Camera[] }) {
         <CardHeader className="space-y-1">
           <CardTitle className="text-xl">Enrollment Controls</CardTitle>
           <CardDescription className="text-sm">
-            Start → Capture angles (auto-next) → Save (auto-stop).
+            Start → (Auto KYC tick) → AI saves → Stop.
           </CardDescription>
         </CardHeader>
 
@@ -526,7 +766,7 @@ export default function EnrollmentControls({ cameras }: { cameras: Camera[] }) {
             </div>
           </div>
 
-          {/* No scan */}
+          {/* No scan toggle */}
           <div className="flex items-center justify-between rounded-xl border bg-muted/40 px-4 py-3">
             <div>
               <div className="text-sm font-semibold">
@@ -554,18 +794,92 @@ export default function EnrollmentControls({ cameras }: { cameras: Camera[] }) {
 
           <Separator />
 
+          {/* KYC settings */}
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="flex items-center justify-between rounded-xl border bg-muted/40 px-4 py-3">
+              <div>
+                <div className="text-sm font-semibold">KYC Mode</div>
+                <div className="text-xs text-muted-foreground">
+                  Uses KYC tick + auto save in AI.
+                </div>
+              </div>
+              <button
+                className={`h-6 w-11 rounded-full border transition ${
+                  kycEnabled ? "bg-black" : "bg-white"
+                }`}
+                onClick={() => !busy && !running && setKycEnabled((v) => !v)}
+                disabled={busy || running}
+                aria-label="Toggle kyc"
+              >
+                <div
+                  className={`h-5 w-5 translate-x-1 rounded-full bg-white shadow transition ${
+                    kycEnabled ? "translate-x-5" : ""
+                  }`}
+                />
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between rounded-xl border bg-muted/40 px-4 py-3">
+              <div>
+                <div className="text-sm font-semibold">Auto Scan</div>
+                <div className="text-xs text-muted-foreground">
+                  Calls /api/enroll/kyc/tick repeatedly.
+                </div>
+              </div>
+              <button
+                className={`h-6 w-11 rounded-full border transition ${
+                  autoScan ? "bg-black" : "bg-white"
+                }`}
+                onClick={() => !busy && setAutoScan((v) => !v)}
+                disabled={busy || noScan || !kycEnabled}
+                aria-label="Toggle autoscan"
+                title={!kycEnabled ? "Enable KYC to use Auto Scan" : ""}
+              >
+                <div
+                  className={`h-5 w-5 translate-x-1 rounded-full bg-white shadow transition ${
+                    autoScan ? "translate-x-5" : ""
+                  }`}
+                />
+              </button>
+            </div>
+
+            <div className="space-y-2 md:col-span-2">
+              <Label className="text-sm">Samples per angle</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  min={1}
+                  max={10}
+                  value={samplesPerAngle}
+                  onChange={(e) =>
+                    setSamplesPerAngle(
+                      clamp(Number(e.target.value || 3), 1, 10)
+                    )
+                  }
+                  disabled={running || busy || noScan}
+                  className="h-10 w-32"
+                />
+                <div className="text-xs text-muted-foreground">
+                  Recommended 3–5.
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <Separator />
+
           {/* Angles */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <Label className="text-sm">Angles</Label>
               <div className="text-xs text-muted-foreground">
-                Captured: {doneCount}/{ANGLES.length}
+                Need: {need}/angle
               </div>
             </div>
 
             <div className="flex flex-wrap gap-2">
               {ANGLES.map((a) => {
-                const captured = (staged[a] ?? 0) > 0;
+                const captured = (staged[a] ?? 0) >= need;
                 const active = currentAngle === a;
                 return (
                   <Button
@@ -575,9 +889,11 @@ export default function EnrollmentControls({ cameras }: { cameras: Camera[] }) {
                     size="sm"
                     className="h-9"
                     onClick={() => changeAngle(a)}
-                    disabled={!running || busy || noScan}
+                    disabled={!running || busy || noScan || autoScan}
                     title={
-                      captured ? `Captured (${staged[a]})` : "Not captured"
+                      captured
+                        ? `Done (${staged[a]}/${need})`
+                        : `${staged[a] ?? 0}/${need}`
                     }
                   >
                     {angleLabel(a)}{" "}
@@ -619,19 +935,33 @@ export default function EnrollmentControls({ cameras }: { cameras: Camera[] }) {
             <Button
               type="button"
               variant="secondary"
-              onClick={capture}
-              disabled={busy || !running || noScan}
+              onClick={captureManual}
+              disabled={busy || !running || noScan || autoScan}
               className="h-10"
+              title={autoScan ? "Disable Auto Scan to use manual capture" : ""}
             >
-              Capture (auto-next)
+              Capture (manual)
             </Button>
 
             <Button
               type="button"
               onClick={saveAll}
-              disabled={busy || !running || noScan || !canSave}
+              disabled={
+                busy ||
+                !running ||
+                noScan ||
+                autoScan ||
+                !canSave ||
+                (kycEnabled && !kycOk)
+              }
               className="h-10"
-              title={!canSave ? "Capture at least 1 angle to enable Save" : ""}
+              title={
+                autoScan
+                  ? "Auto Scan uses AI auto-save"
+                  : kycEnabled && !kycOk
+                  ? "KYC must pass to save"
+                  : ""
+              }
             >
               Save
             </Button>
@@ -658,8 +988,9 @@ export default function EnrollmentControls({ cameras }: { cameras: Camera[] }) {
           </div>
 
           <div className="text-xs text-muted-foreground leading-relaxed">
-            Save will show a toast, then automatically stop the camera and reset
-            the enrollment UI.
+            <b>Auto Scan:</b> uses <code>/api/enroll/kyc/tick</code> and AI will
+            save automatically when complete. The overlay is a{" "}
+            <b>rectangle around the detected face</b> (no circles).
           </div>
         </CardContent>
       </Card>

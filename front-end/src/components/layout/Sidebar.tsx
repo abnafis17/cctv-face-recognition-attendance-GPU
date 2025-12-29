@@ -3,7 +3,7 @@ import Link from "next/link";
 const nav = [
   { href: "/", label: "Dashboard" },
   { href: "/cameras", label: "Cameras (Live)" },
-  { href: "/enroll", label: "Enrollment" },
+  { href: "/enroll", label: "Enrollment (KYC)" },
   { href: "/employees", label: "Employees" },
   { href: "/attendance", label: "Attendance History" },
   { href: "/enrollment-control", label: "Enrollment Control" },

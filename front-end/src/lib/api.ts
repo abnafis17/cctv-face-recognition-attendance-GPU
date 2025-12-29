@@ -1,5 +1,7 @@
 export const BACKEND_URL =
-  process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
+  typeof window !== "undefined"
+    ? `http://${window.location.hostname}:3001`
+    : process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
 
 async function readError(res: Response) {
   const txt = await res.text();

@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // ✅ hostnames/patterns only (no http://, no ports)
+  allowedDevOrigins: ["localhost", "10.81.100.113"],
+
   images: {
     remotePatterns: [
       {
@@ -12,6 +15,12 @@ const nextConfig: NextConfig = {
       {
         protocol: "http",
         hostname: "localhost",
+        port: "8000",
+        pathname: "/camera/recognition/stream/**",
+      },
+      {
+        protocol: "http",
+        hostname: "10.81.100.113",
         port: "8000",
         pathname: "/camera/recognition/stream/**",
       },
