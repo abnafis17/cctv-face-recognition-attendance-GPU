@@ -5,11 +5,11 @@ import cv2
 from rich import print
 
 from ..config import load_config
-from ..backend_client import BackendClient
-from ..app_state import init_state
-from ..capture import FrameGrabber
-from ..recognizer import FaceRecognizer, match_gallery
-from ..tracker import SimpleTracker
+from ..clients.backend_client import BackendClient
+from .app_state import init_state
+from ..vision.capture import FrameGrabber
+from ..vision.recognizer import FaceRecognizer, match_gallery
+from ..vision.tracker import SimpleTracker
 from ..utils import now_iso, ensure_dir, sleep_fps
 
 

@@ -6,9 +6,9 @@ import numpy as np
 from rich import print
 
 from ..config import load_config
-from ..backend_client import BackendClient
-from ..capture import FrameGrabber
-from ..recognizer import FaceRecognizer
+from ..clients.backend_client import BackendClient
+from ..vision.capture import FrameGrabber
+from ..vision.recognizer import FaceRecognizer
 from ..utils import (
     l2_normalize,
     quality_score,

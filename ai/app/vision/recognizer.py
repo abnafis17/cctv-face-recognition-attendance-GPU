@@ -7,7 +7,7 @@ from typing import List, Tuple, Optional
 import numpy as np
 from insightface.app import FaceAnalysis
 
-from .utils import l2_normalize
+from ..utils import l2_normalize
 
 
 def _env_bool(name: str, default: bool) -> bool:

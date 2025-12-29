@@ -8,10 +8,10 @@ import cv2
 from fastapi import FastAPI, Body
 from fastapi.responses import StreamingResponse, Response
 
-from .camera_runtime import CameraRuntime
-from .enroll_service import EnrollmentService
-from .attendance_runtime import AttendanceRuntime
-from .recognition_worker import RecognitionWorker
+from .runtimes.camera_runtime import CameraRuntime
+from .services.enroll_service import EnrollmentService
+from .runtimes.attendance_runtime import AttendanceRuntime
+from .runtimes.recognition_worker import RecognitionWorker
 from .utils import draw_enroll_hud
 
 

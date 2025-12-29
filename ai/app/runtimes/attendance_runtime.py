@@ -8,12 +8,12 @@ from typing import Dict, List, Tuple, Optional
 import cv2
 import numpy as np
 
-from .backend_client import BackendClient
-from .recognizer import FaceRecognizer, match_gallery
-from .tracker import SimpleTracker
-from .utils import now_iso, l2_normalize
+from ..clients.backend_client import BackendClient
+from ..vision.recognizer import FaceRecognizer, match_gallery
+from ..vision.tracker import SimpleTracker
+from ..utils import now_iso, l2_normalize, quality_score
 
-from .fas.gate import FASGate, GateConfig
+from ..fas.gate import FASGate, GateConfig
 
 LABEL_FONT = cv2.FONT_HERSHEY_TRIPLEX  # clearer serif-like font (closest to Times New Roman)
 HUD_FONT = cv2.FONT_HERSHEY_DUPLEX    # slightly lighter for HUD text
@@ -244,6 +244,8 @@ class AttendanceRuntime:
         self.rec = FaceRecognizer(model_name=model_name, use_gpu=use_gpu, min_face_size=min_face_size)
 
         self.similarity_threshold = float(similarity_threshold)
+        self.strict_similarity = float(os.getenv("STRICT_SIM_THRESHOLD", "0.5"))
+        self.min_att_quality = float(os.getenv("MIN_ATT_QUALITY", "18.0"))
         self.gallery_refresh_s = float(gallery_refresh_s)
         self.cooldown_s = int(cooldown_s)
         self.stable_hits_required = int(stable_hits_required)
@@ -392,6 +394,7 @@ class AttendanceRuntime:
 
         for tr in tracks:
             x1, y1, x2, y2 = [int(v) for v in tr.bbox]
+            h, w = annotated.shape[:2]
 
             known = (tr.employee_id != -1)
             color = ACCENT_KNOWN if known else ACCENT_UNKNOWN
@@ -413,6 +416,16 @@ class AttendanceRuntime:
             if not known:
                 continue
             if tr.stable_name_hits < self.stable_hits_required:
+                continue
+            if tr.similarity < self.strict_similarity:
+                continue
+
+            # Avoid partial edge faces and low-quality crops
+            if x1 <= 4 or y1 <= 4 or x2 >= (w - 4) or y2 >= (h - 4):
+                continue
+
+            q_score = quality_score((x1, y1, x2, y2), frame_bgr)
+            if q_score < self.min_att_quality:
                 continue
 
             last = state.last_mark.get(emp_id_str, 0.0)

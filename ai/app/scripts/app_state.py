@@ -2,7 +2,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, Tuple
 import numpy as np
-from .config import AppConfig
+from ..config import AppConfig
 
 @dataclass
 class GalleryCache:

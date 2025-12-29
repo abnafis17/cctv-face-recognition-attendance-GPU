@@ -3,7 +3,7 @@ from typing import Dict, Optional
 import cv2
 import numpy as np
 
-from .capture import FrameGrabber
+from ..vision.capture import FrameGrabber
 
 class CameraRuntime:
     def __init__(self):

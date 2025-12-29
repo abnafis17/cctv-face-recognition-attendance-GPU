@@ -7,16 +7,16 @@ from typing import Dict, List, Optional, Any, Tuple
 
 import numpy as np
 
-from .recognizer import FaceRecognizer
-from .utils import (
+from ..vision.recognizer import FaceRecognizer
+from ..utils import (
     quality_score,
     now_iso,
     estimate_head_pose_deg,
     pose_label,
     pose_matches,   # ✅ NEW: use tolerance-based match like manual script
 )
-from .backend_client import BackendClient
-from .camera_runtime import CameraRuntime
+from ..clients.backend_client import BackendClient
+from ..runtimes.camera_runtime import CameraRuntime
 
 
 # -----------------------------
