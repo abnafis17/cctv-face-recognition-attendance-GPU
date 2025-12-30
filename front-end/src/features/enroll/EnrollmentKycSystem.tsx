@@ -30,6 +30,9 @@ import Image from "next/image";
 
 type Angle = "front" | "left" | "right" | "up" | "down";
 const ANGLES: Angle[] = ["front", "left", "right", "up", "down"];
+const MIN_STABLE_MS = 800; // minimum time the face must stay steady before ticking
+const MIN_TICK_GAP_MS = 1100; // throttle auto-tick calls to avoid over-driving backend
+const MIN_FACE_AREA = 0.03; // normalized area threshold to ensure the face fills the frame
 
 type NormBBox = { x: number; y: number; w: number; h: number } | null;
 
@@ -78,11 +81,21 @@ export default function EnrollmentKycSystem({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
+  const [faceSteadyMs, setFaceSteadyMs] = useState(0);
+  const [captureFlash, setCaptureFlash] = useState<{
+    angle: Angle;
+    at: number;
+  } | null>(null);
 
   // Auto-scan loop control
   const autoTimerRef = useRef<number | null>(null);
   const tickInFlightRef = useRef(false);
   const lastSpokenRef = useRef<string>("");
+  const lastTickAtRef = useRef<number>(0);
+  const lastFaceRef = useRef<NormBBox>(null);
+  const stableSinceRef = useRef<number | null>(null);
+  const faceReadyAnnouncedRef = useRef(false);
+  const audioCtxRef = useRef<AudioContext | null>(null);
 
   const aiBase = process.env.NEXT_PUBLIC_AI_URL || "http://127.0.0.1:8000";
 
@@ -101,6 +114,17 @@ export default function EnrollmentKycSystem({
     return Math.round((doneCount / ANGLES.length) * 100);
   }, [doneCount]);
 
+  const faceReadyPct = useMemo(
+    () => clamp(faceSteadyMs / MIN_STABLE_MS, 0, 1),
+    [faceSteadyMs]
+  );
+
+  const faceReady = useMemo(() => {
+    if (!faceBox) return false;
+    const area = faceBox.w * faceBox.h;
+    return area >= MIN_FACE_AREA && faceSteadyMs >= MIN_STABLE_MS;
+  }, [faceBox, faceSteadyMs]);
+
   const canSave = useMemo(() => {
     return Object.values(staged || {}).some((v) => (v ?? 0) > 0);
   }, [staged]);
@@ -108,6 +132,40 @@ export default function EnrollmentKycSystem({
   async function loadEmployees() {
     const emps = await fetchJSON<Employee[]>("/api/employees");
     setEmployees(emps);
+  }
+
+  function updateFaceStability(box: NormBBox) {
+    const now = Date.now();
+    if (!box || box.w * box.h < MIN_FACE_AREA) {
+      lastFaceRef.current = box;
+      stableSinceRef.current = null;
+      setFaceSteadyMs(0);
+      faceReadyAnnouncedRef.current = false;
+      return;
+    }
+
+    const last = lastFaceRef.current;
+    const delta =
+      last === null
+        ? Number.POSITIVE_INFINITY
+        : Math.abs(box.x - last.x) +
+          Math.abs(box.y - last.y) +
+          Math.abs(box.w - last.w) +
+          Math.abs(box.h - last.h);
+
+    const movedTooMuch = delta > 0.06;
+
+    if (!last || movedTooMuch) {
+      stableSinceRef.current = now;
+      setFaceSteadyMs(0);
+    } else if (stableSinceRef.current) {
+      setFaceSteadyMs(now - stableSinceRef.current);
+    } else {
+      stableSinceRef.current = now;
+      setFaceSteadyMs(0);
+    }
+
+    lastFaceRef.current = box;
   }
 
   function applyServerSession(s: any) {
@@ -119,6 +177,8 @@ export default function EnrollmentKycSystem({
     // KYC fields from AI session
     if (typeof s?.kyc_ok === "boolean") setKycOk(!!s.kyc_ok);
     if (typeof s?.kyc_reason === "string") setKycReason(s.kyc_reason || "");
+    if (typeof s?.face_steady_ms === "number")
+      setFaceSteadyMs(s.face_steady_ms);
 
     // normalized bbox for rectangle overlay
     if (s?.last_bbox && typeof s.last_bbox === "object") {
@@ -129,16 +189,20 @@ export default function EnrollmentKycSystem({
         typeof b.w === "number" &&
         typeof b.h === "number"
       ) {
-        setFaceBox({
+        const normalized = {
           x: clamp(b.x, 0, 1),
           y: clamp(b.y, 0, 1),
           w: clamp(b.w, 0, 1),
           h: clamp(b.h, 0, 1),
-        });
+        };
+        setFaceBox(normalized);
+        updateFaceStability(normalized);
       } else {
+        updateFaceStability(null);
         setFaceBox(null);
       }
     } else {
+      updateFaceStability(null);
       setFaceBox(null);
     }
 
@@ -174,6 +238,30 @@ export default function EnrollmentKycSystem({
   // -------------------------
   // Audio helpers (browser)
   // -------------------------
+  function playTone(freq = 900, duration = 0.12) {
+    try {
+      if (typeof window === "undefined") return;
+      const ctx = audioCtxRef.current || new AudioContext();
+      audioCtxRef.current = ctx;
+      ctx.resume?.();
+
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      gain.gain.value = 0.08;
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      const now = ctx.currentTime;
+      osc.start(now);
+      osc.stop(now + duration);
+    } catch {
+      // no-op; audio may be blocked by browser
+    }
+  }
+
   function speak(text: string) {
     try {
       if (!text) return;
@@ -201,6 +289,15 @@ export default function EnrollmentKycSystem({
     if (a === "up") return "Look up";
     return "Look down";
   }
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (stableSinceRef.current) {
+        setFaceSteadyMs(Date.now() - stableSinceRef.current);
+      }
+    }, 200);
+    return () => window.clearInterval(timer);
+  }, []);
 
   // -------------------------
   // Start/Stop
@@ -247,6 +344,15 @@ export default function EnrollmentKycSystem({
       setKycReason("");
       setCurrentAngle("front");
       lastSpokenRef.current = "";
+      setFaceSteadyMs(0);
+      stableSinceRef.current = null;
+      lastFaceRef.current = null;
+      faceReadyAnnouncedRef.current = false;
+      setFaceSteadyMs(0);
+      stableSinceRef.current = null;
+      lastFaceRef.current = null;
+      lastTickAtRef.current = 0;
+      faceReadyAnnouncedRef.current = false;
 
       await loadEmployees();
       await refreshStatus();
@@ -272,6 +378,10 @@ export default function EnrollmentKycSystem({
       setStaged({});
       setFaceBox(null);
       setMsg("");
+      setFaceSteadyMs(0);
+      stableSinceRef.current = null;
+      lastFaceRef.current = null;
+      faceReadyAnnouncedRef.current = false;
       setErr("");
       setCurrentAngle("front");
       setKycOk(false);
@@ -362,6 +472,10 @@ export default function EnrollmentKycSystem({
       setStaged({});
       setFaceBox(null);
       setMsg("");
+      setFaceSteadyMs(0);
+      stableSinceRef.current = null;
+      lastFaceRef.current = null;
+      faceReadyAnnouncedRef.current = false;
       setCurrentAngle("front");
       setKycOk(false);
       setKycReason("");
@@ -410,6 +524,10 @@ export default function EnrollmentKycSystem({
 
       await postJSON("/api/enroll/clear-angle", { angle: currentAngle });
       setStaged((prev) => ({ ...prev, [currentAngle]: 0 }));
+      setFaceSteadyMs(0);
+      stableSinceRef.current = null;
+      lastFaceRef.current = null;
+      faceReadyAnnouncedRef.current = false;
       toast(`Cleared ${angleLabel(currentAngle)}. Capture again.`, {
         icon: "🧹",
       });
@@ -435,6 +553,7 @@ export default function EnrollmentKycSystem({
     busy: false,
     currentAngle: "front" as Angle,
     cameraId: "",
+    faceReady: false,
   });
 
   useEffect(() => {
@@ -445,16 +564,39 @@ export default function EnrollmentKycSystem({
     liveRef.current.busy = busy;
     liveRef.current.currentAngle = currentAngle;
     liveRef.current.cameraId = cameraId;
-  }, [running, noScan, autoScan, kycEnabled, busy, currentAngle, cameraId]);
+    liveRef.current.faceReady = faceReady;
+  }, [
+    running,
+    noScan,
+    autoScan,
+    kycEnabled,
+    busy,
+    currentAngle,
+    cameraId,
+    faceReady,
+  ]);
+
+  useEffect(() => {
+    if (faceReady && running && !noScan && !faceReadyAnnouncedRef.current) {
+      faceReadyAnnouncedRef.current = true;
+      playTone(880, 0.1);
+      speak("Face locked. Hold steady while we capture.");
+    }
+    if (!faceReady) faceReadyAnnouncedRef.current = false;
+  }, [faceReady, running, noScan]);
 
   async function tickAutoScan() {
     const live = liveRef.current;
 
-    // ✅ gate before request (avoid useless network calls)
+    // Gate before request (avoid useless network calls)
     if (!live.running || live.noScan || !live.autoScan) return;
     if (!live.kycEnabled) return;
     if (live.busy) return; // optional: keep, but don’t use it after response
     if (tickInFlightRef.current) return;
+
+    const now = Date.now();
+    if (now - lastTickAtRef.current < MIN_TICK_GAP_MS) return;
+    lastTickAtRef.current = now;
 
     try {
       tickInFlightRef.current = true;
@@ -485,8 +627,11 @@ export default function EnrollmentKycSystem({
         return;
       }
 
-      // ✅ throttled is normal
-      if (out?.throttled) return;
+      // Throttled is normal; surface reason so operator sees it
+      if (out?.throttled) {
+        if (out?.reason) setMsg(out.reason);
+        return;
+      }
 
       // if session missing (rare), fallback refresh
       if (!resp?.session) {
@@ -561,6 +706,41 @@ export default function EnrollmentKycSystem({
     return clamp(v, 0, need);
   }, [staged, currentAngle, need]);
 
+  const activeInstruction = useMemo(
+    () => instructionForAngle(currentAngle),
+    [currentAngle]
+  );
+
+  const overlayInstruction = useMemo(() => {
+    if (!running || noScan) return "Start enrollment to view guidance.";
+    if (!faceBox) return "Face not detected. Center your face in the frame.";
+    if (faceReady) return "Hold steady - capturing";
+    const pct = Math.round(faceReadyPct * 100);
+    return `Align your face and stay still (${pct}% steady)`;
+  }, [running, noScan, faceBox, faceReady, faceReadyPct]);
+
+  const currentCount = staged[currentAngle] ?? 0;
+  const arcPct = useMemo(() => clamp(currentCount / need, 0, 1), [currentCount, need]);
+
+  const faceCircle = useMemo(() => {
+    if (!faceBox) return null;
+    const radius = Math.max(12, (Math.min(faceBox.w, faceBox.h) * 100) / 2.2);
+    const cx = faceBox.x * 100 + (faceBox.w * 100) / 2;
+    const cy = faceBox.y * 100 + (faceBox.h * 100) / 2;
+    return { cx, cy, radius };
+  }, [faceBox]);
+
+  useEffect(() => {
+    // Flash when a count increases for the active angle
+    const prev = captureFlash?.angle;
+    if (currentCount > 0) {
+      setCaptureFlash({ angle: currentAngle, at: Date.now() });
+    } else if (prev && currentAngle !== prev) {
+      setCaptureFlash(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentCount]);
+
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       {/* LEFT: Preview (Portrait) */}
@@ -605,35 +785,132 @@ export default function EnrollmentKycSystem({
                 </div>
               )}
 
-              {/* ✅ Face rectangle overlay (no circles) */}
+              {/* Face rectangle overlay (no circles) */}
               {running && !noScan && faceBox ? (
                 <div className="pointer-events-none absolute inset-0">
                   <div
-                    className="absolute rounded-md border-2 border-white/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.18)]"
+                    className="absolute"
                     style={{
                       left: `${faceBox.x * 100}%`,
                       top: `${faceBox.y * 100}%`,
                       width: `${faceBox.w * 100}%`,
                       height: `${faceBox.h * 100}%`,
                     }}
-                  />
+                  >
+                    <div className="absolute inset-0 rounded-xl border-2 border-emerald-300/90 shadow-[0_0_30px_rgba(16,185,129,0.35)] animate-[pulse_1.6s_ease-in-out_infinite]" />
+                    <div className="absolute -inset-2 rounded-2xl border border-emerald-200/40 blur-lg" />
+                  </div>
                 </div>
               ) : null}
 
-              {/* Status chip */}
+              {/* Circular capture arc (per-angle) */}
+              {running && !noScan && faceCircle ? (
+                <svg
+                  className="pointer-events-none absolute inset-0"
+                  viewBox="0 0 100 100"
+                  style={{
+                    left: `${faceCircle.cx - faceCircle.radius}%`,
+                    top: `${faceCircle.cy - faceCircle.radius}%`,
+                    width: `${faceCircle.radius * 2}%`,
+                    height: `${faceCircle.radius * 2}%`,
+                  }}
+                >
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="46"
+                    fill="none"
+                    stroke="rgba(255,255,255,0.18)"
+                    strokeWidth="4"
+                    strokeDasharray="4 6"
+                  />
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="46"
+                    fill="none"
+                    stroke="rgba(255, 255, 255, 0.35)"
+                    strokeWidth="2"
+                  />
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="46"
+                    fill="none"
+                    stroke={faceReady ? "#22c55e" : "#f97316"}
+                    strokeWidth="5"
+                    strokeLinecap="round"
+                    strokeDasharray={`${Math.max(3, arcPct * 289)} 289`}
+                    strokeDashoffset="72"
+                    className={`transition-all duration-400 ${
+                      faceReady ? "opacity-100" : "opacity-80"
+                    }`}
+                  />
+                  <circle
+                    cx="50"
+                    cy="50"
+                    r="46"
+                    fill="none"
+                    stroke={err ? "#ef4444" : "transparent"}
+                    strokeWidth="5"
+                    strokeLinecap="round"
+                    strokeDasharray="289"
+                    strokeDashoffset="72"
+                    className="transition-all duration-300"
+                    opacity={err ? 0.9 : 0}
+                  />
+                </svg>
+              ) : null}
+
+              {/* Stream overlay: minimal text, animated guidance */}
               {running && !noScan ? (
-                <div className="pointer-events-none absolute left-3 top-3 rounded-lg bg-black/55 px-3 py-2 text-white">
-                  <div className="text-xs font-semibold">
-                    {autoScan && kycEnabled ? "Auto KYC Scanning" : "Manual"}
-                  </div>
-                  <div className="mt-0.5 text-[11px] opacity-90">
-                    {angleLabel(currentAngle)} • {angleProgress}/{need}
-                  </div>
-                  {kycEnabled ? (
-                    <div className="mt-0.5 text-[11px] opacity-90">
-                      {kycOk ? "KYC PASS ✅" : `KYC… ${kycReason || ""}`}
+                <div className="pointer-events-none absolute inset-0 flex flex-col justify-between p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="rounded-full bg-black/65 px-3 py-1 text-[11px] uppercase tracking-wide text-white shadow-lg">
+                      {autoScan && kycEnabled ? "Auto KYC" : "Manual capture"} -{" "}
+                      {angleLabel(currentAngle)}
                     </div>
-                  ) : null}
+                    <div
+                      className={`rounded-full px-3 py-1 text-[11px] font-semibold shadow ${
+                        faceReady
+                          ? "bg-emerald-500/90 text-white animate-pulse"
+                          : "bg-amber-400/90 text-black animate-[pulse_1.2s_ease-in-out_infinite]"
+                      }`}
+                    >
+                      {faceReady ? "Face locked" : "Align face"}
+                    </div>
+                  </div>
+
+                  <div className="grid w-full grid-cols-[1fr_auto] items-end gap-3 sm:gap-4">
+                    <div className="rounded-2xl bg-gradient-to-r from-black/80 via-black/60 to-black/30 px-4 py-3 shadow-xl backdrop-blur-sm">
+                      <div className="text-[11px] uppercase tracking-wide text-white/60">
+                        Live guidance
+                      </div>
+                      <div className="mt-1 flex items-center gap-2 text-lg font-semibold text-white">
+                        <span className="inline-flex h-2 w-2 animate-ping rounded-full bg-emerald-300" />
+                        {overlayInstruction} - {angleLabel(currentAngle)}
+                      </div>
+                      <div className="mt-1 inline-flex rounded-full bg-white/10 px-2 py-1 text-[11px] font-medium text-white/80">
+                        {activeInstruction}
+                      </div>
+                      <div className="mt-2 h-1.5 w-full rounded-full bg-white/20">
+                        <div
+                          className={`h-full rounded-full transition-all duration-300 ${
+                            faceReady ? "bg-emerald-400" : "bg-amber-300"
+                          }`}
+                          style={{
+                            width: `${Math.round(faceReadyPct * 100)}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex h-14 w-14 items-center justify-center rounded-full border border-white/30 bg-black/50 text-xs text-white shadow-lg backdrop-blur">
+                      <div className="text-center leading-tight">
+                        {angleProgress}/{need}
+                        <div className="text-[10px] text-white/70">frames</div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               ) : null}
             </div>
@@ -662,6 +939,38 @@ export default function EnrollmentKycSystem({
             <Progress value={progressPct} />
           </div>
 
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-lg border bg-muted/40 px-3 py-2">
+              <div className="text-xs text-muted-foreground">KYC status</div>
+              <div
+                className={`text-sm font-semibold ${
+                  kycEnabled
+                    ? kycOk
+                      ? "text-emerald-700"
+                      : "text-amber-700"
+                    : "text-muted-foreground"
+                }`}
+              >
+                {kycEnabled
+                  ? kycOk
+                    ? "Pass"
+                    : kycReason || "In progress"
+                  : "Disabled"}
+              </div>
+            </div>
+            <div className="rounded-lg border bg-muted/40 px-3 py-2">
+              <div className="text-xs text-muted-foreground">
+                Face readiness
+              </div>
+              <div className="text-sm font-semibold text-foreground">
+                {faceReady ? "Locked on" : "Align & hold"}
+                <span className="ml-1 text-xs text-muted-foreground">
+                  ({Math.round(faceReadyPct * 100)}% steady)
+                </span>
+              </div>
+            </div>
+          </div>
+
           {msg ? (
             <div className="rounded-lg border bg-background px-3 py-2 text-sm">
               <span className="text-muted-foreground">Info: </span>
@@ -682,7 +991,7 @@ export default function EnrollmentKycSystem({
         <CardHeader className="space-y-1">
           <CardTitle className="text-xl">Enrollment Controls</CardTitle>
           <CardDescription className="text-sm">
-            Start → (Auto KYC tick) → AI saves → Stop.
+            Guided auto-scan with paced KYC ticks and AI auto-save.
           </CardDescription>
         </CardHeader>
 
@@ -990,7 +1299,10 @@ export default function EnrollmentKycSystem({
           <div className="text-xs text-muted-foreground leading-relaxed">
             <b>Auto Scan:</b> uses <code>/api/enroll/kyc/tick</code> and AI will
             save automatically when complete. The overlay is a{" "}
-            <b>rectangle around the detected face</b> (no circles).
+            <b>face circle with progress arc</b>; align and hold your face
+            steady to fill the arc. <br />
+            <b>Manual Capture:</b> for each angle, align your face within the
+            rectangle and move closer until the circle appears.
           </div>
         </CardContent>
       </Card>

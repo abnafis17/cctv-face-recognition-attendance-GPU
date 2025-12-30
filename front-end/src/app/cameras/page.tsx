@@ -194,25 +194,24 @@ export default function CamerasPage() {
             </div>
 
             {/* Stream */}
-<div className="mt-3 overflow-hidden rounded-lg border bg-gray-100">
-  {c.isActive ? (
-    <div className="aspect-video w-full">
-      <Image
-        src={`${aiBase}/camera/recognition/stream/${c.id}`}
-        alt={`Camera ${c.name} Stream`}
-        className="w-full h-full object-cover"
-        width={1280}
-        height={720}
-        unoptimized
-      />
-    </div>
-  ) : (
-    <div className="aspect-video flex items-center justify-center text-sm text-gray-600">
-      Camera OFF
-    </div>
-  )}
-</div>
-
+            <div className="mt-3 overflow-hidden rounded-lg border bg-gray-100">
+              {c.isActive ? (
+                <div className="aspect-video w-full">
+                  <Image
+                    src={`${aiBase}/camera/recognition/stream/${c.id}`}
+                    alt={`Camera ${c.name} Stream`}
+                    className="w-full h-full object-cover"
+                    width={1280}
+                    height={720}
+                    unoptimized
+                  />
+                </div>
+              ) : (
+                <div className="aspect-video flex items-center justify-center text-sm text-gray-600">
+                  Camera OFF
+                </div>
+              )}
+            </div>
 
             {/* Attendance Control */}
             <div className="mt-3 flex gap-2">
