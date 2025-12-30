@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import axiosInstance from "@/config/axiosInstance";
+import axiosInstance, { API } from "@/config/axiosInstance";
 import type { AttendanceRow, Employee } from "@/types";
 
 import AppShell from "@/components/layout/AppShell";
@@ -23,8 +23,8 @@ export default function Home() {
 
     try {
       const [empsRes, attRes] = await Promise.all([
-        axiosInstance.get("/api/employees"),
-        axiosInstance.get("/api/attendance"),
+        axiosInstance.get(`${API.EMPLOYEE_LIST}`),
+        axiosInstance.get(`${API.ATTENDANCE_LIST}`),
       ]);
 
       if (!mountedRef.current) return;

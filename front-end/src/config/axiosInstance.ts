@@ -1,7 +1,14 @@
 // src/config/axiosInstance.ts
 import axios, { AxiosError, InternalAxiosRequestConfig } from "axios";
 
-import { HOST, AI_HOST, MEDIA_HOST, CLIENT_ADDRESS } from "@/constant";
+import {
+  HOST,
+  AI_HOST,
+  MEDIA_HOST,
+  CLIENT_ADDRESS,
+  BACKEND_API_BASE,
+  AI_API_BASE,
+} from "@/constant";
 import { API } from "@/constant/API_PATH";
 
 /**
@@ -213,7 +220,7 @@ function createAxiosClient(options: {
  * ✅ Default export = BACKEND axios (same usage as your current file)
  */
 const axiosInstance = createAxiosClient({
-  baseURL: HOST,
+  baseURL: BACKEND_API_BASE,
   attachAuth: true,
   enableRefresh: true,
 });
@@ -223,7 +230,7 @@ const axiosInstance = createAxiosClient({
  * - Usually AI endpoints do NOT need auth refresh. But auth attach is kept ON (toggle if needed).
  */
 export const aiAxios = createAxiosClient({
-  baseURL: AI_HOST,
+  baseURL: AI_API_BASE,
   attachAuth: true,
   enableRefresh: false,
 });
