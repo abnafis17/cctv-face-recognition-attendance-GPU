@@ -10,6 +10,7 @@ import attendanceControl from "./attendanceControl";
 import enrollControl from "./enrollControl";
 import enrollSession from "./enrollSession";
 import cameraControl from "./cameras.control";
+import enroll2AutoRoutes from "./enroll2Auto.routes";
 
 const router = Router();
 
@@ -30,5 +31,7 @@ router.use("/cameras", cameraControl);
 router.use("/attendance-control", attendanceControl);
 router.use("/enroll", enrollControl);
 router.use("/enroll-session", enrollSession);
+
+router.use("/enroll2-auto", enroll2AutoRoutes);
 
 export default router;

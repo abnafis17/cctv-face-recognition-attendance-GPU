@@ -1,43 +1,51 @@
 "use client";
-import EnrollmentKycSystem from "@/features/enroll/EnrollmentKycSystem";
-import { fetchJSON } from "@/lib/api";
-import { Camera } from "@/types";
-import React, { useEffect, useState } from "react";
+
+import React, { useCallback, useEffect, useState } from "react";
+import axiosInstance from "@/config/axiosInstance";
+import AutoEnrollment from "@/features/enroll/AutoEnrollment";
+
+type Camera = {
+  id: string;
+  name?: string;
+  isActive?: boolean;
+};
 
 export default function Page() {
   const [cams, setCams] = useState<Camera[]>([]);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
 
-  async function load() {
+  const loadCameras = useCallback(async () => {
     try {
       setLoading(true);
       setErr("");
-      const list = await fetchJSON<Camera[]>("/cameras");
-      setCams(list);
+      const res = await axiosInstance.get<Camera[]>("/cameras");
+      setCams(res.data || []);
     } catch (e: any) {
-      setErr(e?.message ?? "Failed to load cameras");
+      setErr(
+        e?.response?.data?.message || e?.message || "Failed to load cameras"
+      );
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
-    load();
-  }, []);
+    loadCameras();
+  }, [loadCameras]);
 
   return (
     <div className="p-4">
       <div className="mb-3 flex items-center justify-between">
         <div>
-          <div className="text-lg font-semibold">Employee Enrollment</div>
+          <div className="text-lg font-semibold">Employee Auto Enrollment</div>
           <div className="text-xs text-gray-500">
-            Select camera + employee, then capture angles and save templates.
+            Auto-capture: front / right / left / up / down / blink → auto-save.
           </div>
         </div>
         <button
           className="rounded-md border bg-white px-3 py-1 text-sm"
-          onClick={load}
+          onClick={loadCameras}
           disabled={loading}
         >
           {loading ? "Refreshing..." : "Refresh Cameras"}
@@ -50,7 +58,7 @@ export default function Page() {
         </div>
       ) : null}
 
-      <EnrollmentKycSystem cameras={cams} />
+      <AutoEnrollment cameras={cams} loadCameras={loadCameras} />
     </div>
   );
 }

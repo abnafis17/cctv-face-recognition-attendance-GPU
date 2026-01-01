@@ -15,29 +15,38 @@ from ..utils import now_iso, l2_normalize, quality_score
 
 from ..fas.gate import FASGate, GateConfig
 
-LABEL_FONT = cv2.FONT_HERSHEY_TRIPLEX  # clearer serif-like font (closest to Times New Roman)
-HUD_FONT = cv2.FONT_HERSHEY_DUPLEX    # slightly lighter for HUD text
-ACCENT_KNOWN = (80, 200, 80)          # green for known
-ACCENT_UNKNOWN = (40, 40, 220)        # red for unknown
-CARD_KNOWN = (26, 60, 32)             # dark green card
-CARD_UNKNOWN = (50, 30, 30)           # dark red card
+LABEL_FONT = (
+    cv2.FONT_HERSHEY_TRIPLEX
+)  # clearer serif-like font (closest to Times New Roman)
+HUD_FONT = cv2.FONT_HERSHEY_DUPLEX  # slightly lighter for HUD text
+ACCENT_KNOWN = (80, 200, 80)  # green for known
+ACCENT_UNKNOWN = (40, 40, 220)  # red for unknown
+CARD_KNOWN = (26, 60, 32)  # dark green card
+CARD_UNKNOWN = (50, 30, 30)  # dark red card
+
 
 @dataclass
 class CameraScanState:
-    tracker: SimpleTracker = field(default_factory=lambda: SimpleTracker(
-        iou_threshold=0.35,
-        max_age_frames=10,
-        smooth_alpha=0.55,           # smoother but still responsive for 60 fps
-        center_dist_threshold=140.0, # allow lateral motion to stay on the same track
-        suppress_new_iou=0.65,       # don't spawn new tracks near an existing one
-        merge_iou=0.5,               # merge overlapping tracks
-        merge_center=90.0,           # merge close-center tracks
-    ))
-    last_mark: Dict[str, float] = field(default_factory=dict)  # employee_id(str) -> last_mark_ts
+    tracker: SimpleTracker = field(
+        default_factory=lambda: SimpleTracker(
+            iou_threshold=0.35,
+            max_age_frames=10,
+            smooth_alpha=0.55,  # smoother but still responsive for 60 fps
+            center_dist_threshold=140.0,  # allow lateral motion to stay on the same track
+            suppress_new_iou=0.65,  # don't spawn new tracks near an existing one
+            merge_iou=0.5,  # merge overlapping tracks
+            merge_center=90.0,  # merge close-center tracks
+        )
+    )
+    last_mark: Dict[str, float] = field(
+        default_factory=dict
+    )  # employee_id(str) -> last_mark_ts
     frame_idx: int = 0
 
 
-def _put_text_white(img: np.ndarray, text: str, x: int, y: int, scale: float = 0.8) -> None:
+def _put_text_white(
+    img: np.ndarray, text: str, x: int, y: int, scale: float = 0.8
+) -> None:
     font = HUD_FONT
     thickness = 2
     cv2.putText(img, text, (x, y), font, scale, (0, 0, 0), thickness + 3, cv2.LINE_AA)
@@ -105,9 +114,11 @@ def _draw_label_card(
     cv2.putText(img, text, (x, y), font, scale, (255, 255, 255), thickness, cv2.LINE_AA)
 
 
-def _nearest_kps(track_bbox: Tuple[int, int, int, int],
-                 det_kps_map: Dict[Tuple[int, int, int, int], Optional[np.ndarray]],
-                 max_center_dist: float = 50.0) -> Optional[np.ndarray]:
+def _nearest_kps(
+    track_bbox: Tuple[int, int, int, int],
+    det_kps_map: Dict[Tuple[int, int, int, int], Optional[np.ndarray]],
+    max_center_dist: float = 50.0,
+) -> Optional[np.ndarray]:
     """
     Tracker bbox is often slightly different from detector bbox.
     This finds the nearest detector bbox center and returns its kps.
@@ -134,7 +145,9 @@ def _nearest_kps(track_bbox: Tuple[int, int, int, int],
     return best_kps
 
 
-def _bbox_iou(a: Tuple[float, float, float, float], b: Tuple[float, float, float, float]) -> float:
+def _bbox_iou(
+    a: Tuple[float, float, float, float], b: Tuple[float, float, float, float]
+) -> float:
     ax1, ay1, ax2, ay2 = a
     bx1, by1, bx2, by2 = b
     ix1, iy1 = max(ax1, bx1), max(ay1, by1)
@@ -152,7 +165,10 @@ def _nms_detections(
     det_list: List[Tuple[np.ndarray, str, int, float]],
     det_kps_by_bbox: Dict[Tuple[int, int, int, int], Optional[np.ndarray]],
     iou_threshold: float = 0.45,
-) -> Tuple[List[Tuple[np.ndarray, str, int, float]], Dict[Tuple[int, int, int, int], Optional[np.ndarray]]]:
+) -> Tuple[
+    List[Tuple[np.ndarray, str, int, float]],
+    Dict[Tuple[int, int, int, int], Optional[np.ndarray]],
+]:
     """
     Suppress duplicate detections (same face producing multiple boxes in one frame).
     Keeps highest-similarity (then largest) box when IoU is high.
@@ -174,7 +190,10 @@ def _nms_detections(
     for _, _, det in scored:
         bbox, name, emp_id, sim = det
         bb_tuple = tuple(float(v) for v in bbox)
-        if any(_bbox_iou(bb_tuple, tuple(float(v) for v in k[0])) >= iou_threshold for k in kept):
+        if any(
+            _bbox_iou(bb_tuple, tuple(float(v) for v in k[0])) >= iou_threshold
+            for k in kept
+        ):
             continue
         kept.append(det)
         bbox_key = tuple(int(v) for v in bbox)
@@ -187,7 +206,10 @@ def _nms_detections(
 def _dedup_known_faces(
     det_list: List[Tuple[np.ndarray, str, int, float]],
     det_kps_by_bbox: Dict[Tuple[int, int, int, int], Optional[np.ndarray]],
-) -> Tuple[List[Tuple[np.ndarray, str, int, float]], Dict[Tuple[int, int, int, int], Optional[np.ndarray]]]:
+) -> Tuple[
+    List[Tuple[np.ndarray, str, int, float]],
+    Dict[Tuple[int, int, int, int], Optional[np.ndarray]],
+]:
     """
     Keep only one detection per known employee (highest similarity then largest area).
     Unknown faces (-1) are left as-is so multiple unknown people still show.
@@ -234,14 +256,16 @@ class AttendanceRuntime:
         self,
         use_gpu: bool = False,
         model_name: str = "buffalo_l",
-        min_face_size: int = 60,
+        min_face_size: int = 30,
         similarity_threshold: float = 0.35,
         gallery_refresh_s: float = 5.0,
         cooldown_s: int = 10,
         stable_hits_required: int = 3,
     ):
         self.client = BackendClient()
-        self.rec = FaceRecognizer(model_name=model_name, use_gpu=use_gpu, min_face_size=min_face_size)
+        self.rec = FaceRecognizer(
+            model_name=model_name, use_gpu=use_gpu, min_face_size=min_face_size
+        )
 
         self.similarity_threshold = float(similarity_threshold)
         self.strict_similarity = float(os.getenv("STRICT_SIM_THRESHOLD", "0.5"))
@@ -253,7 +277,9 @@ class AttendanceRuntime:
         self._gallery_last_load = 0.0
         self._gallery_matrix: np.ndarray = np.zeros((0, 512), dtype=np.float32)
 
-        self._gallery_meta: List[Tuple[int, str, str]] = []  # (emp_int, emp_id_str, name)
+        self._gallery_meta: List[Tuple[int, str, str]] = (
+            []
+        )  # (emp_int, emp_id_str, name)
 
         self._cam_state: Dict[str, CameraScanState] = {}
         self._enabled_for_attendance: Dict[str, bool] = {}
@@ -335,13 +361,20 @@ class AttendanceRuntime:
             emb = np.asarray(emb_list, dtype=np.float32)
             emb = l2_normalize(emb)
 
-            name = str(t.get("employeeName") or t.get("employee_name") or t.get("name") or emp_id_str)
+            name = str(
+                t.get("employeeName")
+                or t.get("employee_name")
+                or t.get("name")
+                or emp_id_str
+            )
             emp_int = self._emp_str_to_int(emp_id_str)
 
             embs.append(emb)
             meta.append((emp_int, emp_id_str, name))
 
-        self._gallery_matrix = np.stack(embs, axis=0) if embs else np.zeros((0, 512), dtype=np.float32)
+        self._gallery_matrix = (
+            np.stack(embs, axis=0) if embs else np.zeros((0, 512), dtype=np.float32)
+        )
         self._gallery_meta = meta
         self._gallery_last_load = now
 
@@ -361,16 +394,33 @@ class AttendanceRuntime:
         enable_attendance = self.is_attendance_enabled(cid)
         annotated = frame_bgr.copy()
 
-        _put_text_white(annotated, f"cam={cid} frame={state.frame_idx}", 12, 36, scale=1.05)
+        _put_text_white(
+            annotated, f"cam={cid} frame={state.frame_idx}", 12, 36, scale=1.05
+        )
         ts_now = time.strftime("%Y-%m-%d %H:%M:%S")
 
         dets = self.rec.detect_and_embed(frame_bgr)
+
+        # remove junk detections
+
+        # min_det_quality = float(os.getenv("MIN_DET_QUALITY", "8.0"))
+        # filtered = []
+        # for d in dets:
+        #     q = quality_score(tuple(int(v) for v in d.bbox), frame_bgr)
+        #     if q < min_det_quality:
+        #         continue
+        #     filtered.append(d)
+        # dets = filtered
 
         det_list = []
         det_kps_by_bbox: Dict[Tuple[int, int, int, int], Optional[np.ndarray]] = {}
 
         for d in dets:
-            idx, sim = match_gallery(d.emb, self._gallery_matrix) if self._gallery_matrix.size else (-1, -1.0)
+            idx, sim = (
+                match_gallery(d.emb, self._gallery_matrix)
+                if self._gallery_matrix.size
+                else (-1, -1.0)
+            )
 
             bbox_key = tuple(int(v) for v in d.bbox)
             det_kps_by_bbox[bbox_key] = d.kps
@@ -385,18 +435,22 @@ class AttendanceRuntime:
         det_list, det_kps_by_bbox = _dedup_known_faces(det_list, det_kps_by_bbox)
 
         # Remove duplicate boxes for the same face within this frame (keeps highest-sim/area)
-        det_list, det_kps_by_bbox = _nms_detections(det_list, det_kps_by_bbox, iou_threshold=0.45)
+        det_list, det_kps_by_bbox = _nms_detections(
+            det_list, det_kps_by_bbox, iou_threshold=0.45
+        )
 
         tracks = state.tracker.update(
             frame_idx=state.frame_idx,  # consistent frame counter (target ~60 fps upstream)
-            dets=[(bbox, name, emp_int, sim) for (bbox, name, emp_int, sim) in det_list],
+            dets=[
+                (bbox, name, emp_int, sim) for (bbox, name, emp_int, sim) in det_list
+            ],
         )
 
         for tr in tracks:
             x1, y1, x2, y2 = [int(v) for v in tr.bbox]
             h, w = annotated.shape[:2]
 
-            known = (tr.employee_id != -1)
+            known = tr.employee_id != -1
             color = ACCENT_KNOWN if known else ACCENT_UNKNOWN
 
             cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 3)
@@ -448,10 +502,14 @@ class AttendanceRuntime:
 
             print(
                 "[FAS DEBUG]",
-                "emp=", emp_id_str,
-                "ok=", fas_ok,
-                "dbg=", fas_dbg,
-                "kps_none=", face_kps is None
+                "emp=",
+                emp_id_str,
+                "ok=",
+                fas_ok,
+                "dbg=",
+                fas_dbg,
+                "kps_none=",
+                face_kps is None,
             )
 
             if not fas_ok:

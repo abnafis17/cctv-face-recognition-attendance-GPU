@@ -14,6 +14,9 @@ from .runtimes.attendance_runtime import AttendanceRuntime
 from .runtimes.recognition_worker import RecognitionWorker
 from .utils import draw_enroll_hud
 
+from .enroll2_auto.service import EnrollmentAutoService2
+from .enroll2_auto.hud import draw_enroll2_auto_hud
+
 
 # --------------------------------------------------
 # App
@@ -39,6 +42,9 @@ attendance_rt = AttendanceRuntime(
 
 rec_worker = RecognitionWorker(camera_rt=camera_rt, attendance_rt=attendance_rt)
 
+enroller2_auto = EnrollmentAutoService2(camera_rt=camera_rt)
+
+
 # --------------------------------------------------
 # Stream client reference counting (production)
 # Stops recognition worker when no clients are watching
@@ -47,13 +53,11 @@ _stream_lock = threading.Lock()
 _rec_stream_clients: Dict[str, int] = {}  # camera_id -> count
 
 
-
 def _env_float(name: str, default: float) -> float:
     try:
         return float(str(os.getenv(name, str(default))).strip())
     except Exception:
         return default
-
 
 
 def _inc_rec_client(camera_id: str) -> int:
@@ -100,7 +104,11 @@ def stop_camera(camera_id: str):
 
     # If enrollment session is tied to this camera, stop it safely
     s = enroller.status()
-    if s and getattr(s, "status", None) == "running" and getattr(s, "camera_id", None) == camera_id:
+    if (
+        s
+        and getattr(s, "status", None) == "running"
+        and getattr(s, "camera_id", None) == camera_id
+    ):
         try:
             enroller.stop()
         except Exception:
@@ -163,7 +171,11 @@ def mjpeg_generator_raw(camera_id: str):
                     cached_s = None
                 last_s_check = now
 
-            if cached_s and getattr(cached_s, "status", None) == "running" and getattr(cached_s, "camera_id", None) == camera_id:
+            if (
+                cached_s
+                and getattr(cached_s, "status", None) == "running"
+                and getattr(cached_s, "camera_id", None) == camera_id
+            ):
                 try:
                     frame = draw_enroll_hud(frame, cached_s, enroller.cfg.angles)
                 except Exception:
@@ -177,9 +189,7 @@ def mjpeg_generator_raw(camera_id: str):
             yield (
                 b"--frame\r\n"
                 b"Content-Type: image/jpeg\r\n"
-                b"Content-Length: " + str(len(b)).encode() + b"\r\n\r\n" +
-                b +
-                b"\r\n"
+                b"Content-Length: " + str(len(b)).encode() + b"\r\n\r\n" + b + b"\r\n"
             )
             time.sleep(0.01)
 
@@ -235,9 +245,11 @@ def mjpeg_generator_recognition(camera_id: str, ai_fps: float):
             yield (
                 b"--frame\r\n"
                 b"Content-Type: image/jpeg\r\n"
-                b"Content-Length: " + str(len(jpg_bytes)).encode() + b"\r\n\r\n" +
-                jpg_bytes +
-                b"\r\n"
+                b"Content-Length: "
+                + str(len(jpg_bytes)).encode()
+                + b"\r\n\r\n"
+                + jpg_bytes
+                + b"\r\n"
             )
             time.sleep(0.01)
 
@@ -257,6 +269,80 @@ def camera_recognition_stream(camera_id: str, ai_fps: float = None):
         ai_fps = _env_float("AI_FPS", 10.0)
     return StreamingResponse(
         mjpeg_generator_recognition(camera_id, ai_fps=ai_fps),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            "Connection": "keep-alive",
+        },
+    )
+
+
+# --------------------------------------------------
+# ENROLL2 AUTO stream (overlay only; inference done in service loop)
+# --------------------------------------------------
+def mjpeg_generator_enroll2_auto(camera_id: str):
+    # wait for frames
+    for _ in range(60):
+        if camera_rt.get_frame(camera_id) is not None:
+            break
+        time.sleep(0.05)
+
+    try:
+        while True:
+            frame = camera_rt.get_frame(camera_id)
+            if frame is None:
+                time.sleep(0.03)
+                continue
+
+            # draw overlay if enroll2_auto session is running for this camera
+            st = enroller2_auto.overlay_state()
+            if st.get("running") and st.get("camera_id") == camera_id:
+                h, w = frame.shape[:2]
+                # build ROI same as config
+                cfg = enroller2_auto.cfg
+                roi = (
+                    int(cfg.roi_x0 * w),
+                    int(cfg.roi_y0 * h),
+                    int(cfg.roi_x1 * w),
+                    int(cfg.roi_y1 * h),
+                )
+
+                bbox = st.get("bbox")
+                primary = None if not bbox else tuple(int(v) for v in bbox)
+
+                hud = {
+                    "mode": "enroll2-auto",
+                    "step": str(st.get("step", "")),
+                    "instr": str(st.get("instruction", "")),
+                    "q": f"{float(st.get('quality') or 0.0):.1f}",
+                    "pose": str(st.get("pose") or "-"),
+                    "msg": str(st.get("message") or ""),
+                    "roi_faces": str(st.get("roi_faces") or 0),
+                }
+                frame = draw_enroll2_auto_hud(frame, roi, primary, hud)
+
+            ok, jpg = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
+            if not ok:
+                continue
+            b = jpg.tobytes()
+
+            yield (
+                b"--frame\r\n"
+                b"Content-Type: image/jpeg\r\n"
+                b"Content-Length: " + str(len(b)).encode() + b"\r\n\r\n" + b + b"\r\n"
+            )
+            time.sleep(0.01)
+
+    except GeneratorExit:
+        return
+
+
+@app.get("/camera/enroll2/auto/stream/{camera_id}")
+def camera_enroll2_auto_stream(camera_id: str):
+    return StreamingResponse(
+        mjpeg_generator_enroll2_auto(camera_id),
         media_type="multipart/x-mixed-replace; boundary=frame",
         headers={
             "Cache-Control": "no-cache, no-store, must-revalidate",
@@ -327,7 +413,10 @@ def enroll_session_status():
 def enroll_session_set_angle(payload: dict = Body(...)):
     angle = str(payload.get("angle") or "").strip().lower()
     if angle not in _ALLOWED_ANGLES:
-        return {"ok": False, "error": f"Invalid angle. Allowed: {sorted(_ALLOWED_ANGLES)}"}
+        return {
+            "ok": False,
+            "error": f"Invalid angle. Allowed: {sorted(_ALLOWED_ANGLES)}",
+        }
 
     try:
         s = enroller.set_angle(angle)
@@ -342,7 +431,10 @@ def enroll_session_capture(payload: dict = Body(None)):
         if isinstance(payload, dict) and payload.get("angle"):
             angle = str(payload.get("angle") or "").strip().lower()
             if angle not in _ALLOWED_ANGLES:
-                return {"ok": False, "error": f"Invalid angle. Allowed: {sorted(_ALLOWED_ANGLES)}"}
+                return {
+                    "ok": False,
+                    "error": f"Invalid angle. Allowed: {sorted(_ALLOWED_ANGLES)}",
+                }
             enroller.set_angle(angle)
 
         result = enroller.capture()
@@ -381,3 +473,31 @@ def enroll_session_clear_angle(payload: dict = Body(...)):
         return {"ok": True, "result": result, "session": (s.__dict__ if s else None)}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+# --------------------------------------------------
+# Enrollment v2 AUTO (no manual capture/save)
+# --------------------------------------------------
+@app.post("/enroll2/auto/session/start")
+def enroll2_auto_session_start(payload: dict = Body(...)):
+    employee_id = str(payload.get("employeeId") or "").strip()
+    name = str(payload.get("name") or "").strip()
+    camera_id = str(payload.get("cameraId") or "").strip()
+    if not employee_id or not name or not camera_id:
+        return {"ok": False, "error": "employeeId, name, cameraId are required"}
+
+    s = enroller2_auto.start(employee_id=employee_id, name=name, camera_id=camera_id)
+    return {"ok": True, "session": s.__dict__}
+
+
+@app.get("/enroll2/auto/session/status")
+def enroll2_auto_session_status():
+    s = enroller2_auto.status()
+    return {"ok": True, "session": (s.__dict__ if s else None)}
+
+
+@app.post("/enroll2/auto/session/stop")
+def enroll2_auto_session_stop():
+    stopped = enroller2_auto.stop()
+    s = enroller2_auto.status()
+    return {"ok": True, "stopped": stopped, "session": (s.__dict__ if s else None)}

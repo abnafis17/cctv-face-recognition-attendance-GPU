@@ -22,7 +22,9 @@ class BackendClient:
     """
 
     def __init__(self, base_url: Optional[str] = None, timeout_s: float = 10.0):
-        resolved = (base_url or os.getenv("BACKEND_BASE_URL") or "http://127.0.0.1:3001").rstrip("/")
+        resolved = (
+            base_url or os.getenv("BACKEND_BASE_URL") or "http://127.0.0.1:3001"
+        ).rstrip("/")
         api_prefix = (os.getenv("BACKEND_API_PREFIX") or "/api/v1").strip()
 
         self.http = HttpClient(
@@ -36,7 +38,9 @@ class BackendClient:
         return self.http.get("/health")
 
     # ---- Employees
-    def upsert_employee(self, name: str, employee_id: Optional[str] = None) -> Dict[str, Any]:
+    def upsert_employee(
+        self, name: str, employee_id: Optional[str] = None
+    ) -> Dict[str, Any]:
         payload: Dict[str, Any] = {"name": name}
         if employee_id:
             payload["id"] = employee_id
@@ -64,6 +68,41 @@ class BackendClient:
                 "embedding": embedding,
                 "modelName": model_name,
             },
+        )
+
+    # ---- Attendance
+    def create_attendance(
+        self,
+        employee_id: str,
+        timestamp: str,
+        camera_id: Optional[str] = None,
+        confidence: Optional[float] = None,
+        snapshot_path: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        return self.http.post(
+            "/attendance",
+            {
+                "employeeId": employee_id,
+                "timestamp": timestamp,
+                "cameraId": camera_id,
+                "confidence": confidence,
+                "snapshotPath": snapshot_path,
+            },
+        )
+
+    # ✅ Enrollment v2 Auto uses SAME endpoint/table as v1
+    def upsert_template_enroll2_auto(
+        self,
+        employee_id: str,
+        angle: str,
+        embedding: List[float],
+        model_name: str = "insightface",
+    ) -> Dict[str, Any]:
+        return self.upsert_template(
+            employee_id=employee_id,
+            angle=angle,
+            embedding=embedding,
+            model_name=model_name,
         )
 
     # ---- Attendance
