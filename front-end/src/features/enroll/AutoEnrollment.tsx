@@ -25,8 +25,11 @@ type Camera = {
   isActive?: boolean;
 };
 
-type Step = "front" | "right" | "left" | "up" | "down" | "blink";
-const STEPS: Step[] = ["front", "right", "left", "up", "down", "blink"];
+type Step = "front" | "left" | "right" | "up" | "down";
+const STEPS: Step[] = ["front", "left", "right", "up", "down"];
+
+const SCAN_1: Step[] = ["front", "left", "right"];
+const SCAN_2: Step[] = ["up", "down"];
 
 type Session = {
   session_id: string;
@@ -42,6 +45,8 @@ type Session = {
   last_message?: string | null;
   overlay_roi_faces?: number;
   overlay_multi_in_roi?: boolean;
+  voice_seq?: number;
+  voice_text?: string | null;
 };
 
 function friendlyAxiosError(err: any) {
@@ -54,94 +59,146 @@ function friendlyAxiosError(err: any) {
 }
 
 function useTTS(enabled: boolean) {
-  const lastSpokenRef = useRef<string>("");
+  const lastKeyRef = useRef<string>("");
   return useCallback(
-    (text: string) => {
+    (key: string, text: string) => {
       if (!enabled) return;
       if (!text) return;
-      if (lastSpokenRef.current === text) return;
+      if (lastKeyRef.current === key) return;
 
       window.speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(text);
-      u.rate = 1.0;
+      // Calm / “system voice” vibe
+      u.rate = 0.98;
       u.pitch = 1.0;
       u.volume = 1.0;
       window.speechSynthesis.speak(u);
 
-      lastSpokenRef.current = text;
+      lastKeyRef.current = key;
     },
     [enabled]
   );
 }
 
-function StepChip({
-  step,
-  active,
-  done,
+function stepLabel(step: Step) {
+  switch (step) {
+    case "front":
+      return "Look straight";
+    case "left":
+      return "Turn left";
+    case "right":
+      return "Turn right";
+    case "up":
+      return "Look up";
+    case "down":
+      return "Look down";
+    default:
+      return step;
+  }
+}
+
+function stepArrow(step: Step) {
+  switch (step) {
+    case "front":
+      return "•";
+    case "left":
+      return "←";
+    case "right":
+      return "→";
+    case "up":
+      return "↑";
+    case "down":
+      return "↓";
+    default:
+      return "•";
+  }
+}
+
+function RingProgress({
+  value,
+  label,
+  sublabel,
 }: {
-  step: Step;
-  active: boolean;
-  done: boolean;
+  value: number; // 0..100
+  label: string;
+  sublabel?: string;
 }) {
-  const label =
-    step === "front"
-      ? "Front"
-      : step === "right"
-      ? "Right"
-      : step === "left"
-      ? "Left"
-      : step === "up"
-      ? "Up"
-      : step === "down"
-      ? "Down"
-      : "Blink";
+  const r = 46;
+  const c = 2 * Math.PI * r;
+  const pct = Math.max(0, Math.min(100, value));
+  const dash = (pct / 100) * c;
 
   return (
-    <div
-      className={`rounded-full px-3 py-1 text-sm border flex items-center gap-2 ${
-        active
-          ? "bg-black text-white border-black"
-          : "bg-white text-gray-700 border-gray-200"
-      }`}
-    >
-      <span className={`${done ? "text-green-600" : "text-gray-400"}`}>
-        {done ? "✓" : "•"}
-      </span>
-      <span>{label}</span>
+    <div className="flex items-center gap-4">
+      <svg width="120" height="120" viewBox="0 0 120 120" className="shrink-0">
+        <circle
+          cx="60"
+          cy="60"
+          r={r}
+          stroke="rgba(0,0,0,0.08)"
+          strokeWidth="10"
+          fill="none"
+        />
+        <circle
+          cx="60"
+          cy="60"
+          r={r}
+          stroke="rgba(0,0,0,0.85)"
+          strokeWidth="10"
+          fill="none"
+          strokeLinecap="round"
+          strokeDasharray={`${dash} ${c - dash}`}
+          transform="rotate(-90 60 60)"
+        />
+        <circle cx="60" cy="60" r="34" fill="rgba(0,0,0,0.03)" />
+        <text
+          x="60"
+          y="64"
+          textAnchor="middle"
+          fontSize="18"
+          fontWeight="700"
+          fill="rgba(0,0,0,0.85)"
+        >
+          {pct}%
+        </text>
+      </svg>
+
+      <div className="min-w-0">
+        <div className="text-xl font-semibold text-gray-900">{label}</div>
+        {sublabel ? (
+          <div className="text-sm text-gray-600 mt-1">{sublabel}</div>
+        ) : null}
+      </div>
     </div>
   );
 }
 
-function ArrowCue({ step }: { step: Step }) {
-  const base =
-    "relative h-24 w-full rounded-xl border bg-white overflow-hidden";
-  const pulse = "animate-pulse";
-
-  if (step === "blink") {
-    return (
-      <div className={base}>
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className={`text-3xl font-semibold ${pulse}`}>👁️ Blink</div>
+function BigInstruction({
+  title,
+  hint,
+  step,
+}: {
+  title: string;
+  hint: string;
+  step: Step;
+}) {
+  return (
+    <div className="rounded-2xl border bg-white p-5 space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm text-gray-500">Next</div>
+          <div className="text-2xl font-semibold truncate">{title}</div>
+        </div>
+        <div className="h-12 w-12 rounded-full border flex items-center justify-center text-2xl font-semibold bg-gray-50">
+          {stepArrow(step)}
         </div>
       </div>
-    );
-  }
 
-  const text =
-    step === "front"
-      ? "Look Straight"
-      : step === "right"
-      ? "Turn Right →"
-      : step === "left"
-      ? "← Turn Left"
-      : step === "up"
-      ? "Look Up ↑"
-      : "Look Down ↓";
-
-  return (
-    <div className={base}>
-      <div className="absolute inset-0 flex items-center justify-center">
-        <div className={`text-3xl font-semibold ${pulse}`}>{text}</div>
+      <div className="rounded-xl border bg-gray-50 p-4 text-gray-700">
+        <div className="text-sm font-medium">{hint}</div>
+        <div className="text-xs text-gray-500 mt-1">
+          Keep your face inside the box. Move slowly.
+        </div>
       </div>
     </div>
   );
@@ -157,13 +214,18 @@ export default function AutoEnrollment({
   const [cameraId, setCameraId] = useState<string>(cameras?.[0]?.id || "");
   const [employeeId, setEmployeeId] = useState("");
   const [name, setName] = useState("");
+
   const [tts, setTts] = useState(true);
+  const speak = useTTS(tts);
+  const lastVoiceSeqRef = useRef<number>(-1);
 
   const [session, setSession] = useState<Session | null>(null);
   const [running, setRunning] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  const speak = useTTS(tts);
+  // “Face ID style” flow
+  type Screen = "setup" | "enrolling";
+  const [screen, setScreen] = useState<Screen>("setup");
 
   // when cameras load async, set initial camera once (safe + lint clean)
   useEffect(() => {
@@ -194,6 +256,8 @@ export default function AutoEnrollment({
       const s = res.data?.session || null;
       setSession(s);
       setRunning(!!s && s.status === "running");
+      if (s && s.status !== "stopped") setScreen("enrolling");
+      if (!s) setScreen("setup");
     } catch {
       // keep silent in polling
     }
@@ -224,8 +288,8 @@ export default function AutoEnrollment({
 
   // ---- START: start camera -> start enroll session ----
   const start = useCallback(async () => {
-    if (!employeeId || !name || !cameraId) {
-      toast.error("employeeId, name, cameraId required");
+    if (!employeeId.trim() || !name.trim() || !cameraId) {
+      toast.error("Please select camera, employee ID, and name.");
       return;
     }
 
@@ -236,12 +300,13 @@ export default function AutoEnrollment({
       // Start auto-enroll session via backend proxy (NO CORS)
       const res = await axiosInstance.post<{ ok: boolean; session: Session }>(
         "/enroll2-auto/session/start",
-        { employeeId, name, cameraId }
+        { employeeId: employeeId.trim(), name: name.trim(), cameraId }
       );
 
       setSession(res.data.session);
       setRunning(true);
-      toast.success("Auto enrollment started");
+      setScreen("enrolling");
+      toast.success("Enrollment started");
     } catch (e: any) {
       toast.error(friendlyAxiosError(e));
     } finally {
@@ -256,7 +321,7 @@ export default function AutoEnrollment({
       // 1) stop session
       await axiosInstance.post("/enroll2-auto/session/stop");
 
-      // 2) stop camera (you said you want stop to fully stop everything)
+      // 2) stop camera (stop fully stops everything)
       if (cameraId) {
         await stopCamera(cameraId);
       }
@@ -265,6 +330,10 @@ export default function AutoEnrollment({
       await refreshStatus();
       setSession(null);
       setRunning(false);
+      setScreen("setup");
+
+      // stop any speaking
+      window.speechSynthesis.cancel();
 
       toast.success("Stopped");
     } catch (e: any) {
@@ -291,31 +360,89 @@ export default function AutoEnrollment({
     return () => {
       alive = false;
       if (t) clearTimeout(t);
+      window.speechSynthesis.cancel();
     };
   }, [refreshStatus, running]);
 
-  // ---- Speak instruction on step change ----
+  // ---- Speak when backend emits voice event ----
+  useEffect(() => {
+    const seq = session?.voice_seq;
+    const text = (session?.voice_text || "").trim();
+    if (typeof seq !== "number") return;
+    if (!text) return;
+    if (lastVoiceSeqRef.current === seq) return;
+
+    lastVoiceSeqRef.current = seq;
+    speak(`voice:${seq}`, text);
+  }, [session?.voice_seq, session?.voice_text, speak]);
+
+  // ---- Fallback: speak instruction on step change (only if no voice events yet) ----
   const lastStepRef = useRef<string>("");
   useEffect(() => {
+    if (!session) return;
     const step = session?.current_step;
     if (!step) return;
     if (lastStepRef.current !== step) {
-      speak(session?.instruction || step);
+      const instr = (session?.instruction || stepLabel(step)).trim();
+      // only if backend hasn't emitted voice yet
+      if (lastVoiceSeqRef.current < 0) {
+        speak(`step:${step}`, instr);
+      }
       lastStepRef.current = step;
     }
-  }, [session?.current_step, session?.instruction, speak]);
+  }, [session?.current_step, session?.instruction, session, speak]);
+
+  const collected = session?.collected || {};
 
   const doneCount = useMemo(() => {
-    if (!session?.collected) return 0;
-    return STEPS.filter((s) => (session.collected?.[s] || 0) > 0).length;
-  }, [session?.collected]);
+    return STEPS.filter((s) => (collected?.[s] || 0) > 0).length;
+  }, [collected]);
 
   const pct = useMemo(
     () => Math.round((doneCount / STEPS.length) * 100),
     [doneCount]
   );
 
+  const scan1Done = useMemo(
+    () => SCAN_1.filter((s) => (collected?.[s] || 0) > 0).length,
+    [collected]
+  );
+  const scan2Done = useMemo(
+    () => SCAN_2.filter((s) => (collected?.[s] || 0) > 0).length,
+    [collected]
+  );
+
+  const phase =
+    scan1Done < SCAN_1.length
+      ? "First scan"
+      : scan2Done < SCAN_2.length
+      ? "Second scan"
+      : "Finishing";
+
+  const currentStep = (session?.current_step as Step) || "front";
+
+  const title =
+    session?.status === "saved"
+      ? "Setup complete"
+      : session?.status === "saving"
+      ? "Saving…"
+      : session?.status === "error"
+      ? "Something went wrong"
+      : stepLabel(currentStep);
+
+  const hint =
+    session?.status === "saved"
+      ? "Enrollment saved. This person can now be recognized."
+      : session?.status === "saving"
+      ? "Please keep still for a moment."
+      : session?.status === "error"
+      ? session?.last_message || "Please try again."
+      : session?.last_message || "Position your face in the frame.";
+
   const multiWarn = !!session?.overlay_multi_in_roi;
+
+  const startDisabled =
+    busy || running || !cameraId || !employeeId.trim() || !name.trim();
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
@@ -325,13 +452,31 @@ export default function AutoEnrollment({
 
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center justify-between">
-            <span>Enrollment v2 Auto</span>
-            <Badge className={`${running ? "bg-green-600" : "bg-gray-400"}`}>
+          <CardTitle className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-sm text-gray-500">Face enrollment</div>
+              <div className="text-xl font-semibold truncate">
+                Quick Setup (Face ID style)
+              </div>
+            </div>
+
+            <Badge
+              className={`${
+                running
+                  ? "bg-green-600"
+                  : session?.status === "saved"
+                  ? "bg-green-600"
+                  : session?.status === "error"
+                  ? "bg-red-600"
+                  : "bg-gray-400"
+              }`}
+            >
               {running
                 ? "Running"
                 : session?.status === "saved"
                 ? "Saved"
+                : session?.status === "saving"
+                ? "Saving"
                 : session?.status === "error"
                 ? "Error"
                 : "Idle"}
@@ -339,205 +484,287 @@ export default function AutoEnrollment({
           </CardTitle>
         </CardHeader>
 
-        <CardContent className="space-y-4">
-          {/* Controls */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <Label>Camera</Label>
-              <select
-                className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm"
-                value={cameraId}
-                onChange={(e) => setCameraId(e.target.value)}
-                disabled={running || busy}
-              >
-                {(cameras || []).map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name ? `${c.name} (${c.id})` : c.id}
-                  </option>
-                ))}
-              </select>
-
-              <div className="text-xs text-gray-500 mt-1">
-                Status:{" "}
-                <b
-                  className={
-                    selectedCam?.isActive ? "text-green-700" : "text-red-700"
-                  }
-                >
-                  {selectedCam?.isActive ? "ON" : "OFF"}
-                </b>
-                {" — "}
-                {selectedCam?.isActive
-                  ? "Stream will show overlay box."
-                  : "Start camera from here."}
-              </div>
-            </div>
-
-            <div>
-              <Label>Employee ID</Label>
-              <Input
-                value={employeeId}
-                onChange={(e) => setEmployeeId(e.target.value)}
-                placeholder="EMP001"
-                disabled={running || busy}
-              />
-            </div>
-
-            <div>
-              <Label>Name</Label>
-              <Input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="John Doe"
-                disabled={running || busy}
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <Button onClick={start} disabled={running || busy || !cameraId}>
-              {busy && !running ? "Starting..." : "Start Auto Enrollment"}
-            </Button>
-
-            <Button
-              variant="secondary"
-              onClick={stop}
-              disabled={!running || busy}
-            >
-              {busy && running ? "Stopping..." : "Stop"}
-            </Button>
-
-            <div className="ml-auto flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={tts}
-                onChange={(e) => setTts(e.target.checked)}
-              />
-              <span className="text-sm text-gray-600">Voice instructions</span>
-            </div>
-          </div>
-
-          <Separator />
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Stream */}
-            <div className="space-y-3">
-              <div className="rounded-2xl border overflow-hidden bg-gray-100">
-                {selectedCam?.isActive && streamUrl ? (
-                  <div className="aspect-video w-full">
-                    <Image
-                      src={streamUrl}
-                      alt="Auto Enrollment Stream"
-                      className="h-full w-full object-cover"
-                      width={1280}
-                      height={720}
-                      unoptimized
-                    />
-                  </div>
-                ) : (
-                  <div className="aspect-video flex items-center justify-center text-sm text-gray-600">
-                    Camera OFF
-                  </div>
-                )}
-              </div>
-
-              {multiWarn && (
-                <div className="rounded-xl border border-red-300 bg-red-50 p-3 text-red-700">
-                  Multiple faces detected in ROI. Please show a single face
-                  only.
-                </div>
-              )}
-
-              <div className="grid grid-cols-3 gap-3">
-                <div className="rounded-xl border bg-white p-3">
-                  <div className="text-xs text-gray-500">Quality</div>
-                  <div className="text-lg font-semibold">
-                    {session?.last_quality?.toFixed?.(1) ?? "0.0"}
-                  </div>
-                </div>
-                <div className="rounded-xl border bg-white p-3">
-                  <div className="text-xs text-gray-500">Pose</div>
-                  <div className="text-lg font-semibold">
-                    {session?.last_pose || "-"}
-                  </div>
-                </div>
-                <div className="rounded-xl border bg-white p-3">
-                  <div className="text-xs text-gray-500">ROI Faces</div>
-                  <div className="text-lg font-semibold">
-                    {session?.overlay_roi_faces ?? 0}
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-xl border bg-white p-3 text-sm text-gray-700">
-                {session?.last_message ||
-                  "Place your face inside the box to begin."}
-              </div>
-            </div>
-
-            {/* Guidance / progress */}
+        <CardContent className="space-y-5">
+          {/* Setup (simple) */}
+          {screen === "setup" && (
             <div className="space-y-4">
-              <div className="rounded-2xl border bg-white p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-sm text-gray-500">
-                      Current instruction
-                    </div>
-                    <div className="text-xl font-semibold">
-                      {session?.instruction || "—"}
-                    </div>
-                  </div>
-                  <Badge className="bg-black">
-                    {session?.current_step || "—"}
-                  </Badge>
+              <div className="rounded-2xl border bg-white p-5">
+                <div className="text-lg font-semibold">1) Choose camera</div>
+                <div className="text-sm text-gray-600 mt-1">
+                  Make sure the camera sees a single face clearly.
                 </div>
 
-                <ArrowCue step={(session?.current_step as Step) || "front"} />
+                <div className="mt-4">
+                  <Label>Camera</Label>
+                  <select
+                    className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm"
+                    value={cameraId}
+                    onChange={(e) => setCameraId(e.target.value)}
+                    disabled={busy}
+                  >
+                    {(cameras || []).map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name ? `${c.name} (${c.id})` : c.id}
+                      </option>
+                    ))}
+                  </select>
 
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-sm text-gray-600">
-                    <span>Progress</span>
-                    <span>{pct}%</span>
+                  <div className="text-xs text-gray-500 mt-2">
+                    Camera status:{" "}
+                    <b
+                      className={
+                        selectedCam?.isActive
+                          ? "text-green-700"
+                          : "text-red-700"
+                      }
+                    >
+                      {selectedCam?.isActive ? "ON" : "OFF"}
+                    </b>
+                    {" — "}
+                    {selectedCam?.isActive
+                      ? "You should see the video preview."
+                      : "It will start automatically when you press Start."}
                   </div>
-                  <Progress value={pct} />
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  {STEPS.map((s) => (
-                    <StepChip
-                      key={s}
-                      step={s}
-                      active={session?.current_step === s}
-                      done={!!session?.collected?.[s]}
-                    />
-                  ))}
                 </div>
               </div>
 
-              {session?.status === "saved" && (
-                <div className="rounded-2xl border border-green-300 bg-green-50 p-4">
-                  <div className="text-green-700 font-semibold">
-                    Enrollment complete ✅
-                  </div>
-                  <div className="text-green-700 text-sm mt-1">
-                    Templates saved automatically. Recognition/attendance will
-                    work normally.
-                  </div>
+              <div className="rounded-2xl border bg-white p-5">
+                <div className="text-lg font-semibold">
+                  2) Enter employee details
                 </div>
-              )}
 
-              {session?.status === "error" && (
-                <div className="rounded-2xl border border-red-300 bg-red-50 p-4">
-                  <div className="text-red-700 font-semibold">
-                    Enrollment failed ❌
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                  <div>
+                    <Label>Employee ID</Label>
+                    <Input
+                      value={employeeId}
+                      onChange={(e) => setEmployeeId(e.target.value)}
+                      placeholder="EMP001"
+                      disabled={busy}
+                    />
                   </div>
-                  <div className="text-red-700 text-sm mt-1">
-                    {session?.last_message || "Please try again."}
+
+                  <div>
+                    <Label>Name</Label>
+                    <Input
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="John Doe"
+                      disabled={busy}
+                    />
                   </div>
                 </div>
-              )}
+
+                <div className="flex items-center gap-3 mt-5">
+                  <Button onClick={start} disabled={startDisabled}>
+                    {busy ? "Starting…" : "Start Setup"}
+                  </Button>
+
+                  <div className="ml-auto flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={tts}
+                      onChange={(e) => setTts(e.target.checked)}
+                    />
+                    <span className="text-sm text-gray-600">
+                      Voice instructions
+                    </span>
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* Enrolling */}
+          {screen === "enrolling" && (
+            <div className="space-y-5">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Stream */}
+                <div className="space-y-3">
+                  <div className="rounded-2xl border overflow-hidden bg-gray-100">
+                    {selectedCam?.isActive && streamUrl ? (
+                      <div className="aspect-video w-full">
+                        <Image
+                          src={streamUrl}
+                          alt="Enrollment Stream"
+                          className="h-full w-full object-cover"
+                          width={1280}
+                          height={720}
+                          unoptimized
+                        />
+                      </div>
+                    ) : (
+                      <div className="aspect-video flex items-center justify-center text-sm text-gray-600">
+                        Starting camera…
+                      </div>
+                    )}
+                  </div>
+
+                  {multiWarn && (
+                    <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-amber-900">
+                      More than one face is inside the box. Please keep only one
+                      face in view.
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="rounded-xl border bg-white p-3">
+                      <div className="text-xs text-gray-500">Quality</div>
+                      <div className="text-lg font-semibold">
+                        {session?.last_quality?.toFixed?.(1) ?? "0.0"}
+                      </div>
+                    </div>
+                    <div className="rounded-xl border bg-white p-3">
+                      <div className="text-xs text-gray-500">Pose</div>
+                      <div className="text-lg font-semibold">
+                        {session?.last_pose || "—"}
+                      </div>
+                    </div>
+                    <div className="rounded-xl border bg-white p-3">
+                      <div className="text-xs text-gray-500">Faces in box</div>
+                      <div className="text-lg font-semibold">
+                        {session?.overlay_roi_faces ?? 0}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <Button variant="secondary" onClick={stop} disabled={busy}>
+                      {busy ? "Stopping…" : "Stop"}
+                    </Button>
+
+                    <div className="ml-auto flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={tts}
+                        onChange={(e) => setTts(e.target.checked)}
+                      />
+                      <span className="text-sm text-gray-600">
+                        Voice instructions
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Guidance */}
+                <div className="space-y-4">
+                  <RingProgress
+                    value={pct}
+                    label={phase}
+                    sublabel="Keep your face in the frame and follow the prompts."
+                  />
+
+                  <BigInstruction
+                    title={title}
+                    hint={hint}
+                    step={currentStep}
+                  />
+
+                  <div className="rounded-2xl border bg-white p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm text-gray-500">Progress</div>
+                      <div className="text-sm font-semibold text-gray-900">
+                        {doneCount}/{STEPS.length}
+                      </div>
+                    </div>
+
+                    <Progress value={pct} />
+
+                    <Separator />
+
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm font-semibold">Scan 1</div>
+                        <div className="text-sm text-gray-600">
+                          {scan1Done}/{SCAN_1.length}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {SCAN_1.map((s) => (
+                          <Badge
+                            key={s}
+                            className={`${
+                              (collected?.[s] || 0) > 0
+                                ? "bg-black"
+                                : "bg-gray-200 text-gray-700"
+                            }`}
+                          >
+                            {(collected?.[s] || 0) > 0 ? "✓ " : ""}
+                            {stepLabel(s)}
+                          </Badge>
+                        ))}
+                      </div>
+
+                      <div className="flex items-center justify-between mt-1">
+                        <div className="text-sm font-semibold">Scan 2</div>
+                        <div className="text-sm text-gray-600">
+                          {scan2Done}/{SCAN_2.length}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {SCAN_2.map((s) => (
+                          <Badge
+                            key={s}
+                            className={`${
+                              (collected?.[s] || 0) > 0
+                                ? "bg-black"
+                                : "bg-gray-200 text-gray-700"
+                            }`}
+                          >
+                            {(collected?.[s] || 0) > 0 ? "✓ " : ""}
+                            {stepLabel(s)}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {session?.status === "saved" && (
+                    <div className="rounded-2xl border border-green-300 bg-green-50 p-4">
+                      <div className="text-green-800 font-semibold">
+                        Enrollment complete ✅
+                      </div>
+                      <div className="text-green-800 text-sm mt-1">
+                        Templates saved automatically. Recognition/attendance
+                        will work normally.
+                      </div>
+
+                      <div className="flex items-center gap-3 mt-4">
+                        <Button
+                          onClick={stop}
+                          variant="secondary"
+                          disabled={busy}
+                        >
+                          Done
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {session?.status === "error" && (
+                    <div className="rounded-2xl border border-red-300 bg-red-50 p-4">
+                      <div className="text-red-800 font-semibold">
+                        Enrollment failed ❌
+                      </div>
+                      <div className="text-red-800 text-sm mt-1">
+                        {session?.last_message || "Please try again."}
+                      </div>
+
+                      <div className="flex items-center gap-3 mt-4">
+                        <Button
+                          onClick={stop}
+                          variant="secondary"
+                          disabled={busy}
+                        >
+                          Close
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

@@ -1,4 +1,4 @@
-# app/enroll2_auto/service.py
+# ai/app/enroll2_auto/service.py
 from __future__ import annotations
 
 import time
@@ -10,15 +10,15 @@ import numpy as np
 import cv2
 
 from ..runtimes.camera_runtime import CameraRuntime
-from ..vision.recognizer import FaceRecognizer
+from .recognizer_auto import FaceRecognizerAuto as FaceRecognizer
 from ..clients.backend_client import BackendClient
 
-from ..utils import (
+# ✅ new utils used by auto enrollment
+from .utils_auto import (
     now_iso,
     quality_score,
     estimate_head_pose_deg,
     pose_label,
-    pose_matches,
 )
 
 from .config import Enroll2AutoConfig
@@ -33,29 +33,22 @@ def _roi_rect(h: int, w: int, cfg: Enroll2AutoConfig) -> Tuple[int, int, int, in
     )
 
 
-def _bbox_area(b: np.ndarray) -> float:
-    return float(max(0.0, b[2] - b[0]) * max(0.0, b[3] - b[1]))
-
-
-def _bbox_center(b: np.ndarray) -> Tuple[float, float]:
-    return float((b[0] + b[2]) * 0.5), float((b[1] + b[3]) * 0.5)
-
-
-def _inside_roi(cx: float, cy: float, roi: Tuple[int, int, int, int]) -> bool:
-    x0, y0, x1, y1 = roi
-    return x0 <= cx <= x1 and y0 <= cy <= y1
-
-
 def _instruction_text(step: str) -> str:
+    """Short, Face-ID-style on-screen prompts."""
     return {
-        "front": "Look Straight",
-        "right": "Turn Right",
-        "left": "Turn Left",
-        "up": "Look Up",
-        "down": "Look Down",
-        "blink": "Blink Your Eyes",
+        "front": "Look straight ahead",
+        "left": "Turn your head left",
+        "right": "Turn your head right",
+        "up": "Look up",
+        "down": "Look down",
+        "blink": "Blink",
+        "liveness": "Blink",
     }.get(step, step)
 
+
+WELCOME_VOICE = (
+    "Let\'s set up face enrollment. Position your face in the frame.",
+)
 
 @dataclass
 class Enroll2AutoSession:
@@ -76,27 +69,55 @@ class Enroll2AutoSession:
     last_message: str = ""
     last_update_at: str = field(default_factory=now_iso)
 
-    # overlay state
     overlay_primary_bbox: Optional[Tuple[int, int, int, int]] = None
     overlay_roi_faces: int = 0
     overlay_multi_in_roi: bool = False
 
-    # bbox stability (existing)
+    # ---------- voice events (frontend plays when voice_seq changes) ----------
+    voice_seq: int = 0
+    voice_text: str = ""
+    _voice_last_at: float = 0.0
+    _voice_last_text: str = ""
+
+    # bbox stability
     _stable_since: float = 0.0
     _last_center: Optional[Tuple[float, float]] = None
 
-    # NEW: pose stability + gating (fixes "too fast" scanning)
+    # pose hold stability
     _pose_ok_since: float = 0.0
-    _last_pose_label: Optional[str] = None
+
+    # require leaving previous pose label before allowing next step
     _must_leave_prev_pose: bool = False
+    _last_pose_label: Optional[str] = None
+
+    # cooldown
     _cooldown_until: float = 0.0
 
-    # blink proxy
-    _blink_missing_since: Optional[float] = None
-    _blink_done: bool = False
+
+    # capture throttling (FaceID-style)
+    _last_capture_at: float = 0.0
+    _last_capture_pose: Optional[str] = None
+
+    # baseline for relative pose
+    _baseline_yaw: Optional[float] = None
+    _baseline_pitch: Optional[float] = None
+
+    # track instruction voice per step to avoid repeats
+    _last_step_voice: Optional[str] = None
 
 
 class EnrollmentAutoService2:
+    """
+    Auto-enrollment service:
+    - ROI + size gating
+    - single face only
+    - quality gate
+    - comfortable front (near-front)
+    - left/right/up/down based on DELTA from captured front baseline
+    - hold pose + bbox stable + cooldown
+    - captures multiple frames per pose and averages embeddings
+    """
+
     def __init__(
         self,
         camera_rt: CameraRuntime,
@@ -106,7 +127,6 @@ class EnrollmentAutoService2:
         self.camera_rt = camera_rt
         self.cfg = Enroll2AutoConfig()
 
-        # Env-based GPU/CPU remains handled inside FaceRecognizer
         self.rec = FaceRecognizer(
             model_name=model_name, use_gpu=True, min_face_size=min_face_size
         )
@@ -115,18 +135,60 @@ class EnrollmentAutoService2:
         self._lock = threading.Lock()
         self._session: Optional[Enroll2AutoSession] = None
         self._embs: Dict[str, List[np.ndarray]] = {}
-
         self._run = False
-        self._t: Optional[threading.Thread] = None
+        self._thread: Optional[threading.Thread] = None
+
+
+    def _voice_for_step(self, step: str) -> str:
+        # Calm, iPhone-style voice prompts.
+        return {
+            "front": "Keep your face in the frame. Hold still.",
+            "left": "Slowly turn your head to the left.",
+            "right": "Now slowly turn your head to the right.",
+            "up": "Now look up.",
+            "down": "Now look down.",
+        }.get(step, "Please follow the on-screen instruction.")
+
+    def _say_instruction_for_step(self, step: str, *, force: bool = False) -> None:
+        """
+        Speak the instruction for a step only once per step unless forced.
+        Prevents the loop from repeating the same prompt.
+        """
+        with self._lock:
+            s = self._session
+            if not s:
+                return
+            if not force and s._last_step_voice == step:
+                return
+            s._last_step_voice = step
+
+        self._say(self._voice_for_step(step), force=force)
+
+    def _say(self, text: str, *, force: bool = False) -> None:
+        if not text:
+            return
+        with self._lock:
+            s = self._session
+            if not s:
+                return
+            now = time.time()
+            min_gap = float(getattr(self.cfg, "voice_min_interval_sec", 1.4))
+
+            if not force:
+                # avoid repeating the same sentence too often
+                if text == s._voice_last_text and (now - s._voice_last_at) < min_gap:
+                    return
+                # avoid rapid chatter
+                if (now - s._voice_last_at) < min_gap:
+                    return
+
+            s.voice_text = text
+            s.voice_seq += 1
+            s._voice_last_text = text
+            s._voice_last_at = now
+            s.last_update_at = now_iso()
 
     def start(self, employee_id: str, name: str, camera_id: str) -> Enroll2AutoSession:
-        employee_id = str(employee_id).strip()
-        name = str(name).strip()
-        camera_id = str(camera_id).strip()
-        if not employee_id or not name or not camera_id:
-            raise ValueError("employeeId, name, cameraId required")
-
-        # same employee upsert as v1 enrollment
         self.client.upsert_employee(name, employee_id)
 
         with self._lock:
@@ -145,9 +207,14 @@ class EnrollmentAutoService2:
             self._embs = {s: [] for s in self.cfg.steps}
             self._run = True
 
-        self._t = threading.Thread(target=self._loop, daemon=True)
-        self._t.start()
-        return self.status()  # type: ignore
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._thread.start()
+
+        # initial instruction voice
+        self._say(WELCOME_VOICE, force=True)
+        self._say_instruction_for_step(self._session.current_step, force=True)
+
+        return self._session
 
     def stop(self) -> bool:
         with self._lock:
@@ -163,7 +230,6 @@ class EnrollmentAutoService2:
         with self._lock:
             return self._session
 
-    # used by stream overlay without re-inference per client
     def overlay_state(self) -> Dict[str, Any]:
         with self._lock:
             s = self._session
@@ -171,228 +237,259 @@ class EnrollmentAutoService2:
                 return {"running": False}
             return {
                 "running": s.status == "running",
+                "status": s.status,
+                "employee_id": s.employee_id,
+                "name": s.name,
                 "camera_id": s.camera_id,
                 "step": s.current_step,
                 "instruction": s.instruction,
+                "collected": dict(s.collected),
+                "last_quality": s.last_quality,
+                "last_pose": s.last_pose,
+                "last_message": s.last_message,
+                "last_update_at": s.last_update_at,
+                "overlay_primary_bbox": s.overlay_primary_bbox,
+                "overlay_roi_faces": s.overlay_roi_faces,
+                "overlay_multi_in_roi": s.overlay_multi_in_roi,
+                # aliases for legacy overlay consumers
+                "bbox": s.overlay_primary_bbox,
                 "quality": s.last_quality,
                 "pose": s.last_pose,
                 "message": s.last_message,
-                "bbox": s.overlay_primary_bbox,
                 "roi_faces": s.overlay_roi_faces,
-                "multi": s.overlay_multi_in_roi,
-                "status": s.status,
+                "voice_seq": int(getattr(s, "voice_seq", 0)),
+                "voice_text": str(getattr(s, "voice_text", "")),
+                "target_per_pose": int(getattr(self.cfg, "target_per_pose", 5)),
+                "baseline_yaw": s._baseline_yaw,
+                "baseline_pitch": s._baseline_pitch,
             }
 
-    # ---------------- loop ----------------
     def _loop(self):
-        period = 1.0 / max(1.0, float(self.cfg.ai_fps))
+        """Face-ID style auto-capture.
 
-        # Defaults if config doesn't contain these (so service.py alone works)
-        pose_stable_ms = float(getattr(self.cfg, "pose_stable_ms", 900.0))  # ~1s
-        cooldown_sec = float(
-            getattr(self.cfg, "cooldown_sec", 0.7)
-        )  # prevent instant step jumps
+        - As soon as ONE face is inside the ROI, we start capturing embeddings.
+        - We DO NOT require long 'hold still' timers that can feel like a hang.
+        - We bucket captures into: front/left/right/up/down based on yaw/pitch deltas
+          relative to the baseline captured at the first valid 'front'.
+        """
+
+        period = 1.0 / max(1.0, float(getattr(self.cfg, "ai_fps", 6.0)))
+
+        target_per_pose = int(getattr(self.cfg, "target_per_pose", 5))
+        max_per_pose = int(getattr(self.cfg, "max_per_pose", 10))
+
+        min_q = float(getattr(self.cfg, "min_quality_score", 45.0))
+
+        # how often to accept a capture (seconds)
+        capture_interval = float(getattr(self.cfg, "capture_interval_sec", 0.25))
+
+        # thresholds (degrees)
+        fa_y = float(getattr(self.cfg, "front_accept_yaw_deg", 18.0))
+        fa_p = float(getattr(self.cfg, "front_accept_pitch_deg", 15.0))
+
+        # Once "front" is collected, shrink the "front" bucket so side turns don't get stuck as "front".
+        fb_y = float(getattr(self.cfg, "front_bucket_yaw_deg", 12.0))
+        fb_p = float(getattr(self.cfg, "front_bucket_pitch_deg", 12.0))
+
+        dy_left = float(getattr(self.cfg, "delta_yaw_left_deg", 22.0))
+        dy_right = float(getattr(self.cfg, "delta_yaw_right_deg", 22.0))
+        dp_up = float(getattr(self.cfg, "delta_pitch_up_deg", 14.0))
+        dp_down = float(getattr(self.cfg, "delta_pitch_down_deg", 14.0))
+
+        tol = float(getattr(self.cfg, "delta_tolerance_deg", 12.0))
+        allow_unknown_front = bool(getattr(self.cfg, "allow_unknown_pose_front", True))
+        flip_yaw = bool(getattr(self.cfg, "flip_yaw", False))
+
+        def next_required_step(collected: Dict[str, int]) -> Optional[str]:
+            for s in self.cfg.steps:
+                if int(collected.get(s, 0) or 0) < target_per_pose:
+                    return s
+            return None
+
+        def set_current_step(step: str):
+            # Keep UI + voice aligned to the next missing capture.
+            speak = False
+            with self._lock:
+                if not self._session:
+                    return
+                if self._session.current_step != step:
+                    self._session.current_step = step
+                    self._session.instruction = _instruction_text(step)
+                    self._session.last_update_at = now_iso()
+                    speak = True
+            if speak:
+                # Trigger voice after releasing the lock to avoid self-deadlock.
+                self._say_instruction_for_step(step)
 
         while True:
             with self._lock:
-                if (
-                    not self._run
-                    or not self._session
-                    or self._session.status != "running"
-                ):
+                if not self._run or not self._session or self._session.status != "running":
                     break
-                s = self._session
+                cam_id = self._session.camera_id
 
-            frame = self.camera_rt.get_frame(s.camera_id)
-            if frame is None:
-                time.sleep(0.05)
+            frame_bgr = self.camera_rt.get_frame(camera_id=cam_id)
+            if frame_bgr is None:
+                self._msg("Waiting for camera…")
+                time.sleep(period)
                 continue
 
-            primary, roi_dets, roi = self._select_primary(frame)
+            primary, roi_faces, multi_in_roi = self._select_primary(frame_bgr)
 
-            # update overlay state
             with self._lock:
                 if self._session:
+                    self._session.overlay_roi_faces = roi_faces
+                    self._session.overlay_multi_in_roi = multi_in_roi
                     self._session.overlay_primary_bbox = (
-                        None
-                        if primary is None
-                        else tuple(int(v) for v in primary.bbox.tolist())
+                        tuple(map(int, primary.bbox)) if primary is not None else None
                     )
-                    self._session.overlay_roi_faces = len(roi_dets)
-                    self._session.overlay_multi_in_roi = len(roi_dets) >= 2
 
+            # Need exactly ONE face inside ROI
             if primary is None:
-                self._msg("No face inside ROI")
-                self._blink_proxy(has_face=False)
+                if multi_in_roi:
+                    self._msg("Only one face in the box")
+                    self._say("Please make sure only one face is inside the frame.")
+                else:
+                    self._msg("Position your face in the box")
+                    self._say("Position your face in the frame.")
                 time.sleep(period)
                 continue
 
-            if len(roi_dets) >= 2:
-                self._msg("Multiple faces in ROI. Single face only.")
+            # Quality gate (soft + friendly)
+            q = float(quality_score(primary.bbox, frame_bgr))
+            if q < min_q:
+                self._update(q=q, pose=None, msg="Hold still, improve lighting", pose_deg=None)
+                self._say("Hold still. Improve lighting if needed.")
                 time.sleep(period)
                 continue
 
-            # Safe step read (no extra status() calls)
-            with self._lock:
-                if not self._session:
-                    break
-                step = self._session.current_step
-
-            # blink step (proxy)
-            if step == "blink":
-                ok = self._blink_proxy(has_face=True)
-                if ok:
-                    with self._lock:
-                        if self._session:
-                            self._session.collected["blink"] = 1
-                            self._session.last_message = "Blink complete ✅"
-                            self._session.last_update_at = now_iso()
-                    self._auto_save()
-                    break
-
-                self._msg("Blink now (briefly close/occlude then return)")
-                time.sleep(period)
-                continue
-
-            # quality gate
-            q = float(quality_score(primary.bbox, frame))
-            if q < self.cfg.min_quality_score:
-                self._update(
-                    q=q, pose=None, msg=f"Low quality ({q:.1f})", pose_deg=None
-                )
-                time.sleep(period)
-                continue
-
-            # pose estimation + match
-            pose_name: Optional[str] = None
-            pose_ok: bool = True
-            pose_deg: Optional[Tuple[float, float, float]] = None
-
+            # Pose
+            pose_deg = None
             if primary.kps is not None:
-                pose_deg = estimate_head_pose_deg(primary.kps, frame.shape)
-                if pose_deg:
-                    yaw, pitch, roll = pose_deg
-                    if self.cfg.flip_yaw:
-                        yaw = -yaw
+                pose_deg = estimate_head_pose_deg(primary.kps, frame_bgr.shape)
 
-                    thresholds = {
-                        "yaw_left_deg": self.cfg.yaw_left_deg,
-                        "yaw_right_deg": self.cfg.yaw_right_deg,
-                        "pitch_up_deg": self.cfg.pitch_up_deg,
-                        "pitch_down_deg": self.cfg.pitch_down_deg,
-                        "tolerance_deg": self.cfg.tolerance_deg,
-                    }
-
-                    pose_name = pose_label(yaw, pitch, thresholds)
-                    pose_ok = pose_matches(step, yaw, pitch, thresholds)
-                    self._update(
-                        q=q, pose=pose_name, msg="", pose_deg=(yaw, pitch, roll)
-                    )
+            if pose_deg is None:
+                yaw = pitch = roll = 0.0
             else:
-                # If no kps, we cannot do pose gating reliably
-                pose_ok = False
-                pose_name = None
+                yaw, pitch, roll = map(float, pose_deg)
 
-            now = time.time()
+            if flip_yaw:
+                yaw = -yaw
 
-            # --- NEW: cooldown (prevents step jumping in consecutive frames) ---
+            # Baseline (first good front)
             with self._lock:
-                if self._session and now < float(self._session._cooldown_until or 0.0):
-                    self._session.last_quality = q
-                    self._session.last_pose = pose_name
-                    self._session.last_message = "Hold on…"
-                    self._session.last_update_at = now_iso()
-                    time.sleep(period)
-                    continue
+                if self._session and self._session._baseline_yaw is None:
+                    # Only set baseline when we have a stable-ish front (or when pose is missing but allowed)
+                    if pose_deg is not None and (abs(yaw) <= fa_y and abs(pitch) <= fa_p):
+                        self._session._baseline_yaw = float(yaw)
+                        self._session._baseline_pitch = float(pitch)
+                    elif pose_deg is None and allow_unknown_front:
+                        self._session._baseline_yaw = 0.0
+                        self._session._baseline_pitch = 0.0
 
-            # --- NEW: must leave previous pose label before next capture ---
-            with self._lock:
-                if self._session and self._session._must_leave_prev_pose:
-                    prev_label = self._session._last_pose_label
-                    # if still same label, block until user actually changes head direction
-                    if prev_label and pose_name == prev_label:
-                        self._session.last_quality = q
-                        self._session.last_pose = pose_name
-                        self._session.last_message = "Move to the next position…"
-                        self._session.last_update_at = now_iso()
-                        time.sleep(period)
-                        continue
-                    # left previous pose successfully
-                    self._session._must_leave_prev_pose = False
-                    self._session._pose_ok_since = 0.0
-
-            # pose must match current step
-            if not pose_ok:
-                with self._lock:
-                    if self._session:
-                        self._session._pose_ok_since = 0.0
-                self._update(
-                    q=q,
-                    pose=pose_name,
-                    msg=f"Need {step}, got {pose_name or 'unknown'}",
-                    pose_deg=pose_deg,
-                )
-                time.sleep(period)
-                continue
-
-            # --- NEW: pose stability timer (hold correct pose for realistic capture) ---
             with self._lock:
                 if not self._session:
                     break
-                if self._session._pose_ok_since <= 0.0:
-                    self._session._pose_ok_since = now
-                    self._session.last_message = "Hold this position…"
-                    self._session.last_update_at = now_iso()
-                    time.sleep(period)
-                    continue
+                base_y = float(self._session._baseline_yaw or 0.0)
+                base_p = float(self._session._baseline_pitch or 0.0)
+                collected = dict(self._session.collected or {})
 
-                pose_stable_for_ms = (now - self._session._pose_ok_since) * 1000.0
-                if pose_stable_for_ms < pose_stable_ms:
-                    self._session.last_message = (
-                        f"Hold steady… {int(pose_stable_for_ms)}ms"
-                    )
-                    self._session.last_update_at = now_iso()
-                    time.sleep(period)
-                    continue
+            dy = yaw - base_y
+            dp = pitch - base_p
 
-            # bbox stability (existing) – keep it to avoid blurry/moving captures
-            if not self._stable(primary.bbox):
-                self._msg("Hold steady…")
+            # UI pose label (for debug tiles)
+            ui_pose = "front"
+            if dy <= -(dy_left):
+                ui_pose = "left"
+            elif dy >= (dy_right):
+                ui_pose = "right"
+            elif dp <= -(dp_up):
+                ui_pose = "up"
+            elif dp >= (dp_down):
+                ui_pose = "down"
+
+            # Capture bucket (stricter than UI label)
+            bucket: Optional[str] = None
+            if pose_deg is None:
+                if allow_unknown_front:
+                    bucket = "front"
+            else:
+                need_front = int(collected.get("front", 0) or 0) < target_per_pose
+                front_y = fa_y if need_front else min(fa_y, fb_y)
+                front_p = fa_p if need_front else min(fa_p, fb_p)
+
+                if abs(dy) <= front_y and abs(dp) <= front_p:
+                    bucket = "front"
+                elif dy <= -max(0.0, dy_left - tol):
+                    bucket = "left"
+                elif dy >= max(0.0, dy_right - tol):
+                    bucket = "right"
+                elif dp <= -max(0.0, dp_up - tol):
+                    bucket = "up"
+                elif dp >= max(0.0, dp_down - tol):
+                    bucket = "down"
+
+            # Guide user to the next missing step (FaceID feel)
+            nxt = next_required_step(collected)
+            if nxt is not None:
+                set_current_step(nxt)
+
+            # Update status (no noisy ms counters)
+            self._update(q=q, pose=ui_pose, msg="", pose_deg=pose_deg)
+
+            # If we don't have a valid bucket yet, keep guiding (no hang)
+            if bucket is None or nxt is None:
+                self._msg("Move your head slowly")
+                if nxt is not None:
+                    self._say_instruction_for_step(nxt)
                 time.sleep(period)
                 continue
 
-            # ---------------- AUTO CAPTURE ----------------
+            # If this bucket is already complete, keep guiding to next
+            if int(collected.get(bucket, 0) or 0) >= target_per_pose:
+                self._msg("Good. Keep going…")
+                time.sleep(period)
+                continue
+
+            # Throttle capture rate (prevents duplicates + stabilizes)
+            now = time.time()
             with self._lock:
                 if not self._session or self._session.status != "running":
                     break
+                last_cap = float(getattr(self._session, "_last_capture_at", 0.0) or 0.0)
+                if (now - last_cap) < capture_interval:
+                    self._session.last_quality = q
+                    self._session.last_pose = ui_pose
+                    self._session.last_message = "Hold steady…"
+                    self._session.last_update_at = now_iso()
+                    time.sleep(period)
+                    continue
 
-                self._embs[step].append(primary.emb)
-                self._session.collected[step] = len(self._embs[step])
-                self._session.last_message = f"Captured {step} ✅"
+                # store embedding
+                if len(self._embs[bucket]) < max_per_pose:
+                    self._embs[bucket].append(primary.emb)
+
+                got = len(self._embs[bucket])
+                self._session.collected[bucket] = got
+                self._session.last_quality = q
+                self._session.last_pose = ui_pose
+                self._session.last_message = f"Captured ✓ ({got}/{target_per_pose})"
                 self._session.last_update_at = now_iso()
 
-                # advance step
-                i = self.cfg.steps.index(step)
-                nxt = self.cfg.steps[i + 1] if i < len(self.cfg.steps) - 1 else step
-                self._session.current_step = nxt
-                self._session.instruction = _instruction_text(nxt)
+                # record capture time
+                self._session._last_capture_at = now
+                self._session._last_capture_pose = bucket
 
-                # reset stability timers for next step
-                self._session._stable_since = 0.0
-                self._session._last_center = None
+            # Finished?
+            with self._lock:
+                if not self._session:
+                    break
+                done = all(int(self._session.collected.get(s, 0) or 0) >= target_per_pose for s in self.cfg.steps)
 
-                self._session._pose_ok_since = 0.0
-
-                # NEW: require leaving this pose before accepting the next
-                self._session._must_leave_prev_pose = True
-                self._session._last_pose_label = pose_name
-
-                # NEW: cooldown to prevent back-to-back step captures
-                self._session._cooldown_until = time.time() + cooldown_sec
+            if done:
+                self._auto_save()
+                break
 
             time.sleep(period)
-
-    # ---------------- face selection ----------------
     def _select_primary(self, frame_bgr):
         h, w = frame_bgr.shape[:2]
         roi = _roi_rect(h, w, self.cfg)
@@ -400,117 +497,70 @@ class EnrollmentAutoService2:
         max_w = self.cfg.max_face_w_frac * w
 
         dets = self.rec.detect_and_embed(frame_bgr)
-        roi_dets = []
+        if not dets:
+            return None, 0, False
+
+        x0, y0, x1, y1 = roi
+        in_roi = []
         for d in dets:
-            b = d.bbox.astype(float)
-            bw = float(b[2] - b[0])
+            bx0, by0, bx1, by1 = d.bbox.astype(int).tolist()
+            cx = (bx0 + bx1) * 0.5
+            cy = (by0 + by1) * 0.5
+            bw = (bx1 - bx0)
+
+            if not (x0 <= cx <= x1 and y0 <= cy <= y1):
+                continue
             if bw < min_w or bw > max_w:
                 continue
-            cx, cy = _bbox_center(b)
-            if not _inside_roi(cx, cy, roi):
-                continue
-            roi_dets.append(d)
+            in_roi.append(d)
 
-        if not roi_dets:
-            return None, [], roi
-
-        roi_dets.sort(key=lambda d: _bbox_area(d.bbox), reverse=True)
-        return roi_dets[0], roi_dets, roi
-
-    # ---------------- stability ----------------
+        if not in_roi:
+            return None, 0, False
+        if len(in_roi) > 1:
+            return None, len(in_roi), True
+        return in_roi[0], len(in_roi), False
     def _stable(self, bbox: np.ndarray) -> bool:
-        with self._lock:
-            s = self._session
-            if not s:
-                return False
-            cx, cy = _bbox_center(bbox)
-            now = time.time()
-            if s._last_center is None:
-                s._last_center = (cx, cy)
-                s._stable_since = now
-                return False
-            px, py = s._last_center
-            dist = float(((cx - px) ** 2 + (cy - py) ** 2) ** 0.5)
-            s._last_center = (cx, cy)
+        # Legacy method kept for compatibility; FaceID-style capture does not require it.
+        return True
 
-            if dist <= self.cfg.stable_px:
-                if s._stable_since <= 0:
-                    s._stable_since = now
-                return (now - s._stable_since) * 1000.0 >= float(self.cfg.stable_ms)
-
-            s._stable_since = now
-            return False
-
-    # ---------------- blink proxy ----------------
-    def _blink_proxy(self, has_face: bool) -> bool:
-        with self._lock:
-            s = self._session
-            if not s:
-                return False
-            now = time.time()
-            if s._blink_done:
-                return True
-
-            if has_face:
-                if s._blink_missing_since is not None:
-                    miss = now - s._blink_missing_since
-                    if 0.10 <= miss <= 1.2:
-                        s._blink_done = True
-                        s._blink_missing_since = None
-                        return True
-                    s._blink_missing_since = None
-                return False
-
-            if s._blink_missing_since is None:
-                s._blink_missing_since = now
-            return False
-
-    # ---------------- auto save ----------------
     def _auto_save(self):
         with self._lock:
-            if not self._session or self._session.status != "running":
-                return
-            self._session.status = "saving"
-            session = self._session
-            embs_copy = {k: list(v) for k, v in self._embs.items()}
-
-        saved, skipped = [], []
-        for step, vecs in embs_copy.items():
-            if step == "blink":
-                continue
-            if not vecs:
-                skipped.append(step)
-                continue
-
-            arr = np.stack(vecs, axis=0)
-            mean = arr.mean(axis=0).astype(np.float32)
-            mean = mean / (np.linalg.norm(mean) + 1e-12)
-
-            # SAME storage table/endpoint as v1, just a wrapper
-            self.client.upsert_template_enroll2_auto(
-                employee_id=session.employee_id,
-                angle=step,
-                embedding=mean.tolist(),
-                model_name="insightface",
-            )
-            saved.append(step)
-
-        with self._lock:
-            if self._session:
-                self._session.status = "saved"
-                self._session.last_message = f"Enrollment complete ✅ Saved: {saved}"
-                self._session.last_update_at = now_iso()
-                self._run = False
-
-    # ---------------- UI helpers ----------------
-    def _msg(self, msg: str):
-        with self._lock:
             s = self._session
             if not s:
                 return
-            q = float(s.last_quality)
-            pose = s.last_pose
-        self._update(q=q, pose=pose, msg=msg, pose_deg=None)
+            employee_id = s.employee_id
+
+            embeddings: Dict[str, np.ndarray] = {}
+            for step, vecs in self._embs.items():
+                if not vecs:
+                    continue
+                arr = np.stack(vecs, axis=0)
+                mean = arr.mean(axis=0)
+                n = float(np.linalg.norm(mean) + 1e-12)
+                mean = mean / n
+                embeddings[step] = mean.astype(np.float32)
+
+        try:
+            self.client.save_employee_embeddings(employee_id, embeddings)
+            with self._lock:
+                if self._session:
+                    self._session.status = "saved"
+                    self._session.last_message = "Enrollment saved ✅"
+                    self._session.last_update_at = now_iso()
+        except Exception as e:
+            with self._lock:
+                if self._session:
+                    self._session.status = "error"
+                    self._session.error = str(e)
+                    self._session.last_message = "Save failed"
+                    self._session.last_update_at = now_iso()
+    def _msg(self, msg: str):
+        # Update message only (do not reset quality/pose tiles in UI)
+        with self._lock:
+            if not self._session:
+                return
+            self._session.last_message = msg
+            self._session.last_update_at = now_iso()
 
     def _update(
         self,
