@@ -15,6 +15,11 @@ from ..utils import now_iso, l2_normalize, quality_score
 
 from ..fas.gate import FASGate, GateConfig
 
+from datetime import datetime
+from ..clients.erp_client import ERPClient, ERPClientConfig
+from ..services.erp_push_queue import ERPPushQueue, ERPPushJob
+
+
 LABEL_FONT = (
     cv2.FONT_HERSHEY_TRIPLEX
 )  # clearer serif-like font (closest to Times New Roman)
@@ -315,6 +320,28 @@ class AttendanceRuntime:
             input_size=(112, 112),
         )
 
+        # ---------------------------
+        # ERP push (optional)
+        # ---------------------------
+        self.erp_queue: Optional[ERPPushQueue] = None
+
+        erp_base = os.getenv("ERP_BASE_URL", "").strip()
+        if erp_base:
+            erp_cfg = ERPClientConfig(
+                base_url=erp_base,
+                prefix=os.getenv("ERP_PREFIX", "/api/v2"),
+                timeout_s=float(os.getenv("ERP_TIMEOUT_S", "10")),
+                api_version=os.getenv("ERP_API_VERSION", "2.0"),
+            )
+            erp_client = ERPClient(erp_cfg)
+
+            def _erp_err(e: Exception, job: ERPPushJob):
+                print(f"[ERP] push failed: {e} | job={job}")
+
+            self.erp_queue = ERPPushQueue(erp_client, on_error=_erp_err)
+        else:
+            print("[ERP] ERP_BASE_URL not set, ERP push disabled.")
+
     def set_attendance_enabled(self, camera_id: str, enabled: bool) -> None:
         self._enabled_for_attendance[str(camera_id)] = bool(enabled)
 
@@ -518,6 +545,7 @@ class AttendanceRuntime:
                 continue
 
             try:
+                # 1) Your existing backend attendance (keep as-is)
                 self.client.create_attendance(
                     employee_id=emp_id_str,
                     timestamp=now_iso(),
@@ -525,7 +553,31 @@ class AttendanceRuntime:
                     confidence=float(tr.similarity),
                     snapshot_path=None,
                 )
+
+                # 2) Mark cooldown only if backend success
                 state.last_mark[emp_id_str] = now
+
+                # 3) Push to ERP (non-blocking, in background)
+                if self.erp_queue is not None:
+                    attendance_date = datetime.now().strftime(
+                        "%d/%m/%Y"
+                    )  # "03/01/2026"
+                    in_time = datetime.now().strftime("%H:%M:%S")  # "09:00:00"
+
+                    job = ERPPushJob(
+                        attendance_date=attendance_date,
+                        emp_id=str(emp_id_str),  # IMPORTANT: must match ERP empId
+                        in_time=in_time,
+                    )
+
+                    ok = self.erp_queue.enqueue(job)
+                    print(
+                        f"[ERP] queued ok={ok} emp={job.emp_id} date={job.attendance_date} in={job.in_time}"
+                    )
+
+                    if not ok:
+                        print("[ERP] queue full, dropped attendance push")
+
             except Exception as e:
                 print(f"[ATTENDANCE] Failed to mark emp={emp_id_str} cam={cid}: {e}")
 
