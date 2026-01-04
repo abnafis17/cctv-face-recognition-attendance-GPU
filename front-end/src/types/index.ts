@@ -1,5 +1,6 @@
 export type Employee = {
   id: string;
+  empId?: string | null;
   name: string;
 };
 
@@ -14,6 +15,7 @@ export type AttendanceRow = {
 
 export type Camera = {
   id: string;
+  camId?: string | null;
   name: string;
   rtspUrl: string;
   isActive: boolean;

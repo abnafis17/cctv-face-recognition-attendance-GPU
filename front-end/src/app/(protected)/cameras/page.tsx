@@ -75,9 +75,9 @@ export default function CamerasPage() {
     try {
       setErr("");
       await axiosInstance.post("/cameras", {
-        id: newId,
-        name: newName,
-        rtspUrl: newUrl,
+        camId: newId.trim() ? newId.trim() : undefined,
+        name: newName.trim(),
+        rtspUrl: newUrl.trim(),
       });
 
       setNewId("");
@@ -168,7 +168,7 @@ export default function CamerasPage() {
         <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
           <input
             className="rounded-md border px-3 py-2 text-sm"
-            placeholder="Camera ID (ex: cam2)"
+            placeholder="Camera ID (optional, ex: cam2)"
             value={newId}
             onChange={(e) => setNewId(e.target.value)}
           />
@@ -189,7 +189,7 @@ export default function CamerasPage() {
         <button
           className="mt-4 rounded-md border px-4 py-2 text-sm"
           onClick={addCamera}
-          disabled={!newId || !newName || !newUrl}
+          disabled={!newName.trim() || !newUrl.trim()}
         >
           Add Camera
         </button>
@@ -203,7 +203,10 @@ export default function CamerasPage() {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="font-semibold">{c.name}</div>
-                <div className="text-xs text-gray-500">{c.id}</div>
+                <div className="text-xs text-gray-500">{c.camId ?? c.id}</div>
+                {c.camId ? (
+                  <div className="text-[10px] text-gray-400">ID: {c.id}</div>
+                ) : null}
                 <div className="mt-1 break-all text-xs text-gray-400">
                   {c.rtspUrl}
                 </div>
@@ -233,7 +236,7 @@ export default function CamerasPage() {
               {c.isActive ? (
                 <div className="aspect-video w-full">
                   <Image
-                    src={`${AI_HOST}/camera/recognition/stream/${c.id}`}
+                    src={`${AI_HOST}/camera/recognition/stream/${c.id}/${c.name}`}
                     alt={`Camera ${c.name} Stream`}
                     className="h-full w-full object-cover"
                     width={1280}

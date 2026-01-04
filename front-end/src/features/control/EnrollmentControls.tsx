@@ -462,7 +462,7 @@ export default function EnrollmentControls({ cameras }: { cameras: Camera[] }) {
                 <SelectContent>
                   {cameras.map((c) => (
                     <SelectItem key={c.id} value={c.id}>
-                      {c.name} ({c.id})
+                      {c.name} ({c.camId ?? c.id})
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -513,10 +513,10 @@ export default function EnrollmentControls({ cameras }: { cameras: Camera[] }) {
                     <SelectTrigger className="h-10">
                       <SelectValue placeholder="Select employee" />
                     </SelectTrigger>
-                    <SelectContent>
+                      <SelectContent>
                       {employees.map((e) => (
-                        <SelectItem key={e.id} value={e.id}>
-                          {e.name} ({e.id})
+                        <SelectItem key={e.id} value={e.empId ?? e.id}>
+                          {e.name} ({e.empId ?? e.id})
                         </SelectItem>
                       ))}
                     </SelectContent>

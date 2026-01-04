@@ -1,6 +1,7 @@
 import { Router } from "express";
 import axios from "axios";
 import { prisma } from "../prisma";
+import { findCameraByAnyId } from "../utils/camera";
 
 const r = Router();
 
@@ -14,7 +15,7 @@ r.post("/start/:id", async (req, res) => {
   try {
     const { id } = req.params;
 
-    const cam = await prisma.camera.findUnique({ where: { id } });
+    const cam = await findCameraByAnyId(String(id));
     if (!cam) {
       return res.status(404).json({ error: "Camera not found" });
     }
@@ -29,7 +30,7 @@ r.post("/start/:id", async (req, res) => {
 
     // Update DB
     await prisma.camera.update({
-      where: { id },
+      where: { id: cam.id },
       data: { isActive: true },
     });
 
@@ -48,17 +49,17 @@ r.post("/stop/:id", async (req, res) => {
   try {
     const { id } = req.params;
 
-    const cam = await prisma.camera.findUnique({ where: { id } });
+    const cam = await findCameraByAnyId(String(id));
     if (!cam) {
       return res.status(404).json({ error: "Camera not found" });
     }
-
+    console.log("Stopping camera:", AI_BASE);
     await axios.post(`${AI_BASE}/camera/stop`, null, {
       params: { camera_id: cam.id },
     });
 
     await prisma.camera.update({
-      where: { id },
+      where: { id: cam.id },
       data: { isActive: false },
     });
 

@@ -36,7 +36,8 @@ export default function EmployeesList({
                   {e.name}
                 </p>
                 <p className="mt-0.5 truncate text-xs text-gray-500">
-                  Employee ID: <span className="font-medium">{e.id}</span>
+                  Employee ID:{" "}
+                  <span className="font-medium">{e.empId ?? e.id}</span>
                 </p>
               </div>
 

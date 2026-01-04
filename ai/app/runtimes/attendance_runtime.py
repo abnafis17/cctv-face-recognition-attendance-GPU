@@ -411,9 +411,12 @@ class AttendanceRuntime:
             self._cam_state[cid] = CameraScanState()
         return self._cam_state[cid]
 
-    def process_frame(self, frame_bgr: np.ndarray, camera_id: str) -> np.ndarray:
+    def process_frame(
+        self, frame_bgr: np.ndarray, camera_id: str, name: str
+    ) -> np.ndarray:
         self._ensure_gallery()
         cid = str(camera_id)
+        camera_name = str(name)
 
         state = self._get_state(cid)
         state.frame_idx += 1
@@ -568,6 +571,7 @@ class AttendanceRuntime:
                         attendance_date=attendance_date,
                         emp_id=str(emp_id_str),  # IMPORTANT: must match ERP empId
                         in_time=in_time,
+                        in_location=camera_name,
                     )
 
                     ok = self.erp_queue.enqueue(job)

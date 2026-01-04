@@ -216,11 +216,11 @@ def camera_stream(camera_id: str):
 # - Uses RecognitionWorker cached JPEG (no per-client re-encode)
 # - Stops worker automatically when last client disconnects
 # --------------------------------------------------
-def mjpeg_generator_recognition(camera_id: str, ai_fps: float):
+def mjpeg_generator_recognition(camera_id: str, camera_name: str, ai_fps: float):
     _inc_rec_client(camera_id)
 
     # Start/adjust worker
-    rec_worker.start(camera_id, ai_fps=float(ai_fps))
+    rec_worker.start(camera_id, camera_name, ai_fps=float(ai_fps))
 
     # Wait for frames
     for _ in range(60):
@@ -263,12 +263,12 @@ def mjpeg_generator_recognition(camera_id: str, ai_fps: float):
             rec_worker.stop(camera_id)
 
 
-@app.get("/camera/recognition/stream/{camera_id}")
-def camera_recognition_stream(camera_id: str, ai_fps: float = None):
+@app.get("/camera/recognition/stream/{camera_id}/{camera_name}")
+def camera_recognition_stream(camera_id: str, camera_name: str, ai_fps: float = None):
     if ai_fps is None:
         ai_fps = _env_float("AI_FPS", 10.0)
     return StreamingResponse(
-        mjpeg_generator_recognition(camera_id, ai_fps=ai_fps),
+        mjpeg_generator_recognition(camera_id, camera_name, ai_fps=ai_fps),
         media_type="multipart/x-mixed-replace; boundary=frame",
         headers={
             "Cache-Control": "no-cache, no-store, must-revalidate",

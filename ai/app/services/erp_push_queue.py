@@ -14,6 +14,7 @@ class ERPPushJob:
     attendance_date: str
     emp_id: str
     in_time: str
+    in_location: str
 
 
 class ERPPushQueue:
@@ -58,7 +59,7 @@ class ERPPushQueue:
             for _ in range(self.max_retries):
                 try:
                     self.erp.manual_attendance(
-                        job.attendance_date, job.emp_id, job.in_time
+                        job.attendance_date, job.emp_id, job.in_time, job.in_location
                     )
                     last_err = None
                     break

@@ -31,10 +31,13 @@ class ERPClient:
             default_headers=default_headers,
         )
 
-    def manual_attendance(self, attendance_date: str, emp_id: str, in_time: str) -> Any:
+    def manual_attendance(
+        self, attendance_date: str, emp_id: str, in_time: str, in_location: str
+    ) -> Any:
         payload: Dict[str, Any] = {
             "attendanceDate": attendance_date,  # "03/01/2026" (dd/mm/yyyy)
             "empId": emp_id,
             "inTime": in_time,  # "09:00:00"
+            "inLocation": in_location,
         }
         return self.http.post("/Attendance/manual-attendance", payload)

@@ -44,12 +44,15 @@ model RefreshToken {
 
 model Employee {
   id        String   @id @default(cuid())
+  empId     String?  @unique @map("emp_id")
   name      String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   attendance Attendance[]
   templates  FaceTemplate[]
+
+  @@index([empId])
 }
 
 model FaceTemplate {
@@ -84,10 +87,13 @@ model Attendance {
 
 
 model Camera {
-  id        String   @id
+  id        String   @id @default(cuid())
+  camId     String?  @unique @map("cam_id")
   name      String
   rtspUrl   String
   isActive  Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([camId])
 }

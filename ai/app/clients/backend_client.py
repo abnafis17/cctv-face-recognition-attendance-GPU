@@ -43,7 +43,7 @@ class BackendClient:
     ) -> Dict[str, Any]:
         payload: Dict[str, Any] = {"name": name}
         if employee_id:
-            payload["id"] = employee_id
+            payload["empId"] = employee_id
         return self.http.post("/employees", payload)
 
     def list_employees(self) -> List[Dict[str, Any]]:

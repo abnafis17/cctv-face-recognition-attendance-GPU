@@ -1,31 +1,40 @@
 import { Request, Response } from "express";
 import { prisma } from "../prisma";
+import {
+  employeePublicId,
+  getOrCreateEmployeeByAnyId,
+  normalizeEmployeeIdentifier,
+} from "../utils/employee";
 
 export async function createAttendance(req: Request, res: Response) {
   try {
     const { employeeId, timestamp, cameraId, confidence, snapshotPath } =
       req.body;
-    if (!employeeId || !timestamp)
+    const identifier = normalizeEmployeeIdentifier(employeeId);
+    if (!identifier || !timestamp)
       return res
         .status(400)
         .json({ error: "employeeId and timestamp required" });
 
-    await prisma.employee.upsert({
-      where: { id: employeeId },
-      update: {},
-      create: { id: employeeId, name: "Unknown" },
+    const employee = await getOrCreateEmployeeByAnyId(identifier, {
+      nameIfCreate: "Unknown",
     });
 
     const row = await prisma.attendance.create({
       data: {
-        employeeId,
+        employeeId: employee.id,
         timestamp: new Date(timestamp),
         cameraId: cameraId ?? null,
         confidence: confidence ?? null,
       },
     });
 
-    res.json({ ok: true, attendance: row, snapshotPath: snapshotPath ?? null });
+    res.json({
+      ok: true,
+      attendance: row,
+      employeeId: employeePublicId(employee),
+      snapshotPath: snapshotPath ?? null,
+    });
   } catch (e: any) {
     res.status(500).json({
       error: "Failed to create attendance",
@@ -47,7 +56,7 @@ export async function listAttendance(req: Request, res: Response) {
     res.json(
       rows.map((r) => ({
         id: r.id,
-        employeeId: r.employeeId,
+        employeeId: employeePublicId(r.employee),
         name: r.employee.name,
         timestamp: r.timestamp.toISOString(),
         cameraId: r.cameraId,

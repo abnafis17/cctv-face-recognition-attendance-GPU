@@ -36,7 +36,7 @@ class RecognitionWorker:
         # Per-camera config
         self._ai_fps: Dict[str, float] = {}
 
-    def start(self, camera_id: str, ai_fps: float = 10.0):
+    def start(self, camera_id: str, camera_name: str, ai_fps: float = 10.0):
         """
         Start recognition worker for camera if not already running.
         ai_fps controls how often recognition runs. Streaming stays smooth regardless.
@@ -50,7 +50,9 @@ class RecognitionWorker:
         self._ai_fps[camera_id] = float(ai_fps)
         self._locks.setdefault(camera_id, threading.Lock())
 
-        t = threading.Thread(target=self._loop, args=(camera_id,), daemon=True)
+        t = threading.Thread(
+            target=self._loop, args=(camera_id, camera_name), daemon=True
+        )
         self._threads[camera_id] = t
         t.start()
 
@@ -80,7 +82,7 @@ class RecognitionWorker:
             item = self._latest_jpg.get(camera_id)
             return None if item is None else item[0]
 
-    def _loop(self, camera_id: str):
+    def _loop(self, camera_id: str, camera_name: str):
         last_t = 0.0
 
         while self._running.get(camera_id, False):
@@ -98,10 +100,14 @@ class RecognitionWorker:
                 continue
 
             # Heavy work (capped)
-            annotated = self.attendance_rt.process_frame(frame_bgr=frame, camera_id=camera_id)
+            annotated = self.attendance_rt.process_frame(
+                frame_bgr=frame, camera_id=camera_id, name=camera_name
+            )
 
             # Pre-encode JPEG once (huge CPU win when multiple clients watch)
-            ok, jpg = cv2.imencode(".jpg", annotated, [int(cv2.IMWRITE_JPEG_QUALITY), 65])
+            ok, jpg = cv2.imencode(
+                ".jpg", annotated, [int(cv2.IMWRITE_JPEG_QUALITY), 65]
+            )
             if not ok:
                 continue
             jpg_bytes = jpg.tobytes()
