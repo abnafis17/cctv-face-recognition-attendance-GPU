@@ -18,6 +18,8 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useErpEmployees } from "@/hooks/useErpEmployees";
+import { SearchableSelect } from "@/components/reusable/SearchableSelect";
 
 type Camera = {
   id: string;
@@ -454,6 +456,38 @@ export default function AutoEnrollment({
   const startDisabled =
     busy || running || !cameraId || !employeeId.trim() || !name.trim();
 
+  const {
+    employees,
+    loading: erpLoading,
+    error: erpError,
+    setSearch: setErpSearch,
+    search: erpSearch,
+  } = useErpEmployees({ debounceMs: 350, initialSearch: "" });
+
+  const [selectedErpEmployeeId, setSelectedErpEmployeeId] = useState("");
+
+  // Build dropdown items (Name + ID)
+  const erpItems = useMemo(() => {
+    return employees.map((e) => ({
+      value: e.employeeId,
+      label: `${e.employeeName} (${e.employeeId})`,
+      keywords: `${e.employeeName} ${e.employeeId}`,
+    }));
+  }, [employees]);
+
+  // When select from dropdown => fill existing fields
+  const onPickEmployee = useCallback(
+    (empId: string) => {
+      setSelectedErpEmployeeId(empId);
+      const picked = employees.find((e) => e.employeeId === empId);
+      if (!picked) return;
+
+      setEmployeeId(picked.employeeId);
+      setName(picked.employeeName);
+    },
+    [employees]
+  );
+
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
       <div className="text-sm text-gray-500">
@@ -541,6 +575,31 @@ export default function AutoEnrollment({
               <div className="rounded-2xl border bg-white p-5">
                 <div className="text-lg font-semibold">
                   2) Enter employee details
+                </div>
+
+                <div className="mt-4">
+                  <Label>Select from ERP (search by Name or ID)</Label>
+
+                  <div className="mt-1">
+                    <SearchableSelect
+                      value={selectedErpEmployeeId}
+                      items={erpItems}
+                      placeholder="Search employee..."
+                      searchPlaceholder="Type name or ID..."
+                      disabled={busy}
+                      loading={erpLoading}
+                      onSearchChange={(q) => setErpSearch(q)}
+                      onChange={onPickEmployee}
+                    />
+                  </div>
+
+                  {erpError ? (
+                    <div className="text-xs text-red-600 mt-2">{erpError}</div>
+                  ) : (
+                    <div className="text-xs text-gray-500 mt-2">
+                      Showing results for: <b>{erpSearch || "all"}</b>
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">

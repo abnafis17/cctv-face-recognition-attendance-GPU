@@ -12,5 +12,8 @@ export const AI_HOST =
 // ✅ If your AI server also uses "/api", change to: `${AI_HOST}/api`
 export const AI_API_BASE = `${AI_HOST}`;
 
+export const ERP_HOST =
+  process.env.NEXT_PUBLIC_ERP_URL || "http://172.20.60.101:7001";
+
 export const MEDIA_HOST = process.env.NEXT_PUBLIC_MEDIA_URL || "";
 export const CLIENT_ADDRESS = process.env.NEXT_PUBLIC_CLIENT_ADDRESS || "";

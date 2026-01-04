@@ -8,6 +8,7 @@ import {
   CLIENT_ADDRESS,
   BACKEND_API_BASE,
   AI_API_BASE,
+  ERP_HOST,
 } from "@/constant";
 import { API } from "@/constant/API_PATH";
 
@@ -237,6 +238,15 @@ const axiosInstance = createAxiosClient({
 export const aiAxios = createAxiosClient({
   baseURL: AI_API_BASE,
   attachAuth: true,
+  enableRefresh: false,
+});
+
+/**
+ * ✅ Named export for ERP server host (from env)
+ */
+export const erpAxios = createAxiosClient({
+  baseURL: ERP_HOST,
+  attachAuth: false,
   enableRefresh: false,
 });
 
