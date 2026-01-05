@@ -18,7 +18,13 @@ async function readError(res: Response) {
   const txt = await res.text();
   try {
     const j = JSON.parse(txt);
-    return typeof j === "string" ? j : JSON.stringify(j);
+    if (typeof j === "string") return j;
+    if (j && typeof j === "object") {
+      const msg =
+        (j as any).message ?? (j as any).error ?? (j as any).detail ?? null;
+      if (typeof msg === "string" && msg.trim()) return msg;
+    }
+    return txt || JSON.stringify(j);
   } catch {
     return txt;
   }

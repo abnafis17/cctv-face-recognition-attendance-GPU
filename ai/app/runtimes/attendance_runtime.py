@@ -492,7 +492,7 @@ class AttendanceRuntime:
                 emp_id_str = "-1"
                 name = "Unknown"
 
-            label = f"{name}   |   sim {tr.similarity:.2f}"
+            label = f"{name}"
             _draw_label_card(annotated, label, x1, max(38, y1 - 14), known, scale=1.1)
 
             if not enable_attendance:

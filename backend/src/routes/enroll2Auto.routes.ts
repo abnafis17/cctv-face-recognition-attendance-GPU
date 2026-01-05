@@ -1,5 +1,7 @@
 import { Router } from "express";
 import axios from "axios";
+import { prisma } from "../prisma";
+import { findEmployeeByAnyId } from "../utils/employee";
 
 const r = Router();
 const AI_BASE = process.env.AI_BASE_URL || "http://127.0.0.1:8000";
@@ -8,6 +10,25 @@ const AI_BASE = process.env.AI_BASE_URL || "http://127.0.0.1:8000";
 r.post("/session/start", async (req, res) => {
   try {
     const { employeeId, name, cameraId } = req.body || {};
+
+    const identifier = String(employeeId ?? "").trim();
+    if (identifier) {
+      const employee = await findEmployeeByAnyId(identifier);
+      if (employee) {
+        const hasTemplate = await prisma.faceTemplate.findFirst({
+          where: { employeeId: employee.id },
+          select: { id: true },
+        });
+        if (hasTemplate) {
+          return res.status(409).json({
+            ok: false,
+            error: "Already enrolled",
+            employee: { id: employee.id, empId: employee.empId, name: employee.name },
+          });
+        }
+      }
+    }
+
     const resp = await axios.post(`${AI_BASE}/enroll2/auto/session/start`, {
       employeeId,
       name,

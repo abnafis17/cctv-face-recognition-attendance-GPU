@@ -129,6 +129,8 @@ export default function EnrollmentControls({ cameras }: { cameras: Camera[] }) {
   }
 
   async function startEnroll() {
+    const wasCameraActive = selectedCamera?.isActive === true;
+    let startedCamera = false;
     try {
       setErr("");
       setBusy(true);
@@ -142,6 +144,7 @@ export default function EnrollmentControls({ cameras }: { cameras: Camera[] }) {
       // Raw preview needs camera runtime started
       if (!noScan) {
         await postJSON(`/cameras/start/${cameraId}`);
+        startedCamera = !wasCameraActive;
       }
 
       await postJSON("/enroll/start", {
@@ -164,8 +167,16 @@ export default function EnrollmentControls({ cameras }: { cameras: Camera[] }) {
       await loadEmployees();
       await refreshStatus();
     } catch (e: any) {
-      setErr(e?.message ?? "Failed to start enroll");
-      toast.error("Start failed");
+      const msg = e?.message ?? "Failed to start enroll";
+      setErr(msg);
+      toast.error(msg);
+      if (startedCamera && cameraId) {
+        try {
+          await postJSON(`/cameras/stop/${cameraId}`);
+        } catch {
+          // ignore camera stop failure
+        }
+      }
     } finally {
       setBusy(false);
     }

@@ -269,12 +269,13 @@ export default function AutoEnrollment({
   // ---- camera ensure ON (your existing backend logic) ----
   const ensureCameraOn = useCallback(
     async (camId: string) => {
-      if (!camId) return;
+      if (!camId) return false;
       // if DB says active, don't call start again
-      if (cameras.find((c) => c.id === camId)?.isActive) return;
+      if (cameras.find((c) => c.id === camId)?.isActive) return false;
 
       await axiosInstance.post(`/cameras/start/${camId}`);
       await loadCameras();
+      return true;
     },
     [cameras, loadCameras]
   );
@@ -297,8 +298,9 @@ export default function AutoEnrollment({
     }
 
     setBusy(true);
+    let startedCamera = false;
     try {
-      await ensureCameraOn(cameraId);
+      startedCamera = await ensureCameraOn(cameraId);
 
       // Start auto-enroll session via backend proxy (NO CORS)
       const res = await axiosInstance.post<{ ok: boolean; session: Session }>(
@@ -312,10 +314,17 @@ export default function AutoEnrollment({
       toast.success("Enrollment started");
     } catch (e: any) {
       toast.error(friendlyAxiosError(e));
+      if (startedCamera && cameraId) {
+        try {
+          await stopCamera(cameraId);
+        } catch {
+          // ignore camera stop failure
+        }
+      }
     } finally {
       setBusy(false);
     }
-  }, [employeeId, name, cameraId, ensureCameraOn]);
+  }, [employeeId, name, cameraId, ensureCameraOn, stopCamera]);
 
   // ---- STOP: stop enroll session -> stop camera -> clear UI ----
   const stop = useCallback(async () => {

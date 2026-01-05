@@ -84,6 +84,17 @@ r.post("/start", async (req, res) => {
         existing ?? (await prisma.employee.create({ data: { name: nm } }));
     }
 
+    // Prevent overwriting an already-enrolled employee (templates already exist)
+    const hasTemplate = await prisma.faceTemplate.findFirst({
+      where: { employeeId: employee.id },
+      select: { id: true },
+    });
+    if (hasTemplate) {
+      return res
+        .status(409)
+        .json({ ok: false, error: "Already enrolled", employee });
+    }
+
     // Start AI enroll session (AI will capture + save templates via BackendClient)
     const ai = await axios.post(`${AI}/enroll/session/start`, {
       name: employee.name,
