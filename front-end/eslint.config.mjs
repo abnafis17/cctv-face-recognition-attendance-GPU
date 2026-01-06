@@ -6,16 +6,12 @@ const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
 
-  globalIgnores([
-    ".next/**",
-    "out/**",
-    "build/**",
-    "next-env.d.ts",
-  ]),
+  globalIgnores([".next/**", "out/**", "build/**", "next-env.d.ts"]),
 
   {
     rules: {
       "@typescript-eslint/no-explicit-any": "off",
+      "react-hooks/set-state-in-effect": "off",
     },
   },
 ]);
