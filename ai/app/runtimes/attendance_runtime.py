@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import os
 import time
+import threading
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple, Optional
+from typing import Any, Dict, List, Tuple, Optional
 
 import cv2
 import numpy as np
@@ -289,6 +290,14 @@ class AttendanceRuntime:
         self._cam_state: Dict[str, CameraScanState] = {}
         self._enabled_for_attendance: Dict[str, bool] = {}
 
+        # ---------------------------
+        # Attendance voice events (frontend speaks serially)
+        # ---------------------------
+        self._voice_lock = threading.Lock()
+        self._voice_seq: int = 0
+        self._voice_events: List[Dict[str, Any]] = []
+        self._voice_max_events: int = int(os.getenv("ATT_VOICE_MAX_EVENTS", "500"))
+
         self._emp_id_to_int: Dict[str, int] = {}
         self._int_to_emp_id: Dict[int, str] = {}
         self._next_emp_int: int = 1_000_000
@@ -341,6 +350,54 @@ class AttendanceRuntime:
             self.erp_queue = ERPPushQueue(erp_client, on_error=_erp_err)
         else:
             print("[ERP] ERP_BASE_URL not set, ERP push disabled.")
+
+    def push_voice_event(
+        self,
+        *,
+        employee_id: str,
+        name: str,
+        camera_id: str,
+        camera_name: str,
+    ) -> int:
+        """
+        Record an attendance voice event to be consumed by the frontend.
+        Frontend should speak these events one-by-one (no overlap).
+        """
+        full_name = str(name or "").strip()
+        tokens = (
+            full_name.replace(",", " ").replace(".", " ").split() if full_name else []
+        )
+        first_name = tokens[0] if tokens else str(employee_id).strip()
+        if len(tokens) >= 2 and first_name.lower() in {"mr", "mrs", "ms", "md", "dr"}:
+            first_name = tokens[1]
+
+        first_name = first_name.strip() or str(employee_id).strip() or "there"
+        text = f"Thank you, {first_name}. Your attendance has been recorded."
+        with self._voice_lock:
+            self._voice_seq += 1
+            seq = self._voice_seq
+            self._voice_events.append(
+                {
+                    "seq": seq,
+                    "text": text,
+                    "employee_id": str(employee_id),
+                    "name": str(name),
+                    "camera_id": str(camera_id),
+                    "camera_name": str(camera_name),
+                    "at": now_iso(),
+                }
+            )
+            if self._voice_max_events > 0 and len(self._voice_events) > self._voice_max_events:
+                self._voice_events = self._voice_events[-self._voice_max_events :]
+            return seq
+
+    def get_voice_events(self, *, after_seq: int = 0, limit: int = 50) -> Dict[str, Any]:
+        after_seq = int(after_seq or 0)
+        limit = max(1, min(int(limit or 50), 200))
+        with self._voice_lock:
+            latest_seq = int(self._voice_seq)
+            items = [e for e in self._voice_events if int(e.get("seq", 0)) > after_seq]
+        return {"latest_seq": latest_seq, "events": items[:limit]}
 
     def set_attendance_enabled(self, camera_id: str, enabled: bool) -> None:
         self._enabled_for_attendance[str(camera_id)] = bool(enabled)
@@ -581,6 +638,14 @@ class AttendanceRuntime:
 
                     if not ok:
                         print("[ERP] queue full, dropped attendance push")
+
+                # 4) Voice event: after backend attendance success
+                self.push_voice_event(
+                    employee_id=emp_id_str,
+                    name=name,
+                    camera_id=cid,
+                    camera_name=camera_name,
+                )
 
             except Exception as e:
                 print(f"[ATTENDANCE] Failed to mark emp={emp_id_str} cam={cid}: {e}")

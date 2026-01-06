@@ -381,6 +381,11 @@ def attendance_enabled(camera_id: str):
         "enabled": attendance_rt.is_attendance_enabled(camera_id),
     }
 
+@app.get("/attendance/voice-events")
+def attendance_voice_events(after_seq: int = 0, limit: int = 50):
+    payload = attendance_rt.get_voice_events(after_seq=after_seq, limit=limit)
+    return {"ok": True, **payload}
+
 
 # --------------------------------------------------
 # Enrollment (Browser-based)
