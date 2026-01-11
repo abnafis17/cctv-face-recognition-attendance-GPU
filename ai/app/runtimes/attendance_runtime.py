@@ -368,11 +368,20 @@ class AttendanceRuntime:
             full_name.replace(",", " ").replace(".", " ").split() if full_name else []
         )
         first_name = tokens[0] if tokens else str(employee_id).strip()
-        if len(tokens) >= 2 and first_name.lower() in {"mr", "mrs", "ms", "md", "dr"}:
+        if len(tokens) >= 2 and first_name.lower() in {
+            "mr",
+            "mrs",
+            "ms",
+            "md",
+            "dr",
+            "mohammad",
+            "allama",
+            "s.m",
+        }:
             first_name = tokens[1]
 
         first_name = first_name.strip() or str(employee_id).strip() or "there"
-        text = f"Thank you, {first_name}. Your attendance has been recorded."
+        text = f"Thank you, {first_name}."
         with self._voice_lock:
             self._voice_seq += 1
             seq = self._voice_seq
@@ -387,11 +396,16 @@ class AttendanceRuntime:
                     "at": now_iso(),
                 }
             )
-            if self._voice_max_events > 0 and len(self._voice_events) > self._voice_max_events:
+            if (
+                self._voice_max_events > 0
+                and len(self._voice_events) > self._voice_max_events
+            ):
                 self._voice_events = self._voice_events[-self._voice_max_events :]
             return seq
 
-    def get_voice_events(self, *, after_seq: int = 0, limit: int = 50) -> Dict[str, Any]:
+    def get_voice_events(
+        self, *, after_seq: int = 0, limit: int = 50
+    ) -> Dict[str, Any]:
         after_seq = int(after_seq or 0)
         limit = max(1, min(int(limit or 50), 200))
         with self._voice_lock:
