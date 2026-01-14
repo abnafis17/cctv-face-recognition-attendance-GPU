@@ -5,6 +5,7 @@ import axiosInstance, { AI_HOST } from "@/config/axiosInstance";
 import type { Camera } from "@/types";
 import Image from "next/image";
 import { getCompanyIdFromToken } from "@/lib/authStorage";
+import LocalCamera from "@/components/CameraComponent";
 
 export default function CamerasPage() {
   const [cams, setCams] = useState<Camera[]>([]);
@@ -30,6 +31,52 @@ export default function CamerasPage() {
   const streamQuery = companyId
     ? `?companyId=${encodeURIComponent(companyId)}`
     : "";
+
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [localActive, setLocalActive] = useState(false);
+  const localStreamRef = useRef<MediaStream | null>(null);
+
+
+  const startLocalCamera = async () => {
+    try {
+      // 1. Get camera stream
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: false, // set true if you want mic
+      });
+
+      // 2. Save stream to ref
+      localStreamRef.current = stream;
+
+      // 3. Attach stream to video element
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play(); // Important! Forces video to start
+      }
+
+      // 4. Update UI state
+      setLocalActive(true);
+    } catch (err) {
+      console.error("Cannot access camera", err);
+    }
+  };
+
+
+
+  const stopLocalCamera = () => {
+    // Stop all tracks
+    localStreamRef.current?.getTracks().forEach(track => track.stop());
+    localStreamRef.current = null;
+
+    // Remove stream from video
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+
+    setLocalActive(false);
+  };
+
+
 
   // ---------- Shared loader (only for user-triggered refresh) ----------
   async function load() {
@@ -327,13 +374,13 @@ export default function CamerasPage() {
       }
     }
 
-    const first = window.setTimeout(() => pollVoice(), 0);
-    const t = window.setInterval(() => pollVoice(), 600);
+    // const first = window.setTimeout(() => pollVoice(), 0);
+    // const t = window.setInterval(() => pollVoice(), 600);
 
     return () => {
       cancelled = true;
-      window.clearTimeout(first);
-      window.clearInterval(t);
+      // window.clearTimeout(first);
+      // window.clearInterval(t);
     };
   }, []);
 
@@ -390,6 +437,12 @@ export default function CamerasPage() {
 
       {/* Camera Grid */}
       <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+
+
+        <LocalCamera />
+
+
+
         {cams.map((c) => (
           <div key={c.id} className="rounded-xl border bg-white p-3 shadow-sm">
             {/* Header */}
@@ -464,6 +517,6 @@ export default function CamerasPage() {
           </div>
         ))}
       </div>
-    </div>
+    </div >
   );
 }

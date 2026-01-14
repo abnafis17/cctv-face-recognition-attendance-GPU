@@ -1,0 +1,16 @@
+webrtcDisable: no
+webrtcAddress: :8889
+webrtcEncryption: no
+webrtcAllowOrigin: "*"
+
+# IMPORTANT: advertise your server IP so WebRTC works on LAN/multi-NIC
+webrtcAdditionalHosts: [10.81.100.96]
+
+# Optional STUN (useful if not same LAN; TURN may be needed for strict networks)
+webrtcICEServers2:
+  - url: stun:stun.l.google.com:19302
+    username: ""
+    password: ""
+
+paths:
+  all: {}

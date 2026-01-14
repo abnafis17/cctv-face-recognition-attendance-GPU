@@ -45,6 +45,7 @@ const nextConfig: NextConfig = {
     // keep the previously allowed hosts
     "10.81.100.113",
     "172.20.60.101",
+    "10.81.100.96",
     // and auto-allow whatever your .env points to
     aiUrl?.hostname,
     backendUrl?.hostname,

@@ -59,3 +59,7 @@ Open:
 - Increase `runtime.detect_every_n_frames` to 3
 - Reduce `runtime.ai_fps`
 - Reduce resolution to 640x360 if CPU-only
+
+
+ .\.venv\Scripts\activate
+python -m uvicorn app.api_server:app --host 10.81.100.96 --port 8000
