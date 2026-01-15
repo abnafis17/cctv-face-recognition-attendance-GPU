@@ -582,9 +582,7 @@ class AttendanceRuntime:
         enable_attendance = self.is_attendance_enabled(cid)
         annotated = frame_bgr.copy()
 
-        _put_text_white(
-            annotated, f"cam={cid} frame={state.frame_idx}", 12, 36, scale=1.05
-        )
+        _put_text_white(annotated, f"frame={state.frame_idx}", 12, 36, scale=1.05)
         ts_now = time.strftime("%Y-%m-%d %H:%M:%S")
 
         dets = self.rec.detect_and_embed(frame_bgr)
