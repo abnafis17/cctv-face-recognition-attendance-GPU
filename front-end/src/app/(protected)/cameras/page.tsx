@@ -1,341 +1,52 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import axiosInstance, { AI_HOST } from "@/config/axiosInstance";
+import { useState } from "react";
+import { AI_HOST } from "@/config/axiosInstance";
 import type { Camera } from "@/types";
 import Image from "next/image";
 import { getCompanyIdFromToken } from "@/lib/authStorage";
+import { useAttendanceVoice } from "@/hooks/useAttendanceVoice";
+import { useCameraCrud } from "@/hooks/useCameraCrud";
+import { useAttendanceToggle } from "@/hooks/useAttendanceToggle";
+import { useCamerasLoader } from "@/hooks/useCamerasLoader";
 
 export default function CamerasPage() {
   const [cams, setCams] = useState<Camera[]>([]);
   const [err, setErr] = useState<string>("");
 
-  // ---------- Attendance voice (serial, no overlap) ----------
-  const voiceSeqRef = useRef<number>(0);
-  const voiceInFlightRef = useRef(false);
-  const voiceOpenedAtRef = useRef<number>(Date.now());
-  const voiceQueueRef = useRef<string[]>([]);
-  const voiceSpeakingRef = useRef(false);
-  const voiceUnlockedRef = useRef(true);
-  const preferredVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
+  // ✅ Voice functionality moved to hook (same behavior as before)
+  useAttendanceVoice();
 
   // Add camera form
   const [newId, setNewId] = useState("");
   const [newName, setNewName] = useState("");
   const [newUrl, setNewUrl] = useState("");
 
-  // prevent overlapping loads
-  const inFlightRef = useRef(false);
   const companyId = getCompanyIdFromToken();
   const streamQuery = companyId
     ? `?companyId=${encodeURIComponent(companyId)}`
     : "";
 
-  // ---------- Shared loader (only for user-triggered refresh) ----------
-  async function load() {
-    if (inFlightRef.current) return;
-    inFlightRef.current = true;
+  // prevent overlapping loads
+  // Shared loader (only for user-triggered refresh
+  const { load } = useCamerasLoader({ setCams, setErr });
 
-    try {
-      setErr("");
-      const response = await axiosInstance.get("/cameras"); // baseURL includes /api
-      if (response?.status === 200) setCams((response?.data || []) as Camera[]);
-    } catch (e: unknown) {
-      const msg =
-        (e as any)?.response?.data?.message ||
-        (e instanceof Error ? e.message : "Failed to load cameras");
-      setErr(msg);
-    } finally {
-      inFlightRef.current = false;
-    }
-  }
-
-  // ---------- Initial load ----------
-  useEffect(() => {
-    let cancelled = false;
-
-    async function fetchCameras() {
-      if (inFlightRef.current) return;
-      inFlightRef.current = true;
-
-      try {
-        setErr("");
-        const response = await axiosInstance.get("/cameras");
-        if (!cancelled && response?.status === 200) {
-          setCams((response?.data || []) as Camera[]);
-        }
-      } catch (e: unknown) {
-        if (!cancelled) {
-          const msg =
-            (e as any)?.response?.data?.message ||
-            (e instanceof Error ? e.message : "Failed to load cameras");
-          setErr(msg);
-        }
-      } finally {
-        inFlightRef.current = false;
-      }
-    }
-
-    const first = window.setTimeout(() => fetchCameras(), 0);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(first);
-    };
-  }, []);
-
-  // ---------- Camera CRUD ----------
-  async function addCamera() {
-    try {
-      setErr("");
-      await axiosInstance.post("/cameras", {
-        camId: newId.trim() ? newId.trim() : undefined,
-        name: newName.trim(),
-        rtspUrl: newUrl.trim(),
-      });
-
-      setNewId("");
-      setNewName("");
-      setNewUrl("");
-
-      await load();
-    } catch (e: unknown) {
-      const msg =
-        (e as any)?.response?.data?.message ||
-        (e instanceof Error ? e.message : "Failed to add camera");
-      setErr(msg);
-    }
-  }
-
-  async function startCamera(cam: Camera) {
-    try {
-      await axiosInstance.post(`/cameras/start/${cam.id}`);
-      await load();
-    } catch (e: unknown) {
-      const msg =
-        (e as any)?.response?.data?.message ||
-        (e instanceof Error ? e.message : "Failed to start camera");
-      setErr(msg);
-    }
-  }
-
-  async function stopCamera(cam: Camera) {
-    try {
-      await axiosInstance.post(`/cameras/stop/${cam.id}`);
-      await load();
-    } catch (e: unknown) {
-      const msg =
-        (e as any)?.response?.data?.message ||
-        (e instanceof Error ? e.message : "Failed to stop camera");
-      setErr(msg);
-    }
-  }
+  // Camera CRUD and Start/Stop
+  const { addCamera, startCamera, stopCamera } = useCameraCrud({
+    newId,
+    newName,
+    newUrl,
+    setNewId,
+    setNewName,
+    setNewUrl,
+    setErr,
+    load,
+  });
 
   // ---------- Attendance toggle ----------
-  async function enableAttendance(cam: Camera) {
-    try {
-      await axiosInstance.post("/attendance-control/enable", {
-        cameraId: cam.id,
-      });
-    } catch (e: unknown) {
-      const msg =
-        (e as any)?.response?.data?.message ||
-        (e instanceof Error ? e.message : "Failed to enable attendance");
-      setErr(msg);
-    }
-  }
-
-  async function disableAttendance(cam: Camera) {
-    try {
-      await axiosInstance.post("/attendance-control/disable", {
-        cameraId: cam.id,
-      });
-    } catch (e: unknown) {
-      const msg =
-        (e as any)?.response?.data?.message ||
-        (e instanceof Error ? e.message : "Failed to disable attendance");
-      setErr(msg);
-    }
-  }
-
-  function pickSweetFemaleVoice(
-    voices: SpeechSynthesisVoice[]
-  ): SpeechSynthesisVoice | null {
-    if (!voices?.length) return null;
-
-    const hint = (v: SpeechSynthesisVoice) => (v?.name || "").toLowerCase();
-    const femaleHints = [
-      "zira",
-      "aria",
-      "jenny",
-      "susan",
-      "samantha",
-      "natasha",
-      "serena",
-      "fiona",
-      "tessa",
-      "moira",
-      "female",
-    ];
-
-    const en = voices.filter((v) => (v?.lang || "").toLowerCase().startsWith("en"));
-    const ordered = [...en, ...voices];
-
-    for (const v of ordered) {
-      const n = hint(v);
-      if (femaleHints.some((h) => n.includes(h))) return v;
-    }
-
-    return en[0] || voices[0] || null;
-  }
-
-  function drainVoiceQueue() {
-    if (voiceSpeakingRef.current) return;
-    if (!voiceUnlockedRef.current) return;
-    if (typeof window === "undefined") return;
-    if (!("speechSynthesis" in window)) return;
-
-    const text = (voiceQueueRef.current.shift() || "").trim();
-    if (!text) return;
-
-    voiceSpeakingRef.current = true;
-
-    try {
-      window.speechSynthesis.resume();
-
-      const u = new SpeechSynthesisUtterance(text);
-      const v = preferredVoiceRef.current;
-      if (v) {
-        u.voice = v;
-        u.lang = v.lang;
-      }
-
-      // "Sweet" voice style (best-effort; depends on the installed voice)
-      u.rate = 0.92;
-      u.pitch = 1.12;
-      u.volume = 1.0;
-
-      let didStartCheck = 0;
-
-      u.onend = () => {
-        if (didStartCheck) window.clearTimeout(didStartCheck);
-        voiceSpeakingRef.current = false;
-        drainVoiceQueue();
-      };
-      u.onerror = () => {
-        if (didStartCheck) window.clearTimeout(didStartCheck);
-        voiceSpeakingRef.current = false;
-        drainVoiceQueue();
-      };
-
-      window.speechSynthesis.speak(u);
-
-      // If speech is blocked (autoplay policy), it may silently not start.
-      // Detect that and defer until a user gesture unlocks it.
-      didStartCheck = window.setTimeout(() => {
-        if (window.speechSynthesis.speaking || window.speechSynthesis.pending) return;
-        voiceUnlockedRef.current = false;
-        voiceSpeakingRef.current = false;
-        voiceQueueRef.current.unshift(text);
-      }, 250);
-    } catch {
-      voiceSpeakingRef.current = false;
-    }
-  }
-
-  function enqueueVoice(text: string) {
-    const t = String(text || "").trim();
-    if (!t) return;
-
-    // Prevent unbounded growth if ERP spams events
-    if (voiceQueueRef.current.length > 200) {
-      voiceQueueRef.current = voiceQueueRef.current.slice(-100);
-    }
-
-    voiceQueueRef.current.push(t);
-    drainVoiceQueue();
-  }
-
-  // Load voices + unlock speech on first user interaction (browser policy)
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!("speechSynthesis" in window)) return;
-
-    const synth = window.speechSynthesis;
-
-    const loadVoices = () => {
-      const voices = synth.getVoices();
-      if (!voices?.length) return;
-      preferredVoiceRef.current = pickSweetFemaleVoice(voices);
-    };
-
-    const unlock = () => {
-      voiceUnlockedRef.current = true;
-      loadVoices();
-      drainVoiceQueue();
-    };
-
-    loadVoices();
-    synth.onvoiceschanged = loadVoices;
-    window.addEventListener("pointerdown", unlock);
-
-    return () => {
-      synth.onvoiceschanged = null;
-      window.removeEventListener("pointerdown", unlock);
-    };
-  }, []);
-
-  // ---------- Poll attendance voice events from AI (via backend proxy) ----------
-  useEffect(() => {
-    let cancelled = false;
-
-    async function pollVoice() {
-      if (cancelled) return;
-      if (voiceInFlightRef.current) return;
-      voiceInFlightRef.current = true;
-
-      try {
-        const resp = await axiosInstance.get("/attendance-control/voice-events", {
-          params: { afterSeq: voiceSeqRef.current, limit: 50 },
-        });
-        const events = (resp?.data?.events || []) as Array<{
-          seq?: number;
-          text?: string;
-          at?: string;
-        }>;
-
-        for (const ev of events) {
-          const seq = Number(ev?.seq || 0) || 0;
-          const text = String(ev?.text || "").trim();
-          if (!seq) continue;
-          if (seq <= voiceSeqRef.current) continue;
-          voiceSeqRef.current = seq;
-
-          // Avoid speaking old backlog events when the page first loads,
-          // but still allow events that happen during initial load.
-          const atMs = Date.parse(String(ev?.at || ""));
-          const tooOld =
-            Number.isFinite(atMs) && atMs < voiceOpenedAtRef.current - 2000;
-
-          if (!text || tooOld) continue;
-          enqueueVoice(text);
-        }
-      } catch {
-        // ignore polling errors; voice is best-effort
-      } finally {
-        voiceInFlightRef.current = false;
-      }
-    }
-
-    const first = window.setTimeout(() => pollVoice(), 0);
-    const t = window.setInterval(() => pollVoice(), 600);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(first);
-      window.clearInterval(t);
-    };
-  }, []);
+  const { enableAttendance, disableAttendance } = useAttendanceToggle({
+    setErr,
+  });
 
   return (
     <div>
@@ -396,10 +107,6 @@ export default function CamerasPage() {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="font-semibold">{c.name}</div>
-                <div className="text-xs text-gray-500">{c.camId ?? c.id}</div>
-                {c.camId ? (
-                  <div className="text-[10px] text-gray-400">ID: {c.id}</div>
-                ) : null}
                 <div className="mt-1 break-all text-xs text-gray-400">
                   {c.rtspUrl}
                 </div>
