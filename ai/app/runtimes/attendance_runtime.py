@@ -299,6 +299,7 @@ class AttendanceRuntime:
         # Attendance voice events (frontend speaks serially)
         # ---------------------------
         self._voice_lock = threading.Lock()
+        self._voice_cv = threading.Condition(self._voice_lock)
         self._voice_seq: int = 0
         self._voice_events: List[Dict[str, Any]] = []
         self._voice_max_events: int = int(os.getenv("ATT_VOICE_MAX_EVENTS", "500"))
@@ -416,7 +417,7 @@ class AttendanceRuntime:
 
         first_name = first_name.strip() or str(employee_id).strip() or "there"
         text = f"Thank you, {first_name}."
-        with self._voice_lock:
+        with self._voice_cv:
             self._voice_seq += 1
             seq = self._voice_seq
             self._voice_events.append(
@@ -435,16 +436,29 @@ class AttendanceRuntime:
                 and len(self._voice_events) > self._voice_max_events
             ):
                 self._voice_events = self._voice_events[-self._voice_max_events :]
+            self._voice_cv.notify_all()
             return seq
 
     def get_voice_events(
-        self, *, after_seq: int = 0, limit: int = 50
+        self, *, after_seq: int = 0, limit: int = 50, wait_ms: int = 0
     ) -> Dict[str, Any]:
         after_seq = int(after_seq or 0)
         limit = max(1, min(int(limit or 50), 200))
-        with self._voice_lock:
+        wait_ms = max(0, min(int(wait_ms or 0), 300_000))
+
+        deadline = time.time() + (wait_ms / 1000.0) if wait_ms else 0.0
+
+        with self._voice_cv:
+            while wait_ms and int(self._voice_seq) <= after_seq:
+                remaining = deadline - time.time()
+                if remaining <= 0:
+                    break
+                self._voice_cv.wait(timeout=remaining)
+
             latest_seq = int(self._voice_seq)
-            items = [e for e in self._voice_events if int(e.get("seq", 0)) > after_seq]
+            items = [
+                e for e in self._voice_events if int(e.get("seq", 0)) > after_seq
+            ]
         return {"latest_seq": latest_seq, "events": items[:limit]}
 
     def set_attendance_enabled(self, camera_id: str, enabled: bool) -> None:

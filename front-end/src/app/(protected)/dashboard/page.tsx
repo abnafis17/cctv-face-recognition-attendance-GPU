@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import axiosInstance, { API } from "@/config/axiosInstance";
 import type { AttendanceRow, Employee } from "@/types";
+import { useAttendanceEvents } from "@/hooks/useAttendanceEvents";
 
 import AppShell from "@/components/layout/AppShell";
 import ErrorBox from "@/components/ui/ErrorBox";
@@ -14,26 +15,19 @@ export default function Home() {
   const [attendance, setAttendance] = useState<AttendanceRow[]>([]);
   const [err, setErr] = useState("");
 
-  const inFlightRef = useRef(false);
+  const employeesInFlightRef = useRef(false);
+  const attendanceInFlightRef = useRef(false);
   const mountedRef = useRef(false);
 
-  const loadAll = useCallback(async () => {
-    if (inFlightRef.current) return;
-    inFlightRef.current = true;
+  const loadEmployees = useCallback(async () => {
+    if (employeesInFlightRef.current) return;
+    employeesInFlightRef.current = true;
 
     try {
-      const [empsRes, attRes] = await Promise.all([
-        axiosInstance.get(`${API.EMPLOYEE_LIST}`),
-        axiosInstance.get(`${API.ATTENDANCE_LIST}`),
-      ]);
-
+      const empsRes = await axiosInstance.get(`${API.EMPLOYEE_LIST}`);
       if (!mountedRef.current) return;
-
       if (empsRes?.status === 200)
         setEmployees((empsRes.data || []) as Employee[]);
-      if (attRes?.status === 200)
-        setAttendance((attRes.data || []) as AttendanceRow[]);
-
       setErr("");
     } catch (error) {
       if (!mountedRef.current) return;
@@ -42,9 +36,34 @@ export default function Home() {
         "Failed to load dashboard data";
       setErr(msg);
     } finally {
-      inFlightRef.current = false;
+      employeesInFlightRef.current = false;
     }
   }, []);
+
+  const loadAttendance = useCallback(async () => {
+    if (attendanceInFlightRef.current) return;
+    attendanceInFlightRef.current = true;
+
+    try {
+      const attRes = await axiosInstance.get(`${API.ATTENDANCE_LIST}`);
+      if (!mountedRef.current) return;
+      if (attRes?.status === 200)
+        setAttendance((attRes.data || []) as AttendanceRow[]);
+      setErr("");
+    } catch (error) {
+      if (!mountedRef.current) return;
+      const msg =
+        (error as any)?.response?.data?.message ||
+        "Failed to load dashboard data";
+      setErr(msg);
+    } finally {
+      attendanceInFlightRef.current = false;
+    }
+  }, []);
+
+  const loadAll = useCallback(async () => {
+    await Promise.all([loadEmployees(), loadAttendance()]);
+  }, [loadEmployees, loadAttendance]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -55,7 +74,7 @@ export default function Home() {
     }, 0);
 
     const poll = window.setInterval(() => {
-      loadAll();
+      loadEmployees();
     }, 3000);
 
     return () => {
@@ -63,7 +82,10 @@ export default function Home() {
       window.clearTimeout(first);
       window.clearInterval(poll);
     };
-  }, [loadAll]);
+  }, [loadAll, loadEmployees]);
+
+  // Refresh attendance list only when a new attendance record is created (no interval polling)
+  useAttendanceEvents({ onEvents: loadAttendance });
 
   return (
     <AppShell>

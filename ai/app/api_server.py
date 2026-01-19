@@ -391,8 +391,14 @@ def attendance_enabled(camera_id: str):
     }
 
 @app.get("/attendance/voice-events")
-def attendance_voice_events(after_seq: int = 0, limit: int = 50):
-    payload = attendance_rt.get_voice_events(after_seq=after_seq, limit=limit)
+def attendance_voice_events(
+    after_seq: int = 0,
+    limit: int = 50,
+    wait_ms: int = Query(default=0, ge=0, le=300_000),
+):
+    payload = attendance_rt.get_voice_events(
+        after_seq=after_seq, limit=limit, wait_ms=wait_ms
+    )
     return {"ok": True, **payload}
 
 

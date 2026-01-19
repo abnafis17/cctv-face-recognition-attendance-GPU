@@ -7,6 +7,10 @@ import {
 } from "../utils/employee";
 import { findCameraByAnyId } from "../utils/camera";
 import axios from "axios";
+import {
+  getAttendanceEvents,
+  pushAttendanceEvent,
+} from "../services/attendanceEvents";
 
 export async function createAttendance(req: Request, res: Response) {
   try {
@@ -38,6 +42,15 @@ export async function createAttendance(req: Request, res: Response) {
         confidence: confidence ?? null,
         companyId,
       },
+    });
+
+    // Push a lightweight event so clients can refresh attendance without polling.
+    pushAttendanceEvent(companyId, {
+      at: new Date().toISOString(),
+      attendanceId: row.id,
+      employeeId: employeePublicId(employee),
+      timestamp: row.timestamp.toISOString(),
+      cameraId: row.cameraId,
     });
 
     res.json({
@@ -108,6 +121,41 @@ function toBDTimeHHMMSS(d: Date) {
   const mi = parts.find((p) => p.type === "minute")?.value ?? "00";
   const ss = parts.find((p) => p.type === "second")?.value ?? "00";
   return `${hh}:${mi}:${ss}`;
+}
+
+export async function attendanceEvents(req: Request, res: Response) {
+  try {
+    const companyId = String((req as any).companyId ?? "");
+    const afterSeqRaw = (req.query.afterSeq ?? req.query.after_seq ?? 0) as any;
+    const limitRaw = (req.query.limit ?? 50) as any;
+    const waitMsRaw = (req.query.waitMs ?? req.query.wait_ms ?? 0) as any;
+
+    const afterSeq = Number(afterSeqRaw || 0) || 0;
+    const limit = Math.min(Math.max(Number(limitRaw || 50) || 50, 1), 200);
+    const waitMs = Math.min(Math.max(Number(waitMsRaw || 0) || 0, 0), 300_000);
+
+    const ac = new AbortController();
+    req.on("close", () => ac.abort());
+
+    const payload = await getAttendanceEvents({
+      companyId,
+      afterSeq,
+      limit,
+      waitMs,
+      signal: ac.signal,
+    });
+
+    // Client disconnected before we could respond
+    if (ac.signal.aborted) return;
+
+    return res.json({ ok: true, ...payload });
+  } catch (e: any) {
+    return res.status(500).json({
+      ok: false,
+      error: "Failed to fetch attendance events",
+      detail: e?.message ?? String(e),
+    });
+  }
 }
 
 export async function dataSync(req: Request, res: Response) {

@@ -80,12 +80,14 @@ r.get("/voice-events", async (req, res) => {
     const companyId = String((req as any).companyId ?? "");
     const afterSeqRaw = (req.query.afterSeq ?? req.query.after_seq ?? 0) as any;
     const limitRaw = (req.query.limit ?? 50) as any;
+    const waitMsRaw = (req.query.waitMs ?? req.query.wait_ms ?? 0) as any;
 
     const after_seq = Number(afterSeqRaw || 0) || 0;
     const limit = Math.min(Math.max(Number(limitRaw || 50) || 50, 1), 200);
+    const wait_ms = Math.min(Math.max(Number(waitMsRaw || 0) || 0, 0), 300_000);
 
     const ai = await axios.get(`${AI}/attendance/voice-events`, {
-      params: { after_seq, limit },
+      params: { after_seq, limit, wait_ms },
       headers: companyId ? { "x-company-id": companyId } : undefined,
     });
     return res.status(ai.status).json(ai.data);

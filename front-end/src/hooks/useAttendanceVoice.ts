@@ -43,12 +43,13 @@ type VoiceEvent = {
 };
 
 type UseAttendanceVoiceOptions = {
-  pollIntervalMs?: number; // default 600
+  pollIntervalMs?: number; // default 600 (retry/backoff delay)
+  waitMs?: number; // default 300000 (server long-poll wait)
   limit?: number; // default 50
 };
 
 export function useAttendanceVoice(options: UseAttendanceVoiceOptions = {}) {
-  const { pollIntervalMs = 600, limit = 50 } = options;
+  const { pollIntervalMs = 600, waitMs = 300000, limit = 50 } = options;
 
   // ---------- Attendance voice (serial, no overlap) ----------
   const voiceSeqRef = useRef<number>(0);
@@ -161,52 +162,63 @@ export function useAttendanceVoice(options: UseAttendanceVoiceOptions = {}) {
   useEffect(() => {
     let cancelled = false;
 
-    async function pollVoice() {
-      if (cancelled) return;
-      if (voiceInFlightRef.current) return;
-      voiceInFlightRef.current = true;
+    const sleep = (ms: number) =>
+      new Promise<void>((resolve) => {
+        window.setTimeout(resolve, ms);
+      });
 
-      try {
-        const resp = await axiosInstance.get(
-          "/attendance-control/voice-events",
-          {
-            params: { afterSeq: voiceSeqRef.current, limit },
-          }
-        );
-
-        const events = (resp?.data?.events || []) as VoiceEvent[];
-
-        for (const ev of events) {
-          const seq = Number(ev?.seq || 0) || 0;
-          const text = String(ev?.text || "").trim();
-          if (!seq) continue;
-          if (seq <= voiceSeqRef.current) continue;
-          voiceSeqRef.current = seq;
-
-          // Avoid speaking old backlog events when the page first loads,
-          // but still allow events that happen during initial load.
-          const atMs = Date.parse(String(ev?.at || ""));
-          const tooOld =
-            Number.isFinite(atMs) && atMs < voiceOpenedAtRef.current - 2000;
-
-          if (!text || tooOld) continue;
-          enqueueVoice(text);
+    async function pollLoop() {
+      // Long-poll: keep 1 request in-flight, server responds on new events (or timeout)
+      while (!cancelled) {
+        if (voiceInFlightRef.current) {
+          await sleep(Math.max(50, pollIntervalMs));
+          continue;
         }
-      } catch {
-        // ignore polling errors; voice is best-effort
-      } finally {
-        voiceInFlightRef.current = false;
+        voiceInFlightRef.current = true;
+
+        try {
+          const resp = await axiosInstance.get(
+            "/attendance-control/voice-events",
+            {
+              params: { afterSeq: voiceSeqRef.current, limit, waitMs },
+            }
+          );
+
+          if (cancelled) return;
+
+          const events = (resp?.data?.events || []) as VoiceEvent[];
+
+          for (const ev of events) {
+            const seq = Number(ev?.seq || 0) || 0;
+            const text = String(ev?.text || "").trim();
+            if (!seq) continue;
+            if (seq <= voiceSeqRef.current) continue;
+            voiceSeqRef.current = seq;
+
+            // Avoid speaking old backlog events when the page first loads,
+            // but still allow events that happen during initial load.
+            const atMs = Date.parse(String(ev?.at || ""));
+            const tooOld =
+              Number.isFinite(atMs) && atMs < voiceOpenedAtRef.current - 2000;
+
+            if (!text || tooOld) continue;
+            enqueueVoice(text);
+          }
+        } catch {
+          // ignore polling errors; voice is best-effort
+          if (!cancelled) await sleep(Math.max(250, pollIntervalMs));
+        } finally {
+          voiceInFlightRef.current = false;
+        }
       }
     }
 
-    const first = window.setTimeout(() => pollVoice(), 0);
-    const t = window.setInterval(() => pollVoice(), pollIntervalMs);
+    const first = window.setTimeout(() => pollLoop(), 0);
 
     return () => {
       cancelled = true;
       window.clearTimeout(first);
-      window.clearInterval(t);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pollIntervalMs, limit]);
+  }, [pollIntervalMs, waitMs, limit]);
 }

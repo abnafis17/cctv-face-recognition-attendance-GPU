@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import axiosInstance, { API } from "@/config/axiosInstance";
+import { useAttendanceEvents } from "@/hooks/useAttendanceEvents";
 
 type AttendanceRow = {
   id: string;
@@ -42,15 +43,13 @@ export default function AttendancePage() {
     // ✅ avoids "setState inside effect" warning in newer React dev
     const first = window.setTimeout(() => fetchAttendance(), 0);
 
-    const t = window.setInterval(() => {
-      fetchAttendance();
-    }, 3000);
-
     return () => {
       window.clearTimeout(first);
-      window.clearInterval(t);
     };
   }, [fetchAttendance]);
+
+  // Refresh attendance only when new attendance is created (no interval polling)
+  useAttendanceEvents({ onEvents: fetchAttendance });
 
   return (
     <div>
