@@ -9,6 +9,7 @@ import { useAttendanceVoice } from "@/hooks/useAttendanceVoice";
 import { useCameraCrud } from "@/hooks/useCameraCrud";
 import { useAttendanceToggle } from "@/hooks/useAttendanceToggle";
 import { useCamerasLoader } from "@/hooks/useCamerasLoader";
+import LocalCamera from "@/components/CameraComponent";
 
 export default function CamerasPage() {
   const [cams, setCams] = useState<Camera[]>([]);
@@ -101,6 +102,8 @@ export default function CamerasPage() {
 
       {/* Camera Grid */}
       <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+
+        <LocalCamera userId={"1234567"} />
         {cams.map((c) => (
           <div key={c.id} className="rounded-xl border bg-white p-3 shadow-sm">
             {/* Header */}
