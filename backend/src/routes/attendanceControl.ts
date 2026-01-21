@@ -4,7 +4,7 @@ import axios from "axios";
 const r = Router();
 const AI = (process.env.AI_BASE_URL || "http://127.0.0.1:8000").replace(
   /\/$/,
-  ""
+  "",
 );
 
 function readCameraId(req: any): string {
@@ -31,7 +31,7 @@ async function toggleAttendance(req: any, res: any, enabled: boolean) {
     });
     return res.status(ai.status).json(ai.data);
   } catch (err: any) {
-    console.error("attendance toggle failed:", err?.response?.data || err);
+    console.error("attendance toggle failed:");
     return res
       .status(500)
       .json({ ok: false, error: "Failed to update attendance state" });
@@ -60,7 +60,7 @@ r.get("/status", async (req, res) => {
     const enabled = Boolean((ai.data as any)?.enabled);
     return res.status(ai.status).json({ ...ai.data, running: enabled });
   } catch (err: any) {
-    console.error("attendance status failed:", err?.response?.data || err);
+    console.error("attendance status failed");
     return res
       .status(500)
       .json({ ok: false, error: "Failed to get attendance status" });
@@ -92,7 +92,10 @@ r.get("/voice-events", async (req, res) => {
     });
     return res.status(ai.status).json(ai.data);
   } catch (err: any) {
-    console.error("attendance voice-events failed:", err?.response?.data || err);
+    if (err?.code === "ECONNREFUSED") {
+      console.error("attendance voice-events failed");
+    }
+
     return res
       .status(500)
       .json({ ok: false, error: "Failed to fetch attendance voice events" });
