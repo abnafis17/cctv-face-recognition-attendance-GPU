@@ -49,7 +49,7 @@ const LocalCamera: React.FC<LocalCameraProps> = ({ userId, companyId }) => {
       stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
       // WebSocket signaling
-      const ws = new WebSocket("ws://10.81.100.128:8000/webrtc/signal");
+      const ws = new WebSocket("ws://10.81.100.89:8000/webrtc/signal");
       wsRef.current = ws;
 
       ws.onopen = async () => {
