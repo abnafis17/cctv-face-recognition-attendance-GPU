@@ -5,8 +5,14 @@ import threading
 from typing import Dict, Optional
 
 import cv2
-from fastapi import FastAPI, Body, Header, Query
-from fastapi.responses import StreamingResponse, Response
+from fastapi import FastAPI, Body, Header, Query, WebSocket, WebSocketDisconnect
+from fastapi.responses import StreamingResponse, Response,StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
+
+# PeerConncection
+from aiortc import RTCPeerConnection, MediaStreamTrack, RTCSessionDescription
+from aiortc.contrib.media import MediaRelay
+from aiortc.sdp import candidate_from_sdp
 
 from .runtimes.camera_runtime import CameraRuntime
 from .services.enroll_service import EnrollmentService
@@ -18,10 +24,25 @@ from .enroll2_auto.service import EnrollmentAutoService2
 from .enroll2_auto.hud import draw_enroll2_auto_hud
 
 
+from .runtimes.hls_runtime import HLSRuntime
+from fastapi.staticfiles import StaticFiles
+
 # --------------------------------------------------
 # App
 # --------------------------------------------------
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+HLS_STATIC_DIR = os.path.join(BASE_DIR, "hls")
+os.makedirs(HLS_STATIC_DIR, exist_ok=True)
+
 app = FastAPI(title="AI Camera API", version="1.4")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+app.mount("/hls", StaticFiles(directory=HLS_STATIC_DIR), name="hls")
 
 # --------------------------------------------------
 # Runtimes
@@ -44,7 +65,7 @@ rec_worker = RecognitionWorker(camera_rt=camera_rt, attendance_rt=attendance_rt)
 
 enroller2_auto = EnrollmentAutoService2(camera_rt=camera_rt)
 
-
+hls_rt = HLSRuntime()
 # --------------------------------------------------
 # Stream client reference counting (production)
 # Stops recognition worker when no clients are watching
@@ -542,3 +563,107 @@ def enroll2_auto_session_stop():
     stopped = enroller2_auto.stop()
     s = enroller2_auto.status()
     return {"ok": True, "stopped": stopped, "session": (s.__dict__ if s else None)}
+
+@app.websocket("/webrtc/signal")
+async def webrtc_signal(ws: WebSocket):
+    await ws.accept()
+
+    pc: Optional[RTCPeerConnection] = None
+    camera_id: Optional[str] = None
+
+    try:
+        while True:
+            msg = await ws.receive_json()
+            camera_id = msg.get("cameraId")
+
+            if not camera_id:
+                continue
+            # Bind laptop camera to a company so gallery-based recognition works
+            company_from_msg = msg.get("companyId") or msg.get("company_id")
+            attendance_rt.set_company_for_camera(
+                camera_id, company_from_msg or attendance_rt._default_company_id
+            )
+
+            # Ensure laptop camera uses default gallery/company for recognition
+            attendance_rt.set_company_for_camera(camera_id, attendance_rt._default_company_id)
+
+            # -----------------------------
+            # SDP OFFER (browser → backend)
+            # -----------------------------
+            if "sdp" in msg:
+                pc = RTCPeerConnection()
+
+                @pc.on("track")
+                async def on_track(track):
+                    if track.kind != "video":
+                        return
+
+                    while True:
+                        try:
+                            frame = await track.recv()
+                            img = frame.to_ndarray(format="bgr24")
+
+                            # 🔥 EXACTLY SAME AS RTMP PIPELINE
+                            camera_rt.inject_frame(camera_id, img)
+                            rec_worker.start(
+                                camera_id=camera_id,
+                                camera_name=f"Laptop-{camera_id}",
+                                ai_fps=30.0,
+                            )
+                            try:
+                                annotated = rec_worker.get_latest_annotated(camera_id)
+                                if annotated is None:
+                                    annotated = img
+                                hls_rt.start(camera_id)
+                                hls_rt.write(camera_id, annotated)
+                            except Exception as e:
+                                print(f"[HLS] laptop write failed for {camera_id}: {e}")
+                                continue
+
+                        except Exception as e:
+                            print(f"[WebRTC] track loop stopped for {camera_id}: {e}")
+                            break
+
+                offer = RTCSessionDescription(
+                    sdp=msg["sdp"]["sdp"],
+                    type=msg["sdp"]["type"],
+                )
+                await pc.setRemoteDescription(offer)
+
+                answer = await pc.createAnswer()
+                await pc.setLocalDescription(answer)
+
+                await ws.send_json({
+                    "sdp": {
+                        "type": pc.localDescription.type,
+                        "sdp": pc.localDescription.sdp,
+                    },
+                    "cameraId": camera_id,
+                })
+
+            # -----------------------------
+            # ICE CANDIDATE
+            # -----------------------------
+            elif "ice" in msg and pc:
+                ice = msg["ice"]
+                candidate = None
+                if ice:
+                    candidate_str = ice.get("candidate")
+                    if candidate_str:
+                        if candidate_str.startswith("candidate:"):
+                            candidate_str = candidate_str.split(":", 1)[1]
+                        candidate = candidate_from_sdp(candidate_str)
+                        candidate.sdpMid = ice.get("sdpMid")
+                        candidate.sdpMLineIndex = ice.get("sdpMLineIndex")
+                await pc.addIceCandidate(candidate)
+
+    except WebSocketDisconnect:
+        pass
+    finally:
+        if pc:
+            await pc.close()
+        if camera_id:
+            rec_worker.stop(camera_id)
+            hls_rt.stop(camera_id)
+
+

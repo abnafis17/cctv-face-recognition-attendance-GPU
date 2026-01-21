@@ -9,6 +9,7 @@ import { useAttendanceVoice } from "@/hooks/useAttendanceVoice";
 import { useCameraCrud } from "@/hooks/useCameraCrud";
 import { useAttendanceToggle } from "@/hooks/useAttendanceToggle";
 import { useCamerasLoader } from "@/hooks/useCamerasLoader";
+import LocalCamera from "@/components/CameraComponent";
 
 export default function CamerasPage() {
   const [cams, setCams] = useState<Camera[]>([]);
@@ -47,6 +48,9 @@ export default function CamerasPage() {
   const { enableAttendance, disableAttendance } = useAttendanceToggle({
     setErr,
   });
+
+  // Laptop camera (WebRTC ingest) uses a fixed cameraId; reuse companyId for gallery
+  const laptopCameraId = "cmkdpsq300000j7284bwluxh2";
 
   return (
     <div>
@@ -101,6 +105,7 @@ export default function CamerasPage() {
 
       {/* Camera Grid */}
       <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <LocalCamera userId={laptopCameraId} companyId={companyId} />
         {cams.map((c) => (
           <div key={c.id} className="rounded-xl border bg-white p-3 shadow-sm">
             {/* Header */}
@@ -137,7 +142,7 @@ export default function CamerasPage() {
                 <div className="aspect-video w-full">
                   <Image
                     src={`${AI_HOST}/camera/recognition/stream/${encodeURIComponent(
-                      c.id
+                      c.id,
                     )}/${encodeURIComponent(c.name)}${streamQuery}`}
                     alt={`Camera ${c.name} Stream`}
                     className="h-full w-full object-cover"
