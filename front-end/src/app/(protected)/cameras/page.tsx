@@ -105,7 +105,6 @@ export default function CamerasPage() {
 
       {/* Camera Grid */}
       <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-
         <LocalCamera userId={laptopCameraId} companyId={companyId} />
         {cams.map((c) => (
           <div key={c.id} className="rounded-xl border bg-white p-3 shadow-sm">
@@ -143,7 +142,7 @@ export default function CamerasPage() {
                 <div className="aspect-video w-full">
                   <Image
                     src={`${AI_HOST}/camera/recognition/stream/${encodeURIComponent(
-                      c.id
+                      c.id,
                     )}/${encodeURIComponent(c.name)}${streamQuery}`}
                     alt={`Camera ${c.name} Stream`}
                     className="h-full w-full object-cover"
