@@ -105,7 +105,7 @@ export default function CamerasPage() {
 
       {/* Camera Grid */}
       <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <LocalCamera userId={laptopCameraId} companyId={companyId} />
+        <LocalCamera userId={laptopCameraId} companyId={companyId || ""} />
         {cams.map((c) => (
           <div key={c.id} className="rounded-xl border bg-white p-3 shadow-sm">
             {/* Header */}

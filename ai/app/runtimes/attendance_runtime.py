@@ -20,6 +20,10 @@ from datetime import datetime
 from ..clients.erp_client import ERPClient, ERPClientConfig
 from ..services.erp_push_queue import ERPPushQueue, ERPPushJob
 
+# add near your other imports (only if missing)
+import threading
+import urllib.request
+
 
 LABEL_FONT = (
     cv2.FONT_HERSHEY_TRIPLEX
@@ -456,9 +460,7 @@ class AttendanceRuntime:
                 self._voice_cv.wait(timeout=remaining)
 
             latest_seq = int(self._voice_seq)
-            items = [
-                e for e in self._voice_events if int(e.get("seq", 0)) > after_seq
-            ]
+            items = [e for e in self._voice_events if int(e.get("seq", 0)) > after_seq]
         return {"latest_seq": latest_seq, "events": items[:limit]}
 
     def set_attendance_enabled(self, camera_id: str, enabled: bool) -> None:
@@ -576,6 +578,39 @@ class AttendanceRuntime:
             self._cam_state[cid] = CameraScanState()
         return self._cam_state[cid]
 
+    def _relay_http(self, camera_id: str, turn_on: bool) -> None:
+        # Lazy init so you don't have to touch __init__
+        if not hasattr(self, "_relay_state_by_camera"):
+            self._relay_state_by_camera = {}  # cid -> "on"/"off"
+            self._relay_last_ts_by_camera = {}  # cid -> last call time
+            self._relay_min_interval_s = float(
+                os.getenv("RELAY_MIN_INTERVAL_S", "0.75")
+            )
+
+        cid = str(camera_id)
+        desired = "on" if turn_on else "off"
+        url = "http://10.81.100.149/on" if turn_on else "http://10.81.100.149/off"
+
+        now = time.time()
+        last_state = self._relay_state_by_camera.get(cid)
+        last_ts = self._relay_last_ts_by_camera.get(cid, 0.0)
+
+        # Debounce: only call when state changes or enough time passed
+        if last_state == desired and (now - last_ts) < self._relay_min_interval_s:
+            return
+
+        self._relay_state_by_camera[cid] = desired
+        self._relay_last_ts_by_camera[cid] = now
+
+        def _do():
+            try:
+                urllib.request.urlopen(url, timeout=0.4).read()
+                print(f"[RELAY] {desired} cid={cid} url={url}")
+            except Exception as e:
+                print(f"[RELAY] failed cid={cid} url={url} err={e}")
+
+        threading.Thread(target=_do, daemon=True).start()
+
     def process_frame(
         self, frame_bgr: np.ndarray, camera_id: str, name: str
     ) -> np.ndarray:
@@ -595,6 +630,7 @@ class AttendanceRuntime:
 
         enable_attendance = self.is_attendance_enabled(cid)
         annotated = frame_bgr.copy()
+        relay_on_this_frame = False
 
         _put_text_white(annotated, f"frame={state.frame_idx}", 12, 36, scale=1.05)
         ts_now = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -757,6 +793,10 @@ class AttendanceRuntime:
                     )
 
                     if ok:
+                        # --- ADD: relay ON when attendance ensured ---
+                        relay_on_this_frame = True
+                        self._relay_http(cid, True)
+
                         # Also push a voice event for this attendance
                         self.push_voice_event(
                             employee_id=emp_id_str,
@@ -770,5 +810,9 @@ class AttendanceRuntime:
 
             except Exception as e:
                 print(f"[ATTENDANCE] Failed to mark emp={emp_id_str} cam={cid}: {e}")
+
+        # --- ADD: relay OFF if nobody was ensured this frame ---
+        if enable_attendance and not relay_on_this_frame:
+            self._relay_http(cid, False)
 
         return annotated
