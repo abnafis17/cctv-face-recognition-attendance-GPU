@@ -71,7 +71,12 @@ hls_rt = HLSRuntime()
 # Stops recognition worker when no clients are watching
 # --------------------------------------------------
 _stream_lock = threading.Lock()
-_rec_stream_clients: Dict[str, int] = {}  # camera_id -> count
+_rec_stream_clients: Dict[str, int] = {}  # camera_id -> total count
+_rec_stream_mode_counts: Dict[str, Dict[str, int]] = {}
+
+STREAM_TYPE_ATTENDANCE = "attendance"
+STREAM_TYPE_HEADCOUNT = "headcount"
+VALID_STREAM_TYPES = {STREAM_TYPE_ATTENDANCE, STREAM_TYPE_HEADCOUNT}
 
 
 def _env_float(name: str, default: float) -> float:
@@ -81,13 +86,47 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
-def _inc_rec_client(camera_id: str) -> int:
+def _normalize_stream_type(value: Optional[str]) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized not in VALID_STREAM_TYPES:
+        return STREAM_TYPE_ATTENDANCE
+    return normalized
+
+
+def _update_attendance_state(camera_id: str) -> None:
+    counts = _rec_stream_mode_counts.get(camera_id)
+    attendance_enabled = bool(
+        counts
+        and (
+            counts.get(STREAM_TYPE_ATTENDANCE, 0) > 0
+            or counts.get(STREAM_TYPE_HEADCOUNT, 0) > 0
+        )
+    )
+    attendance_rt.set_attendance_enabled(camera_id, attendance_enabled)
+
+    # Decide which "type" to send to backend on recognition marks.
+    # If both are active, attendance takes precedence (so camera page remains correct).
+    active_type = STREAM_TYPE_ATTENDANCE
+    if counts:
+        if counts.get(STREAM_TYPE_ATTENDANCE, 0) > 0:
+            active_type = STREAM_TYPE_ATTENDANCE
+        elif counts.get(STREAM_TYPE_HEADCOUNT, 0) > 0:
+            active_type = STREAM_TYPE_HEADCOUNT
+    attendance_rt.set_stream_type(camera_id, active_type)
+
+
+def _inc_rec_client(camera_id: str, stream_type: Optional[str]) -> int:
+    stream_type = _normalize_stream_type(stream_type)
     with _stream_lock:
         _rec_stream_clients[camera_id] = _rec_stream_clients.get(camera_id, 0) + 1
+        mode_counts = _rec_stream_mode_counts.setdefault(camera_id, {})
+        mode_counts[stream_type] = mode_counts.get(stream_type, 0) + 1
+        _update_attendance_state(camera_id)
         return _rec_stream_clients[camera_id]
 
 
-def _dec_rec_client(camera_id: str) -> int:
+def _dec_rec_client(camera_id: str, stream_type: Optional[str]) -> int:
+    stream_type = _normalize_stream_type(stream_type)
     with _stream_lock:
         cur = _rec_stream_clients.get(camera_id, 0) - 1
         if cur <= 0:
@@ -95,6 +134,16 @@ def _dec_rec_client(camera_id: str) -> int:
             cur = 0
         else:
             _rec_stream_clients[camera_id] = cur
+        mode_counts = _rec_stream_mode_counts.get(camera_id)
+        if mode_counts:
+            cnt = mode_counts.get(stream_type, 0) - 1
+            if cnt <= 0:
+                mode_counts.pop(stream_type, None)
+            else:
+                mode_counts[stream_type] = cnt
+            if not mode_counts:
+                _rec_stream_mode_counts.pop(camera_id, None)
+        _update_attendance_state(camera_id)
         return cur
 
 
@@ -122,11 +171,11 @@ def start_camera(camera_id: str, rtsp_url: str):
 
 @app.api_route("/camera/stop", methods=["GET", "POST"])
 def stop_camera(camera_id: str):
-    # Stop camera
-    stopped_now = camera_rt.stop(camera_id)
-
-    # Stop recognition worker (if any)
+    # Stop recognition worker first to avoid read/close races
     rec_worker.stop(camera_id)
+
+    # Stop camera grabber
+    stopped_now = camera_rt.stop(camera_id)
 
     # If enrollment session is tied to this camera, stop it safely
     s = enroller.status()
@@ -242,8 +291,10 @@ def camera_stream(camera_id: str):
 # - Uses RecognitionWorker cached JPEG (no per-client re-encode)
 # - Stops worker automatically when last client disconnects
 # --------------------------------------------------
-def mjpeg_generator_recognition(camera_id: str, camera_name: str, ai_fps: float):
-    _inc_rec_client(camera_id)
+def mjpeg_generator_recognition(
+    camera_id: str, camera_name: str, ai_fps: float, stream_type: Optional[str]
+):
+    _inc_rec_client(camera_id, stream_type)
 
     # Start/adjust worker
     rec_worker.start(camera_id, camera_name, ai_fps=float(ai_fps))
@@ -283,7 +334,7 @@ def mjpeg_generator_recognition(camera_id: str, camera_name: str, ai_fps: float)
         return
 
     finally:
-        left = _dec_rec_client(camera_id)
+        left = _dec_rec_client(camera_id, stream_type)
         if left == 0:
             # No viewers left -> stop recognition worker to save CPU
             rec_worker.stop(camera_id)
@@ -296,14 +347,21 @@ def camera_recognition_stream(
     ai_fps: Optional[float] = None,
     company_id: Optional[str] = Query(default=None, alias="companyId"),
     x_company_id: Optional[str] = Header(default=None, alias="x-company-id"),
+    stream_type: Optional[str] = Query(default=None, alias="type"),
 ):
     if ai_fps is None:
         ai_fps = _env_float("AI_FPS", 10.0)
     resolved_company_id = str(company_id or x_company_id or "").strip() or None
     if resolved_company_id:
         attendance_rt.set_company_for_camera(camera_id, resolved_company_id)
+    resolved_stream_type = _normalize_stream_type(stream_type)
     return StreamingResponse(
-        mjpeg_generator_recognition(camera_id, camera_name, ai_fps=ai_fps),
+        mjpeg_generator_recognition(
+            camera_id,
+            camera_name,
+            ai_fps=ai_fps,
+            stream_type=resolved_stream_type,
+        ),
         media_type="multipart/x-mixed-replace; boundary=frame",
         headers={
             "Cache-Control": "no-cache, no-store, must-revalidate",
@@ -416,9 +474,12 @@ def attendance_voice_events(
     after_seq: int = 0,
     limit: int = 50,
     wait_ms: int = Query(default=0, ge=0, le=300_000),
+    company_id: Optional[str] = Query(default=None, alias="companyId"),
+    x_company_id: Optional[str] = Header(default=None, alias="x-company-id"),
 ):
+    resolved_company_id = str(company_id or x_company_id or "").strip() or None
     payload = attendance_rt.get_voice_events(
-        after_seq=after_seq, limit=limit, wait_ms=wait_ms
+        company_id=resolved_company_id, after_seq=after_seq, limit=limit, wait_ms=wait_ms
     )
     return {"ok": True, **payload}
 
@@ -583,9 +644,6 @@ async def webrtc_signal(ws: WebSocket):
             attendance_rt.set_company_for_camera(
                 camera_id, company_from_msg or attendance_rt._default_company_id
             )
-
-            # Ensure laptop camera uses default gallery/company for recognition
-            attendance_rt.set_company_for_camera(camera_id, attendance_rt._default_company_id)
 
             # -----------------------------
             # SDP OFFER (browser → backend)

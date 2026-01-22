@@ -16,6 +16,7 @@ import { clearAccessToken } from "@/lib/authStorage";
 const nav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/cameras", label: "Cameras (Live)", icon: Video },
+  { href: "/headcount", label: "Headcount Camera", icon: Video },
   { href: "/enroll", label: "Enrollment(Auto)", icon: UserPlus },
   { href: "/employees", label: "Employees", icon: Users },
   { href: "/daily-attendance", label: "Daily Attendance", icon: CalendarClock },

@@ -101,16 +101,20 @@ class BackendClient:
         camera_id: Optional[str] = None,
         confidence: Optional[float] = None,
         snapshot_path: Optional[str] = None,
+        event_type: Optional[str] = None,
     ) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {
+            "employeeId": employee_id,
+            "timestamp": timestamp,
+            "cameraId": camera_id,
+            "confidence": confidence,
+            "snapshotPath": snapshot_path,
+        }
+        if event_type:
+            payload["type"] = str(event_type)
         return self.http.post(
             "/attendance",
-            {
-                "employeeId": employee_id,
-                "timestamp": timestamp,
-                "cameraId": camera_id,
-                "confidence": confidence,
-                "snapshotPath": snapshot_path,
-            },
+            payload,
         )
 
     # ✅ Enrollment v2 Auto uses SAME endpoint/table as v1
@@ -169,14 +173,18 @@ class BackendClient:
         camera_id: Optional[str] = None,
         confidence: Optional[float] = None,
         snapshot_path: Optional[str] = None,
+        event_type: Optional[str] = None,
     ) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {
+            "employeeId": employee_id,
+            "timestamp": timestamp,
+            "cameraId": camera_id,
+            "confidence": confidence,
+            "snapshotPath": snapshot_path,
+        }
+        if event_type:
+            payload["type"] = str(event_type)
         return self.http.post(
             "/attendance",
-            {
-                "employeeId": employee_id,
-                "timestamp": timestamp,
-                "cameraId": camera_id,
-                "confidence": confidence,
-                "snapshotPath": snapshot_path,
-            },
+            payload,
         )

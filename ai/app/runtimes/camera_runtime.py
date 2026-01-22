@@ -38,10 +38,14 @@ class CameraRuntime:
     def stop(self, camera_id: str) -> bool:
         with self._lock:
             grabber = self.cameras.pop(camera_id, None)
-            if not grabber:
-                return False
+        if not grabber:
+            return False
+        try:
             grabber.stop()
             return True
+        except Exception as e:
+            print(f"[CameraRuntime] stop failed for {camera_id}: {e}")
+            return False
 
     def inject_frame(self, camera_id: str, frame: np.ndarray):
         """Inject a frame from a laptop/WebRTC source."""

@@ -9,4 +9,7 @@ export const API = {
   ATTENDANCE_LIST: "/attendance",
 
   DAILY_ATTENDANCE_LIST: "/attendance/daily",
+
+  HEADCOUNT_CAMERAS: "/headcount/cameras",
+  HEADCOUNT_LIST: "/headcount",
 };

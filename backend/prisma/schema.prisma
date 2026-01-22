@@ -2,12 +2,10 @@ generator client {
   provider = "prisma-client-js"
 }
 
-
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
-
 
 enum UserRole {
   SUPER_ADMIN
@@ -15,24 +13,27 @@ enum UserRole {
   OPERATOR
 }
 
-
 model Company {
-  id          String   @id @default(cuid())
-  companyName String  
+  id              String   @id @default(cuid())
+  companyName     String
   organization_id String?
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-
-  users        User[]
-  employees    Employee[]
+  users         User[]
+  employees     Employee[]
   faceTemplates FaceTemplate[]
-  attendances  Attendance[]
-  cameras      Camera[]
+  attendances   Attendance[]
+  cameras       Camera[]
   refreshTokens RefreshToken[]
-}
 
+  // ✅ Added (relay)
+  relayAgents RelayAgent[]
+  pairCodes   PairCode[]
+
+  headcounts Headcount[]
+}
 
 model User {
   id           String   @id @default(cuid())
@@ -42,135 +43,204 @@ model User {
   role         UserRole @default(ADMIN)
   isActive     Boolean  @default(true)
 
-
-  companyId    String?      
-  company      Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
-
+  companyId String?
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
 
   refreshTokens RefreshToken[]
 }
 
-
 model Employee {
-  id        String   @id @default(cuid())
-  empId     String?  @map("emp_id")
+  id        String  @id @default(cuid())
+  empId     String?
   name      String
-  companyId String?  
+  companyId String?
   company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
-
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-
   attendance Attendance[]
   templates  FaceTemplate[]
 
+  headcounts Headcount[]
 
   @@unique([companyId, empId])
   @@index([empId])
   @@index([companyId])
 }
 
-
 model FaceTemplate {
   id         String   @id @default(cuid())
   employeeId String
   employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
+  companyId String?
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
-  companyId  String?  
-  company    Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  angle     String
+  modelName String
+  embedding Float[]
 
-
-  angle      String
-  modelName  String
-  embedding  Float[]
-
-
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([employeeId, angle])
   @@index([employeeId])
   @@index([companyId])
 }
 
-
 model Attendance {
   id         String   @id @default(cuid())
   employeeId String
   employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
-
-  companyId  String?
-  company    Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
-
+  companyId String?
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   timestamp  DateTime
   cameraId   String?
   camera     Camera?  @relation(fields: [cameraId], references: [id], onDelete: SetNull)
   confidence Float?
 
-
-  createdAt  DateTime @default(now())
-
+  createdAt DateTime @default(now())
 
   @@index([employeeId, timestamp])
   @@index([companyId, timestamp])
 }
 
-
 model Camera {
-  id        String   @id @default(cuid())
-  camId     String?  @map("cam_id")
-  name      String
-  rtspUrl   String
-  isActive  Boolean  @default(false)
+  id       String  @id @default(cuid())
+  camId    String?
+  name     String
+  rtspUrl  String? // ✅ keep optional (relay cameras won't store plaintext RTSP)
+  isActive Boolean @default(false)
 
-
-  companyId String?  
+  companyId String?
   company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
-
   attendances Attendance[]
-
+  headcounts  Headcount[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // ✅ Added (relay support)
+  relayAgentId String?
+  relayAgent   RelayAgent? @relation(fields: [relayAgentId], references: [id], onDelete: SetNull)
+
+  // Encrypted RTSP blob stored as JSON string
+  // Example: {"encKey":"...","iv":"...","tag":"...","ciphertext":"..."}
+  rtspUrlEnc String? @db.Text
+
+  // Relay send controls
+  sendFps     Int @default(2)
+  sendWidth   Int @default(640)
+  sendHeight  Int @default(360)
+  jpegQuality Int @default(70)
 
   @@unique([companyId, camId])
   @@index([camId])
   @@index([companyId])
+  @@index([relayAgentId])
 }
 
-
 model RefreshToken {
-  id         String   @id @default(cuid())
-  tokenHash  String   @unique
-  userId     String
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String @id @default(cuid())
+  tokenHash String @unique
+  userId    String
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-
-  companyId  String?  
-  company    Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
-
+  companyId String?
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   revokedAt  DateTime?
   expiresAt  DateTime
   createdAt  DateTime @default(now())
-
-
   ip         String?
   userAgent  String?
 
-
   @@index([userId])
   @@index([companyId])
+}
+
+//
+// ✅ NEW MODELS (relay agent)
+//
+
+model RelayAgent {
+  id   String @id @default(cuid())
+  name String
+
+  companyId String?
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  publicKeyPem String @db.Text
+
+  // keep your field name as-is
+  refreshTokenHash String
+
+  isActive   Boolean  @default(true)
+  lastSeenAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  cameras   Camera[]
+  pairCodes PairCode[] // ✅ added because PairCode now links to RelayAgent
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@index([lastSeenAt])
+}
+
+model PairCode {
+  code String @id
+
+  companyId String?
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  agentName String
+  expiresAt DateTime
+
+  // ✅ REQUIRED: prevent reuse + link which agent claimed it
+  usedAt DateTime?
+  agentId String?
+  agent   RelayAgent? @relation(fields: [agentId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([companyId])
+  @@index([expiresAt])
+  @@index([agentId])
+}
+
+
+model Headcount {
+  id         String   @id @default(cuid())
+
+  employeeId String?
+  employee   Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+
+  companyId  String?
+  company    Company?  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  cameraId   String?
+  camera     Camera?   @relation(fields: [cameraId], references: [id], onDelete: SetNull)
+
+  timestamp  DateTime  @default(now())
+  status     String
+
+  confidence Float?
+  notes      String?
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([companyId, timestamp])
+  @@index([cameraId, timestamp])
+  @@index([employeeId, timestamp])
+  @@index([companyId, status, timestamp])
 }

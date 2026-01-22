@@ -15,8 +15,21 @@ import {
 export async function createAttendance(req: Request, res: Response) {
   try {
     const companyId = String((req as any).companyId ?? "");
-    const { employeeId, timestamp, cameraId, confidence, snapshotPath } =
-      req.body;
+    const {
+      employeeId,
+      timestamp,
+      cameraId,
+      confidence,
+      snapshotPath,
+      type,
+      mode,
+    } = req.body;
+
+    // "type" comes from the recognition stream query param (attendance/headcount)
+    // Keep "mode" as an alias for compatibility.
+    const eventType = String(type ?? mode ?? "")
+      .trim()
+      .toLowerCase();
     const identifier = normalizeEmployeeIdentifier(employeeId);
     if (!identifier || !timestamp)
       return res
@@ -27,11 +40,104 @@ export async function createAttendance(req: Request, res: Response) {
       nameIfCreate: "Unknown",
     });
 
-    const cam = cameraId
+    let cam = cameraId
       ? await findCameraByAnyId(String(cameraId), companyId)
       : null;
     if (cameraId && !cam) {
-      return res.status(404).json({ error: "Camera not found" });
+      // Auto-register laptop/adhoc cameras so attendance is not blocked
+      try {
+        cam = await prisma.camera.create({
+          data: {
+            id: String(cameraId),
+            camId: String(cameraId),
+            name: "Laptop Camera",
+            companyId,
+            isActive: true,
+          },
+        });
+      } catch (err) {
+        // If create fails (duplicate or validation), return not found as before
+        return res.status(404).json({ error: "Camera not found" });
+      }
+    }
+
+    // Headcount mode: DO NOT write to Attendance table.
+    // Instead, upsert a per-employee/day Headcount row so the headcount page can
+    // compare "attendance (today)" vs "headcount (now)".
+    if (eventType === "headcount") {
+      const ts = new Date(timestamp);
+      if (Number.isNaN(ts.getTime())) {
+        return res.status(400).json({ error: "Invalid timestamp" });
+      }
+
+      // Dhaka-day id so the headcount page can query by date without camera filtering.
+      const dateStr = ts.toLocaleDateString("en-CA", { timeZone: "Asia/Dhaka" });
+      const dayStart = new Date(`${dateStr}T00:00:00+06:00`);
+      const dayEnd = new Date(dayStart);
+      dayEnd.setDate(dayEnd.getDate() + 1);
+
+      const hadAttendanceToday = await prisma.attendance.findFirst({
+        where: {
+          companyId,
+          employeeId: employee.id,
+          timestamp: { gte: dayStart, lt: dayEnd },
+        },
+        select: { id: true },
+      });
+
+      const status = hadAttendanceToday ? "MATCH" : "UNMATCH";
+      const headcountId = `${employee.id}:${dateStr}`;
+
+      // Preserve firstSeen across updates (stored in notes JSON)
+      let firstSeenIso = ts.toISOString();
+      try {
+        const existing = await prisma.headcount.findUnique({
+          where: { id: headcountId },
+          select: { notes: true },
+        });
+        if (existing?.notes) {
+          const parsed = JSON.parse(existing.notes);
+          const existingFirst = String(parsed?.firstSeen || "").trim();
+          if (existingFirst) firstSeenIso = existingFirst;
+        }
+      } catch {
+        // ignore malformed notes
+      }
+
+      const notes = JSON.stringify({ firstSeen: firstSeenIso });
+
+      const row = await prisma.headcount.upsert({
+        where: { id: headcountId },
+        create: {
+          id: headcountId,
+          companyId,
+          cameraId: cam ? cam.id : null,
+          employeeId: employee.id,
+          timestamp: ts,
+          status,
+          confidence: confidence ?? null,
+          notes,
+        },
+        update: {
+          cameraId: cam ? cam.id : null,
+          timestamp: ts,
+          status,
+          confidence: confidence ?? null,
+          notes,
+        },
+      });
+
+      return res.json({
+        ok: true,
+        headcount: {
+          id: row.id,
+          status: row.status,
+          timestamp: row.timestamp.toISOString(),
+          cameraId: row.cameraId,
+        },
+        employeeId: employeePublicId(employee),
+        snapshotPath: snapshotPath ?? null,
+      });
     }
 
     const row = await prisma.attendance.create({
