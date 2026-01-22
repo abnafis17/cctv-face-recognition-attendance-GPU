@@ -590,6 +590,10 @@ class AttendanceRuntime:
         cid = str(camera_id)
         desired = "on" if turn_on else "off"
         url = "http://10.81.100.149/on" if turn_on else "http://10.81.100.149/off"
+        # CHANGE TO (optional safety):
+        if not turn_on:
+            return
+        url = "http://10.81.100.149/on"
 
         now = time.time()
         last_state = self._relay_state_by_camera.get(cid)
@@ -794,8 +798,8 @@ class AttendanceRuntime:
 
                     if ok:
                         # --- ADD: relay ON when attendance ensured ---
-                        relay_on_this_frame = True
-                        self._relay_http(cid, True)
+                        # relay_on_this_frame = True
+                        # self._relay_http(cid, True)
 
                         # Also push a voice event for this attendance
                         self.push_voice_event(
@@ -812,7 +816,7 @@ class AttendanceRuntime:
                 print(f"[ATTENDANCE] Failed to mark emp={emp_id_str} cam={cid}: {e}")
 
         # --- ADD: relay OFF if nobody was ensured this frame ---
-        if enable_attendance and not relay_on_this_frame:
-            self._relay_http(cid, False)
+        # if enable_attendance and not relay_on_this_frame:
+        #     self._relay_http(cid, False)
 
         return annotated
