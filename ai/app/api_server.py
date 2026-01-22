@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 import os
 import time
 import threading
@@ -91,6 +92,14 @@ def _normalize_stream_type(value: Optional[str]) -> str:
     if normalized not in VALID_STREAM_TYPES:
         return STREAM_TYPE_ATTENDANCE
     return normalized
+
+
+def _infer_company_id_from_camera_id(camera_id: Optional[str]) -> Optional[str]:
+    cid = str(camera_id or "").strip()
+    if cid.startswith("laptop-"):
+        rest = cid[len("laptop-") :].strip()
+        return rest or None
+    return None
 
 
 def _update_attendance_state(camera_id: str) -> None:
@@ -352,6 +361,8 @@ def camera_recognition_stream(
     if ai_fps is None:
         ai_fps = _env_float("AI_FPS", 10.0)
     resolved_company_id = str(company_id or x_company_id or "").strip() or None
+    if not resolved_company_id:
+        resolved_company_id = _infer_company_id_from_camera_id(camera_id)
     if resolved_company_id:
         attendance_rt.set_company_for_camera(camera_id, resolved_company_id)
     resolved_stream_type = _normalize_stream_type(stream_type)
@@ -640,10 +651,29 @@ async def webrtc_signal(ws: WebSocket):
             if not camera_id:
                 continue
             # Bind laptop camera to a company so gallery-based recognition works
-            company_from_msg = msg.get("companyId") or msg.get("company_id")
+            company_from_msg = (
+                str(msg.get("companyId") or msg.get("company_id") or "").strip()
+                or None
+            )
+            if not company_from_msg:
+                company_from_msg = _infer_company_id_from_camera_id(camera_id)
             attendance_rt.set_company_for_camera(
                 camera_id, company_from_msg or attendance_rt._default_company_id
             )
+
+            # Allow frontend to tell us if this WebRTC feed is being used for
+            # attendance vs headcount (so backend can store correctly).
+            st_from_msg = msg.get("type") or msg.get("streamType") or msg.get("mode")
+            if st_from_msg:
+                try:
+                    attendance_rt.set_stream_type(
+                        camera_id, _normalize_stream_type(st_from_msg)
+                    )
+                except Exception:
+                    pass
+
+            # WebRTC source is active; ensure marking isn't stuck disabled from a prior state.
+            attendance_rt.set_attendance_enabled(camera_id, True)
 
             # -----------------------------
             # SDP OFFER (browser → backend)
@@ -691,6 +721,17 @@ async def webrtc_signal(ws: WebSocket):
                 answer = await pc.createAnswer()
                 await pc.setLocalDescription(answer)
 
+                # Wait briefly for ICE gathering so candidates are included in SDP.
+                # Without this, some networks fail to connect and the laptop camera appears "not working".
+                try:
+                    deadline = time.time() + 2.0
+                    while (
+                        pc.iceGatheringState != "complete" and time.time() < deadline
+                    ):
+                        await asyncio.sleep(0.05)
+                except Exception:
+                    pass
+
                 await ws.send_json({
                     "sdp": {
                         "type": pc.localDescription.type,
@@ -723,5 +764,9 @@ async def webrtc_signal(ws: WebSocket):
         if camera_id:
             rec_worker.stop(camera_id)
             hls_rt.stop(camera_id)
+            try:
+                attendance_rt.set_attendance_enabled(camera_id, False)
+            except Exception:
+                pass
 
 

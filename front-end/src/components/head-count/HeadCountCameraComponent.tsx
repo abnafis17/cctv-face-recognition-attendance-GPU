@@ -27,21 +27,29 @@ const HeadCountCameraComponent: React.FC<LocalCameraProps> = ({
   }, [companyId, userId]);
 
   const displayName = (cameraName?.trim() || "Laptop Camera").trim();
+  const streamType = "headcount";
 
   // Recognition MJPEG (same overlay as IP cameras)
   const recQuery = useMemo(() => {
     const params = new URLSearchParams();
-    params.set("type", "headcount");
+    params.set("type", streamType);
     if (companyId) params.set("companyId", companyId);
     const query = params.toString();
     return query ? `?${query}` : "";
-  }, [companyId]);
+  }, [companyId, streamType]);
 
   const recUrl = useMemo(() => {
     return `${AI_HOST}/camera/recognition/stream/${encodeURIComponent(
       cameraId,
     )}/${encodeURIComponent(displayName)}${recQuery}`;
   }, [cameraId, displayName, recQuery]);
+
+  const wsSignalUrl = useMemo(() => {
+    const base = String(AI_HOST || "")
+      .replace(/^http/i, "ws")
+      .replace(/\/$/, "");
+    return `${base}/webrtc/signal`;
+  }, []);
 
   const stopLocalCamera = () => {
     try {
@@ -97,7 +105,7 @@ const HeadCountCameraComponent: React.FC<LocalCameraProps> = ({
 
       stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
-      const ws = new WebSocket("ws://10.81.100.89:8000/webrtc/signal");
+      const ws = new WebSocket(wsSignalUrl);
       wsRef.current = ws;
 
       ws.onerror = () => {
@@ -120,6 +128,7 @@ const HeadCountCameraComponent: React.FC<LocalCameraProps> = ({
             sdp: pc.localDescription,
             cameraId,
             companyId,
+            type: streamType,
           }),
         );
       };
@@ -141,6 +150,7 @@ const HeadCountCameraComponent: React.FC<LocalCameraProps> = ({
               ice: event.candidate,
               cameraId,
               companyId,
+              type: streamType,
             }),
           );
         }

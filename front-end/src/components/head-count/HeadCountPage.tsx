@@ -17,7 +17,8 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { TanstackDataTable } from "@/components/reusable/TanstackDataTable";
 import { getCompanyIdFromToken } from "@/lib/authStorage";
-import { useAutoRefresh } from "@/hooks/useAutoRefresh";
+import { useAttendanceEvents } from "@/hooks/useAttendanceEvents";
+import { useHeadcountEvents } from "@/hooks/useHeadcountEvents";
 import Image from "next/image";
 
 import HeadCountCameraComponent from "./HeadCountCameraComponent";
@@ -283,10 +284,16 @@ export default function HeadcountPage() {
     }, 400);
   }, [fetchHeadcount]);
 
-  useAutoRefresh({
-    onTick: scheduleRefresh,
-    enabled: dateStr === dhakaTodayYYYYMMDD(),
-    intervalMs: 1500,
+  const isToday = dateStr === dhakaTodayYYYYMMDD();
+
+  // Refresh headcount when either headcount scans or attendance marks happen (same day only).
+  useHeadcountEvents({
+    enabled: isToday,
+    onEvents: () => scheduleRefresh(),
+  });
+  useAttendanceEvents({
+    enabled: isToday,
+    onEvents: () => scheduleRefresh(),
   });
 
   useEffect(() => {

@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { prisma } from "../prisma";
+import { getHeadcountEvents } from "../services/headcountEvents";
 
 function getCompanyId(req: Request): string | null {
   const fromReq = (req as any)?.companyId;
@@ -362,6 +363,44 @@ export async function listHeadcount(req: Request, res: Response) {
     console.error("listHeadcount failed:", e);
     return res.status(500).json({
       error: "Failed to load headcount",
+      detail: e?.message ?? String(e),
+    });
+  }
+}
+
+export async function headcountEvents(req: Request, res: Response) {
+  try {
+    const companyId = getCompanyId(req);
+    if (!companyId)
+      return res.status(400).json({ ok: false, error: "Missing company id" });
+
+    const afterSeqRaw = (req.query.afterSeq ?? req.query.after_seq ?? 0) as any;
+    const limitRaw = (req.query.limit ?? 50) as any;
+    const waitMsRaw = (req.query.waitMs ?? req.query.wait_ms ?? 0) as any;
+
+    const afterSeq = Number(afterSeqRaw || 0) || 0;
+    const limit = Math.min(Math.max(Number(limitRaw || 50) || 50, 1), 200);
+    const waitMs = Math.min(Math.max(Number(waitMsRaw || 0) || 0, 0), 300_000);
+
+    const ac = new AbortController();
+    req.on("close", () => ac.abort());
+
+    const payload = await getHeadcountEvents({
+      companyId,
+      afterSeq,
+      limit,
+      waitMs,
+      signal: ac.signal,
+    });
+
+    // Client disconnected before we could respond
+    if (ac.signal.aborted) return;
+
+    return res.json({ ok: true, ...payload });
+  } catch (e: any) {
+    return res.status(500).json({
+      ok: false,
+      error: "Failed to fetch headcount events",
       detail: e?.message ?? String(e),
     });
   }

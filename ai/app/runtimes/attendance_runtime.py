@@ -337,6 +337,9 @@ class AttendanceRuntime:
             ),
             input_size=(112, 112),
         )
+        # Laptop/WebRTC feeds can be noisy for anti-spoof models and may block
+        # all marks. Default to bypassing FAS for camera ids like "laptop-<companyId>".
+        self._fas_skip_laptop = os.getenv("FAS_SKIP_LAPTOP", "1") == "1"
 
         # ---------------------------
         # ERP push (optional)
@@ -717,13 +720,17 @@ class AttendanceRuntime:
             # ✅ IMPORTANT: nearest kps match (tracker bbox != detector bbox)
             face_kps = _nearest_kps(bbox_key, det_kps_by_bbox)
 
-            fas_ok, fas_dbg = self.fas_gate.check(
-                camera_id=cid,
-                person_key=emp_id_str,
-                frame_bgr=frame_bgr,
-                bbox=bbox_key,
-                kps=face_kps,
-            )
+            if self._fas_skip_laptop and str(cid).startswith("laptop-"):
+                # Laptop/WebRTC feeds often fail anti-spoof checks; do not block marks.
+                fas_ok, fas_dbg = True, {"fas": "skipped_laptop"}
+            else:
+                fas_ok, fas_dbg = self.fas_gate.check(
+                    camera_id=cid,
+                    person_key=emp_id_str,
+                    frame_bgr=frame_bgr,
+                    bbox=bbox_key,
+                    kps=face_kps,
+                )
 
             print(
                 "[FAS DEBUG]",

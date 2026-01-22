@@ -11,6 +11,7 @@ import {
   getAttendanceEvents,
   pushAttendanceEvent,
 } from "../services/attendanceEvents";
+import { pushHeadcountEvent } from "../services/headcountEvents";
 
 export async function createAttendance(req: Request, res: Response) {
   try {
@@ -52,12 +53,14 @@ export async function createAttendance(req: Request, res: Response) {
             camId: String(cameraId),
             name: "Laptop Camera",
             companyId,
-            isActive: true,
+            // This is a virtual/browser camera; do not mark it as an active RTSP camera.
+            isActive: false,
           },
         });
       } catch (err) {
-        // If create fails (duplicate or validation), return not found as before
-        return res.status(404).json({ error: "Camera not found" });
+        // If create fails (race/duplicate), try to read again before failing.
+        cam = await findCameraByAnyId(String(cameraId), companyId);
+        if (!cam) return res.status(404).json({ error: "Camera not found" });
       }
     }
 
@@ -125,6 +128,16 @@ export async function createAttendance(req: Request, res: Response) {
           confidence: confidence ?? null,
           notes,
         },
+      });
+
+      // Push an event so headcount clients can refresh without polling.
+      pushHeadcountEvent(companyId, {
+        at: new Date().toISOString(),
+        headcountId: row.id,
+        employeeId: employeePublicId(employee),
+        status: row.status,
+        timestamp: row.timestamp.toISOString(),
+        cameraId: row.cameraId,
       });
 
       return res.json({

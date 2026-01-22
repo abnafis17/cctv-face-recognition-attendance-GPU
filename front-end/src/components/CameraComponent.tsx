@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AI_HOST } from "@/config/axiosInstance";
 
 interface LocalCameraProps {
@@ -35,6 +35,8 @@ const LocalCamera: React.FC<LocalCameraProps> = ({
     return query ? `?${query}` : "";
   }, [companyId]);
 
+  const streamType = "attendance";
+
   const recUrl = useMemo(() => {
     // camera name + id must reflect current selection
     return `${AI_HOST}/camera/recognition/stream/${encodeURIComponent(
@@ -49,6 +51,18 @@ const LocalCamera: React.FC<LocalCameraProps> = ({
       .replace(/\/$/, "");
     return `${base}/webrtc/signal`;
   }, []);
+
+  // Ensure no stale streams when component unmounts
+  useEffect(() => {
+    return () => stopLocalCamera();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // If cameraId/companyId changes while active, stop cleanly (user can Start again)
+  useEffect(() => {
+    if (localActive) stopLocalCamera();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cameraId, companyId]);
 
   const stopLocalCamera = () => {
     setWsError("");
@@ -117,6 +131,7 @@ const LocalCamera: React.FC<LocalCameraProps> = ({
             sdp: pc.localDescription,
             cameraId,
             companyId,
+            type: streamType,
           }),
         );
       };
@@ -138,6 +153,7 @@ const LocalCamera: React.FC<LocalCameraProps> = ({
               ice: event.candidate,
               cameraId,
               companyId,
+              type: streamType,
             }),
           );
         }
