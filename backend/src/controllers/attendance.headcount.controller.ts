@@ -80,19 +80,15 @@ export async function listHeadcountCameras(req: Request, res: Response) {
 }
 
 /**
- * GET /headcount?date=YYYY-MM-DD&q=...&includeAbsent=1&status=MATCH|UNMATCH|MISSING|ABSENT
+ * GET /headcount?date=YYYY-MM-DD&q=...
  *
  * Important: camera selection on the headcount page is ONLY for capture/streaming.
  * The table is computed company-wide for the selected date (no camera filtering).
   *
-  * Interpretation (matches your requirement):
+  * Returns MATCH rows only:
   * - "Headcount" = entries in the Headcount table (written when stream type=headcount)
   * - "Attendance (this day)" = entries in the Attendance table (all cameras)
-  * Status:
-  * - MATCH   = employee appears in headcount AND has previous attendance today
-  * - UNMATCH = employee appears in headcount but has NO previous attendance today
-  * - MISSING = employee had attendance earlier today but is not recorded in headcount for the day
-  * - ABSENT  = employee has no attendance records today (should be present but missing)
+  * - MATCH = employee appears in BOTH headcount and attendance for the selected day
   */
 export async function listHeadcount(req: Request, res: Response) {
   try {
@@ -111,14 +107,6 @@ export async function listHeadcount(req: Request, res: Response) {
     }
 
     const q = String(req.query?.q ?? "").trim();
-    const includeAbsent =
-      String(req.query?.includeAbsent ?? "1").trim() !== "0";
-    const statusFilterRaw = String(req.query?.status || "").trim().toUpperCase();
-    const statusFilter = ["MATCH", "UNMATCH", "MISSING", "ABSENT"].includes(
-      statusFilterRaw,
-    )
-      ? (statusFilterRaw as HeadcountStatus)
-      : null;
 
     const { start, end } = dhakaDayRange(dateStr);
 
@@ -192,59 +180,19 @@ export async function listHeadcount(req: Request, res: Response) {
         .filter((x): x is string => Boolean(x)),
     );
 
-    let employees: Array<{ id: string; name: string; empId: string | null }> =
-      [];
-    let employeeIds: string[] = [];
-
-    if (includeAbsent) {
-      // Include ALL employees (or search-matched employees) so ABSENT employees show up too.
-      employees = await prisma.employee.findMany({
-        where: {
-          companyId,
-          ...(searchEmployeeIds ? { id: { in: searchEmployeeIds } } : {}),
-        },
-        select: { id: true, name: true, empId: true },
-        take: 50000,
-      });
-      employeeIds = employees.map((e) => e.id);
-    } else {
-      employeeIds = Array.from(
-        new Set([
-          ...Array.from(headIds),
-          ...Array.from(attIds),
-        ]),
-      );
-      if (employeeIds.length === 0) return res.json([]);
-
-      employees = await prisma.employee.findMany({
-        where: { companyId, id: { in: employeeIds } },
-        select: { id: true, name: true, empId: true },
-        take: 50000,
-      });
-    }
-
+    // MATCH-only mode: return ONLY employees present in BOTH:
+    // - Attendance table for the day
+    // - Headcount table for the day
+    const employeeIds = Array.from(headIds).filter((id) => attIds.has(id));
     if (employeeIds.length === 0) return res.json([]);
 
+    const employees = await prisma.employee.findMany({
+      where: { companyId, id: { in: employeeIds } },
+      select: { id: true, name: true, empId: true },
+      take: 50000,
+    });
+
     const employeeMap = new Map(employees.map((e) => [e.id, e]));
-
-    // 5) Camera names (previous attendance + headcount camera)
-    const allCamIds = Array.from(
-      new Set(
-        [
-          ...attLastByEmployee.map((x) => x.cameraId).filter(Boolean),
-          ...headLastByEmployee.map((x) => x.cameraId).filter(Boolean),
-        ].map(String),
-      ),
-    );
-
-    const cams = allCamIds.length
-      ? await prisma.camera.findMany({
-          where: { id: { in: allCamIds } },
-          select: { id: true, name: true },
-        })
-      : [];
-
-    const camName = new Map(cams.map((c) => [c.id, c.name]));
 
     const attLastMap = new Map(attLastByEmployee.map((x) => [x.employeeId, x]));
     const attFirstMap = new Map(attFirstByEmployee.map((x) => [x.employeeId, x]));
@@ -253,6 +201,24 @@ export async function listHeadcount(req: Request, res: Response) {
         .filter((x): x is typeof x & { employeeId: string } => Boolean(x.employeeId))
         .map((x) => [x.employeeId, x]),
     );
+
+    // 5) Camera names (previous attendance + headcount camera)
+    const allCamIds: string[] = [];
+    for (const employeeId of employeeIds) {
+      const prevCamId = attLastMap.get(employeeId)?.cameraId;
+      const headCamId = headLastMap.get(employeeId)?.cameraId;
+      if (prevCamId) allCamIds.push(String(prevCamId));
+      if (headCamId) allCamIds.push(String(headCamId));
+    }
+
+    const cams = allCamIds.length
+      ? await prisma.camera.findMany({
+           where: { id: { in: allCamIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+
+    const camName = new Map(cams.map((c) => [c.id, c.name]));
 
     // 6) Build rows
     type Row = {
@@ -329,10 +295,8 @@ export async function listHeadcount(req: Request, res: Response) {
       };
     });
 
-    // Optional status filter
-    const filteredRows = statusFilter
-      ? rows.filter((r) => r.status === statusFilter)
-      : rows;
+    // Return only matches
+    const filteredRows = rows.filter((r) => r.status === "MATCH");
 
     // Sort: MATCH first, then UNMATCH, then ABSENT; within group by name/id
     const rank = (s: Row["status"]) =>

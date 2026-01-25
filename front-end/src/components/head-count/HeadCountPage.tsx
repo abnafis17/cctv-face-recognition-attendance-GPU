@@ -105,7 +105,6 @@ export default function HeadcountPage() {
 
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<HeadcountStatus | "">("");
 
   const selectedCam = useMemo(
     () => cams.find((c) => c.id === selectedCamId) || null,
@@ -212,7 +211,6 @@ export default function HeadcountPage() {
           params: {
             date: dateStr,
             q: debouncedSearch || undefined,
-            status: statusFilter || undefined,
           },
         });
 
@@ -267,7 +265,7 @@ export default function HeadcountPage() {
         inflightRef.current = false;
       }
     },
-    [dateStr, debouncedSearch, statusFilter],
+    [dateStr, debouncedSearch],
   );
 
   useEffect(() => {
@@ -660,31 +658,10 @@ export default function HeadcountPage() {
             </select>
           </div>
 
-          <div className="flex items-center gap-2 rounded-xl border bg-white px-3 py-2">
-            <label className="text-xs font-medium text-gray-600">Status</label>
-            <select
-              value={statusFilter}
-              onChange={(e) =>
-                setStatusFilter(
-                  e.target.value
-                    ? (e.target.value as HeadcountStatus)
-                    : "",
-                )
-              }
-              className="text-sm outline-none bg-transparent"
-            >
-              <option value="">All</option>
-              <option value="MATCH">MATCH</option>
-              <option value="UNMATCH">UNMATCH</option>
-              <option value="MISSING">MISSING</option>
-              <option value="ABSENT">ABSENT</option>
-            </select>
-          </div>
-
-          <button
-            className="h-10 rounded-xl bg-gray-900 px-4 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-60 inline-flex items-center"
-            onClick={() => fetchHeadcount({ showSpinner: true })}
-            disabled={loading}
+           <button
+             className="h-10 rounded-xl bg-gray-900 px-4 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-60 inline-flex items-center"
+             onClick={() => fetchHeadcount({ showSpinner: true })}
+             disabled={loading}
             type="button"
             title="Refresh"
           >
