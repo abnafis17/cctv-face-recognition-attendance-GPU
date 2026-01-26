@@ -186,7 +186,7 @@ const LocalCamera: React.FC<LocalCameraProps> = ({
         </span>
       </div>
 
-      <div className="mt-3 aspect-video overflow-hidden rounded-lg border bg-black">
+      {/* <div className="mt-3 aspect-video overflow-hidden rounded-lg border bg-black">
         <video
           ref={localVideoRef}
           autoPlay
@@ -194,7 +194,7 @@ const LocalCamera: React.FC<LocalCameraProps> = ({
           muted
           className="h-full w-full object-cover"
         />
-      </div>
+      </div> */}
 
       <div className="mt-3 aspect-video overflow-hidden rounded-lg border bg-gray-100">
         {localActive ? (
