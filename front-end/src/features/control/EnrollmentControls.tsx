@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { fetchJSON, postJSON } from "@/lib/api";
 import { Camera, Employee } from "@/types";
+import { getCompanyIdFromToken } from "@/lib/authStorage";
 
 import {
   Card,
@@ -31,6 +32,8 @@ import Image from "next/image";
 type Angle = "front" | "left" | "right" | "up" | "down";
 const ANGLES: Angle[] = ["front", "left", "right", "up", "down"];
 
+const DEFAULT_LAPTOP_CAMERA_ID = "cmkdpsq300000j7284bwluxh2";
+
 function nextAngleAfter(current: Angle, staged: Record<string, number>): Angle {
   const idx = ANGLES.indexOf(current);
 
@@ -49,8 +52,18 @@ function angleLabel(a: Angle) {
 }
 
 export default function EnrollmentControls({ cameras }: { cameras: Camera[] }) {
+  const companyId = getCompanyIdFromToken();
+  const laptopCameraId = companyId
+    ? `laptop-${companyId}`
+    : DEFAULT_LAPTOP_CAMERA_ID;
+
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [cameraId, setCameraId] = useState("");
+  const [cameraId, setCameraId] = useState(laptopCameraId);
+
+  const wsRef = useRef<WebSocket | null>(null);
+  const pcRef = useRef<RTCPeerConnection | null>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const [laptopActive, setLaptopActive] = useState(false);
 
   const [mode, setMode] = useState<"new" | "existing">("new");
   const [name, setName] = useState("");
@@ -72,11 +85,118 @@ export default function EnrollmentControls({ cameras }: { cameras: Camera[] }) {
   const [msg, setMsg] = useState("");
 
   const aiBase = process.env.NEXT_PUBLIC_AI_URL || "http://127.0.0.1:8000";
+  const wsSignalUrl = useMemo(() => {
+    const base = String(aiBase || "").replace(/^http/i, "ws").replace(/\/$/, "");
+    return `${base}/webrtc/signal`;
+  }, [aiBase]);
+
+  const camerasWithLaptop = useMemo(() => {
+    const hasLaptop = cameras.some((c) => c.id === laptopCameraId);
+    if (hasLaptop) return cameras;
+
+    const laptopCam: Camera = {
+      id: laptopCameraId,
+      camId: laptopCameraId,
+      name: "Laptop Camera",
+      rtspUrl: "",
+      isActive: laptopActive,
+    };
+    return [laptopCam, ...cameras];
+  }, [cameras, laptopActive, laptopCameraId]);
 
   const selectedCamera = useMemo(
-    () => cameras.find((c) => c.id === cameraId),
-    [cameras, cameraId]
+    () => camerasWithLaptop.find((c) => c.id === cameraId),
+    [camerasWithLaptop, cameraId]
   );
+
+  const stopLaptopCamera = useCallback(() => {
+    try {
+      localStreamRef.current?.getTracks().forEach((t) => t.stop());
+    } catch {}
+
+    try {
+      pcRef.current?.close();
+    } catch {}
+
+    try {
+      wsRef.current?.close();
+    } catch {}
+
+    localStreamRef.current = null;
+    pcRef.current = null;
+    wsRef.current = null;
+
+    setLaptopActive(false);
+  }, []);
+
+  const startLaptopCamera = useCallback(async () => {
+    if (laptopActive) stopLaptopCamera();
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: 640, height: 480 },
+      audio: false,
+    });
+    localStreamRef.current = stream;
+
+    const pc = new RTCPeerConnection();
+    pcRef.current = pc;
+    stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+
+    const ws = new WebSocket(wsSignalUrl);
+    wsRef.current = ws;
+
+    ws.onerror = () => {
+      stopLaptopCamera();
+    };
+
+    ws.onclose = () => {
+      if (pcRef.current) stopLaptopCamera();
+    };
+
+    ws.onopen = async () => {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      ws.send(
+        JSON.stringify({
+          sdp: pc.localDescription,
+          cameraId: laptopCameraId,
+          companyId: companyId || undefined,
+          type: "attendance",
+          purpose: "enroll",
+        })
+      );
+    };
+
+    ws.onmessage = async (event) => {
+      const data = JSON.parse(event.data);
+
+      if (data.sdp && data.cameraId === laptopCameraId) {
+        await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+        setLaptopActive(true);
+      } else if (data.ice && data.cameraId === laptopCameraId) {
+        await pc.addIceCandidate(data.ice);
+      }
+    };
+
+    pc.onicecandidate = (event) => {
+      if (event.candidate && ws.readyState === WebSocket.OPEN) {
+        ws.send(
+          JSON.stringify({
+            ice: event.candidate,
+            cameraId: laptopCameraId,
+            companyId: companyId || undefined,
+            type: "attendance",
+            purpose: "enroll",
+          })
+        );
+      }
+    };
+  }, [companyId, laptopActive, laptopCameraId, stopLaptopCamera, wsSignalUrl]);
+
+  useEffect(() => {
+    return () => stopLaptopCamera();
+  }, [stopLaptopCamera]);
 
   const doneAngles = useMemo(() => {
     return ANGLES.filter((a) => (staged?.[a] ?? 0) > 0);
@@ -143,13 +263,20 @@ export default function EnrollmentControls({ cameras }: { cameras: Camera[] }) {
 
       // Raw preview needs camera runtime started
       if (!noScan) {
-        const res = await postJSON<{
-          ok: boolean;
-          startedNow?: boolean;
-          isActive?: boolean;
-        }>(`/cameras/start/${cameraId}`);
-        startedCamera =
-          typeof res?.startedNow === "boolean" ? res.startedNow : !wasCameraActive;
+        if (cameraId === laptopCameraId) {
+          startedCamera = !wasCameraActive;
+          await startLaptopCamera();
+        } else {
+          const res = await postJSON<{
+            ok: boolean;
+            startedNow?: boolean;
+            isActive?: boolean;
+          }>(`/cameras/start/${cameraId}`);
+          startedCamera =
+            typeof res?.startedNow === "boolean"
+              ? res.startedNow
+              : !wasCameraActive;
+        }
       }
 
       await postJSON("/enroll/start", {
@@ -177,7 +304,11 @@ export default function EnrollmentControls({ cameras }: { cameras: Camera[] }) {
       toast.error(msg);
       if (startedCamera && cameraId) {
         try {
-          await postJSON(`/cameras/stop/${cameraId}`);
+          if (cameraId === laptopCameraId) {
+            stopLaptopCamera();
+          } else {
+            await postJSON(`/cameras/stop/${cameraId}`);
+          }
         } catch {
           // ignore camera stop failure
         }
@@ -193,7 +324,13 @@ export default function EnrollmentControls({ cameras }: { cameras: Camera[] }) {
       setBusy(true);
 
       await postJSON("/enroll/stop");
-      if (cameraId) await postJSON(`/cameras/stop/${cameraId}`);
+      if (cameraId) {
+        if (cameraId === laptopCameraId) {
+          stopLaptopCamera();
+        } else {
+          await postJSON(`/cameras/stop/${cameraId}`);
+        }
+      }
 
       // ✅ explicit reset
       setRunning(false);
@@ -476,7 +613,7 @@ export default function EnrollmentControls({ cameras }: { cameras: Camera[] }) {
                   <SelectValue placeholder="Select camera" />
                 </SelectTrigger>
                 <SelectContent>
-                  {cameras.map((c) => (
+                  {camerasWithLaptop.map((c) => (
                     <SelectItem key={c.id} value={c.id}>
                       {c.name} ({c.camId ?? c.id})
                     </SelectItem>

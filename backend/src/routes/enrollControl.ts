@@ -67,8 +67,14 @@ r.post("/start", async (req, res) => {
     // Scanning requires a camera
     if (!camId) return res.status(400).json({ error: "cameraId is required" });
 
-    const cam = await findCameraByAnyId(String(camId), companyId);
-    if (!cam) return res.status(404).json({ error: "Camera not found" });
+    // Allow the virtual laptop/WebRTC camera id (frontend streams via /webrtc/signal)
+    const expectedLaptopId = companyId ? `laptop-${companyId}` : "";
+    const isLaptopCam = camId === expectedLaptopId;
+
+    const cam = isLaptopCam ? null : await findCameraByAnyId(String(camId), companyId);
+    if (!cam && !isLaptopCam) {
+      return res.status(404).json({ error: "Camera not found" });
+    }
 
     // Resolve employee
     let employee = null;
@@ -109,7 +115,7 @@ r.post("/start", async (req, res) => {
       {
         name: employee.name,
         employeeId: employeePublicId(employee),
-        cameraId: cam.id,
+        cameraId: cam ? cam.id : camId,
       },
       {
         headers: companyId ? { "x-company-id": companyId } : undefined,

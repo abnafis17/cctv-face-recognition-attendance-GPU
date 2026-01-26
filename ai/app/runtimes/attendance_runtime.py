@@ -298,14 +298,17 @@ class AttendanceRuntime:
 
         self._cam_state: Dict[str, CameraScanState] = {}
         self._enabled_for_attendance: Dict[str, bool] = {}
+        # Stream type per camera (attendance/headcount). This is set by api_server
+        # based on who is currently watching the recognition stream.
+        self._stream_type_by_camera: Dict[str, str] = {}
 
         # ---------------------------
-        # Attendance voice events (frontend speaks serially)
+        # Attendance voice events (frontend speaks serially, per company)
         # ---------------------------
         self._voice_lock = threading.Lock()
         self._voice_cv = threading.Condition(self._voice_lock)
-        self._voice_seq: int = 0
-        self._voice_events: List[Dict[str, Any]] = []
+        self._voice_seq: Dict[str, int] = {}  # company_key -> latest seq
+        self._voice_events: Dict[str, List[Dict[str, Any]]] = {}  # company_key -> events
         self._voice_max_events: int = int(os.getenv("ATT_VOICE_MAX_EVENTS", "500"))
 
         self._emp_id_to_int_by_company: Dict[str, Dict[str, int]] = {}
@@ -338,6 +341,9 @@ class AttendanceRuntime:
             ),
             input_size=(112, 112),
         )
+        # Laptop/WebRTC feeds can be noisy for anti-spoof models and may block
+        # all marks. Default to bypassing FAS for camera ids like "laptop-<companyId>".
+        self._fas_skip_laptop = os.getenv("FAS_SKIP_LAPTOP", "1") == "1"
 
         # ---------------------------
         # ERP push (optional)
@@ -368,11 +374,13 @@ class AttendanceRuntime:
         name: str,
         camera_id: str,
         camera_name: str,
+        company_id: Optional[str],
     ) -> int:
         """
         Record an attendance voice event to be consumed by the frontend.
         Frontend should speak these events one-by-one (no overlap).
         """
+        company_key = self._gallery_key(company_id)
         full_name = str(name or "").strip()
         tokens = (
             full_name.replace(",", " ").replace(".", " ").split() if full_name else []
@@ -422,9 +430,10 @@ class AttendanceRuntime:
         first_name = first_name.strip() or str(employee_id).strip() or "there"
         text = f"Thank you, {first_name}."
         with self._voice_cv:
-            self._voice_seq += 1
-            seq = self._voice_seq
-            self._voice_events.append(
+            seq = self._voice_seq.get(company_key, 0) + 1
+            self._voice_seq[company_key] = seq
+            bucket = self._voice_events.setdefault(company_key, [])
+            bucket.append(
                 {
                     "seq": seq,
                     "text": text,
@@ -432,20 +441,27 @@ class AttendanceRuntime:
                     "name": str(name),
                     "camera_id": str(camera_id),
                     "camera_name": str(camera_name),
+                    "company_id": company_key,
                     "at": now_iso(),
                 }
             )
             if (
                 self._voice_max_events > 0
-                and len(self._voice_events) > self._voice_max_events
+                and len(bucket) > self._voice_max_events
             ):
-                self._voice_events = self._voice_events[-self._voice_max_events :]
+                self._voice_events[company_key] = bucket[-self._voice_max_events :]
             self._voice_cv.notify_all()
             return seq
 
     def get_voice_events(
-        self, *, after_seq: int = 0, limit: int = 50, wait_ms: int = 0
+        self,
+        *,
+        company_id: Optional[str],
+        after_seq: int = 0,
+        limit: int = 50,
+        wait_ms: int = 0,
     ) -> Dict[str, Any]:
+        company_key = self._gallery_key(company_id)
         after_seq = int(after_seq or 0)
         limit = max(1, min(int(limit or 50), 200))
         wait_ms = max(0, min(int(wait_ms or 0), 300_000))
@@ -453,14 +469,20 @@ class AttendanceRuntime:
         deadline = time.time() + (wait_ms / 1000.0) if wait_ms else 0.0
 
         with self._voice_cv:
-            while wait_ms and int(self._voice_seq) <= after_seq:
+            while wait_ms and int(self._voice_seq.get(company_key, 0)) <= after_seq:
                 remaining = deadline - time.time()
                 if remaining <= 0:
                     break
                 self._voice_cv.wait(timeout=remaining)
 
+<<<<<<< HEAD
             latest_seq = int(self._voice_seq)
             items = [e for e in self._voice_events if int(e.get("seq", 0)) > after_seq]
+=======
+            latest_seq = int(self._voice_seq.get(company_key, 0))
+            bucket = self._voice_events.get(company_key, [])
+            items = [e for e in bucket if int(e.get("seq", 0)) > after_seq]
+>>>>>>> cpu/headcount2
         return {"latest_seq": latest_seq, "events": items[:limit]}
 
     def set_attendance_enabled(self, camera_id: str, enabled: bool) -> None:
@@ -468,6 +490,13 @@ class AttendanceRuntime:
 
     def is_attendance_enabled(self, camera_id: str) -> bool:
         return bool(self._enabled_for_attendance.get(str(camera_id), True))
+
+    def set_stream_type(self, camera_id: str, stream_type: str) -> None:
+        st = str(stream_type or "").strip().lower() or "attendance"
+        self._stream_type_by_camera[str(camera_id)] = st
+
+    def get_stream_type(self, camera_id: str) -> str:
+        return str(self._stream_type_by_camera.get(str(camera_id), "attendance") or "attendance")
 
     def set_company_for_camera(self, camera_id: str, company_id: Optional[str]) -> None:
         cid = str(camera_id)
@@ -738,13 +767,17 @@ class AttendanceRuntime:
             # ✅ IMPORTANT: nearest kps match (tracker bbox != detector bbox)
             face_kps = _nearest_kps(bbox_key, det_kps_by_bbox)
 
-            fas_ok, fas_dbg = self.fas_gate.check(
-                camera_id=cid,
-                person_key=emp_id_str,
-                frame_bgr=frame_bgr,
-                bbox=bbox_key,
-                kps=face_kps,
-            )
+            if self._fas_skip_laptop and str(cid).startswith("laptop-"):
+                # Laptop/WebRTC feeds often fail anti-spoof checks; do not block marks.
+                fas_ok, fas_dbg = True, {"fas": "skipped_laptop"}
+            else:
+                fas_ok, fas_dbg = self.fas_gate.check(
+                    camera_id=cid,
+                    person_key=emp_id_str,
+                    frame_bgr=frame_bgr,
+                    bbox=bbox_key,
+                    kps=face_kps,
+                )
 
             print(
                 "[FAS DEBUG]",
@@ -765,20 +798,23 @@ class AttendanceRuntime:
 
             try:
                 client = self._client_for_company(company_id)
-                # 1) Your existing backend attendance (keep as-is)
+                stream_type = self.get_stream_type(cid)
+
+                # 1) Backend mark (attendance/headcount decided by stream_type)
                 client.create_attendance(
                     employee_id=emp_id_str,
                     timestamp=now_iso(),
                     camera_id=cid,
                     confidence=float(tr.similarity),
                     snapshot_path=None,
+                    event_type=stream_type,
                 )
 
                 # 2) Mark cooldown only if backend success
                 state.last_mark[emp_id_str] = now
 
-                # 3) Push to ERP (non-blocking, in background)
-                if self.erp_queue is not None:
+                # 3) Push to ERP + voice only for attendance mode (skip for headcount scans)
+                if stream_type == "attendance" and self.erp_queue is not None:
                     attendance_date = datetime.now().strftime(
                         "%d/%m/%Y"
                     )  # "03/01/2026"
@@ -807,6 +843,7 @@ class AttendanceRuntime:
                             name=name,
                             camera_id=cid,
                             camera_name=camera_name,
+                            company_id=company_id,
                         )
 
                     if not ok:

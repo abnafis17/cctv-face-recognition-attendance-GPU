@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useErpEmployees } from "@/hooks/useErpEmployees";
 import { SearchableSelect } from "@/components/reusable/SearchableSelect";
+import { getCompanyIdFromToken } from "@/lib/authStorage";
 
 type Camera = {
   id: string;
@@ -32,6 +33,8 @@ const STEPS: Step[] = ["front", "left", "right", "up", "down"];
 
 const SCAN_1: Step[] = ["front", "left", "right"];
 const SCAN_2: Step[] = ["up", "down"];
+
+const DEFAULT_LAPTOP_CAMERA_ID = "cmkdpsq300000j7284bwluxh2";
 
 type Session = {
   session_id: string;
@@ -213,9 +216,30 @@ export default function AutoEnrollment({
   cameras: Camera[];
   loadCameras: () => Promise<void>;
 }) {
-  const [cameraId, setCameraId] = useState<string>(cameras?.[0]?.id || "");
+  const companyId = getCompanyIdFromToken();
+  const laptopCameraId = companyId
+    ? `laptop-${companyId}`
+    : DEFAULT_LAPTOP_CAMERA_ID;
+
+  const [cameraId, setCameraId] = useState<string>(laptopCameraId);
   const [employeeId, setEmployeeId] = useState("");
   const [name, setName] = useState("");
+
+  const wsRef = useRef<WebSocket | null>(null);
+  const pcRef = useRef<RTCPeerConnection | null>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
+
+  const [laptopActive, setLaptopActive] = useState(false);
+
+  const camerasWithLaptop = useMemo(() => {
+    const hasLaptop = (cameras || []).some((c) => c.id === laptopCameraId);
+    if (hasLaptop) return cameras || [];
+
+    return [
+      { id: laptopCameraId, name: "Laptop Camera", isActive: laptopActive },
+      ...(cameras || []),
+    ];
+  }, [cameras, laptopCameraId, laptopActive]);
 
   const [tts, setTts] = useState(true);
   const speak = useTTS(tts);
@@ -233,12 +257,12 @@ export default function AutoEnrollment({
   // when cameras load async, set initial camera once (safe + lint clean)
   useEffect(() => {
     if (running) return;
-    if (!cameraId && cameras?.length) setCameraId(cameras[0].id);
-  }, [cameras, cameraId, running]);
+    if (!cameraId && camerasWithLaptop?.length) setCameraId(camerasWithLaptop[0].id);
+  }, [camerasWithLaptop, cameraId, running]);
 
   const selectedCam = useMemo(
-    () => cameras.find((c) => c.id === cameraId),
-    [cameras, cameraId]
+    () => camerasWithLaptop.find((c) => c.id === cameraId),
+    [camerasWithLaptop, cameraId]
   );
 
   // IMPORTANT: stream must go to AI server like recognition page does
@@ -248,6 +272,11 @@ export default function AutoEnrollment({
       cameraId
     )}`;
   }, [cameraId]);
+
+  const wsSignalUrl = useMemo(() => {
+    const base = String(AI_HOST || "").replace(/^http/i, "ws").replace(/\/$/, "");
+    return `${base}/webrtc/signal`;
+  }, []);
 
   // ---- status refresh (via backend proxy, avoids CORS) ----
   const refreshStatus = useCallback(async () => {
@@ -266,10 +295,106 @@ export default function AutoEnrollment({
     }
   }, []);
 
+  const stopLaptopCamera = useCallback(() => {
+    try {
+      localStreamRef.current?.getTracks().forEach((t) => t.stop());
+    } catch {}
+
+    try {
+      pcRef.current?.close();
+    } catch {}
+
+    try {
+      wsRef.current?.close();
+    } catch {}
+
+    localStreamRef.current = null;
+    pcRef.current = null;
+    wsRef.current = null;
+
+    setLaptopActive(false);
+  }, []);
+
+  useEffect(() => {
+    return () => stopLaptopCamera();
+  }, [stopLaptopCamera]);
+
+  const startLaptopCamera = useCallback(async () => {
+    // if already running, restart cleanly
+    if (laptopActive) stopLaptopCamera();
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: 640, height: 480 },
+      audio: false,
+    });
+    localStreamRef.current = stream;
+
+    const pc = new RTCPeerConnection();
+    pcRef.current = pc;
+    stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+
+    const ws = new WebSocket(wsSignalUrl);
+    wsRef.current = ws;
+
+    ws.onerror = () => {
+      stopLaptopCamera();
+    };
+
+    ws.onclose = () => {
+      // if we didn't explicitly stop, close resources
+      if (pcRef.current) stopLaptopCamera();
+    };
+
+    ws.onopen = async () => {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      ws.send(
+        JSON.stringify({
+          sdp: pc.localDescription,
+          cameraId: laptopCameraId,
+          companyId: companyId || undefined,
+          type: "attendance",
+          purpose: "enroll",
+        })
+      );
+    };
+
+    ws.onmessage = async (event) => {
+      const data = JSON.parse(event.data);
+
+      if (data.sdp && data.cameraId === laptopCameraId) {
+        await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+        setLaptopActive(true);
+      } else if (data.ice && data.cameraId === laptopCameraId) {
+        await pc.addIceCandidate(data.ice);
+      }
+    };
+
+    pc.onicecandidate = (event) => {
+      if (event.candidate && ws.readyState === WebSocket.OPEN) {
+        ws.send(
+          JSON.stringify({
+            ice: event.candidate,
+            cameraId: laptopCameraId,
+            companyId: companyId || undefined,
+            type: "attendance",
+            purpose: "enroll",
+          })
+        );
+      }
+    };
+  }, [companyId, laptopActive, laptopCameraId, stopLaptopCamera, wsSignalUrl]);
+
   // ---- camera ensure ON (your existing backend logic) ----
   const ensureCameraOn = useCallback(
     async (camId: string) => {
       if (!camId) return false;
+      if (camId === laptopCameraId) {
+        const wasActive = laptopActive;
+        await startLaptopCamera();
+        return !wasActive;
+      }
       const wasActive = cameras.find((c) => c.id === camId)?.isActive === true;
 
       const res = await axiosInstance.post<{
@@ -282,17 +407,21 @@ export default function AutoEnrollment({
         ? res.data.startedNow
         : !wasActive;
     },
-    [cameras, loadCameras]
+    [cameras, loadCameras, laptopActive, laptopCameraId, startLaptopCamera]
   );
 
   // ---- stop camera (your existing backend logic) ----
   const stopCamera = useCallback(
     async (camId: string) => {
       if (!camId) return;
+      if (camId === laptopCameraId) {
+        stopLaptopCamera();
+        return;
+      }
       await axiosInstance.post(`/cameras/stop/${camId}`);
       await loadCameras();
     },
-    [loadCameras]
+    [laptopCameraId, loadCameras, stopLaptopCamera]
   );
 
   // ---- START: start camera -> start enroll session ----
@@ -379,7 +508,7 @@ export default function AutoEnrollment({
       if (t) clearTimeout(t);
       window.speechSynthesis.cancel();
     };
-  }, [refreshStatus, running]);
+  }, [refreshStatus, running, stopLaptopCamera]);
 
   // ---- Speak when backend emits voice event ----
   useEffect(() => {
@@ -560,7 +689,7 @@ export default function AutoEnrollment({
                     onChange={(e) => setCameraId(e.target.value)}
                     disabled={busy}
                   >
-                    {(cameras || []).map((c) => (
+                    {camerasWithLaptop.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name ? `${c.name} (${c.id})` : c.id}
                       </option>

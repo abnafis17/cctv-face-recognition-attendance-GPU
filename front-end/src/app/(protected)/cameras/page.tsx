@@ -16,7 +16,7 @@ export default function CamerasPage() {
   const [err, setErr] = useState<string>("");
 
   // ✅ Voice functionality moved to hook (same behavior as before)
-  useAttendanceVoice();
+  // useAttendanceVoice();
 
   // Add camera form
   const [newId, setNewId] = useState("");
@@ -24,9 +24,15 @@ export default function CamerasPage() {
   const [newUrl, setNewUrl] = useState("");
 
   const companyId = getCompanyIdFromToken();
-  const streamQuery = companyId
-    ? `?companyId=${encodeURIComponent(companyId)}`
-    : "";
+  const streamQuery = (() => {
+    const params = new URLSearchParams();
+    params.set("type", "attendance");
+    if (companyId) {
+      params.set("companyId", companyId);
+    }
+    const query = params.toString();
+    return query ? `?${query}` : "";
+  })();
 
   // prevent overlapping loads
   // Shared loader (only for user-triggered refresh
@@ -49,8 +55,10 @@ export default function CamerasPage() {
     setErr,
   });
 
-  // Laptop camera (WebRTC ingest) uses a fixed cameraId; reuse companyId for gallery
-  const laptopCameraId = "cmkdpsq300000j7284bwluxh2";
+  // Laptop camera (WebRTC ingest) uses a company-scoped id so attendance is company-bound
+  const laptopCameraId = companyId
+    ? `laptop-${companyId}`
+    : "cmkdpsq300000j7284bwluxh2";
 
   return (
     <div>
