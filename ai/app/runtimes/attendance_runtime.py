@@ -308,7 +308,9 @@ class AttendanceRuntime:
         self._voice_lock = threading.Lock()
         self._voice_cv = threading.Condition(self._voice_lock)
         self._voice_seq: Dict[str, int] = {}  # company_key -> latest seq
-        self._voice_events: Dict[str, List[Dict[str, Any]]] = {}  # company_key -> events
+        self._voice_events: Dict[str, List[Dict[str, Any]]] = (
+            {}
+        )  # company_key -> events
         self._voice_max_events: int = int(os.getenv("ATT_VOICE_MAX_EVENTS", "500"))
 
         self._emp_id_to_int_by_company: Dict[str, Dict[str, int]] = {}
@@ -445,10 +447,7 @@ class AttendanceRuntime:
                     "at": now_iso(),
                 }
             )
-            if (
-                self._voice_max_events > 0
-                and len(bucket) > self._voice_max_events
-            ):
+            if self._voice_max_events > 0 and len(bucket) > self._voice_max_events:
                 self._voice_events[company_key] = bucket[-self._voice_max_events :]
             self._voice_cv.notify_all()
             return seq
@@ -475,14 +474,9 @@ class AttendanceRuntime:
                     break
                 self._voice_cv.wait(timeout=remaining)
 
-<<<<<<< HEAD
-            latest_seq = int(self._voice_seq)
-            items = [e for e in self._voice_events if int(e.get("seq", 0)) > after_seq]
-=======
             latest_seq = int(self._voice_seq.get(company_key, 0))
             bucket = self._voice_events.get(company_key, [])
             items = [e for e in bucket if int(e.get("seq", 0)) > after_seq]
->>>>>>> cpu/headcount2
         return {"latest_seq": latest_seq, "events": items[:limit]}
 
     def set_attendance_enabled(self, camera_id: str, enabled: bool) -> None:
@@ -496,7 +490,10 @@ class AttendanceRuntime:
         self._stream_type_by_camera[str(camera_id)] = st
 
     def get_stream_type(self, camera_id: str) -> str:
-        return str(self._stream_type_by_camera.get(str(camera_id), "attendance") or "attendance")
+        return str(
+            self._stream_type_by_camera.get(str(camera_id), "attendance")
+            or "attendance"
+        )
 
     def set_company_for_camera(self, camera_id: str, company_id: Optional[str]) -> None:
         cid = str(camera_id)
