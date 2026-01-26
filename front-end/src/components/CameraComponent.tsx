@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AI_HOST } from "@/config/axiosInstance";
+import Image from "next/image";
 
 interface LocalCameraProps {
   userId?: string; // cameraId
@@ -55,7 +56,6 @@ const LocalCamera: React.FC<LocalCameraProps> = ({
   // Ensure no stale streams when component unmounts
   useEffect(() => {
     return () => stopLocalCamera();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // If cameraId/companyId changes while active, stop cleanly (user can Start again)
@@ -198,10 +198,13 @@ const LocalCamera: React.FC<LocalCameraProps> = ({
 
       <div className="mt-3 aspect-video overflow-hidden rounded-lg border bg-gray-100">
         {localActive ? (
-          <img
+          <Image
             src={recUrl}
             alt="Recognition stream"
             className="h-full w-full object-cover"
+            width={1280}
+            height={720}
+            unoptimized
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-xs text-gray-500">
@@ -213,7 +216,7 @@ const LocalCamera: React.FC<LocalCameraProps> = ({
       {wsError ? (
         <div className="mt-2 text-xs text-red-600">{wsError}</div>
       ) : null}
-      <div className="mt-1 text-[11px] text-gray-500">CameraId: {cameraId}</div>
+      {/* <div className="mt-1 text-[11px] text-gray-500">CameraId: {cameraId}</div> */}
 
       <div className="mt-3 flex justify-end gap-2">
         {localActive ? (

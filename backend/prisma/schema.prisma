@@ -54,7 +54,7 @@ model User {
 
 model Employee {
   id        String  @id @default(cuid())
-  empId     String?
+  empId     String? @map("emp_id")
   name      String
   companyId String?
   company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -113,7 +113,7 @@ model Attendance {
 
 model Camera {
   id       String  @id @default(cuid())
-  camId    String?
+  camId    String? @map("cam_id")
   name     String
   rtspUrl  String? // ✅ keep optional (relay cameras won't store plaintext RTSP)
   isActive Boolean @default(false)
