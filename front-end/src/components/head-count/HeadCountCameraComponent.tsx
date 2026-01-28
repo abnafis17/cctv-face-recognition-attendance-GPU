@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AI_HOST } from "@/config/axiosInstance";
 
 interface LocalCameraProps {
@@ -51,7 +51,7 @@ const HeadCountCameraComponent: React.FC<LocalCameraProps> = ({
     return `${base}/webrtc/signal`;
   }, []);
 
-  const stopLocalCamera = () => {
+  const stopLocalCamera = useCallback(() => {
     try {
       if (localVideoRef.current?.srcObject) {
         (localVideoRef.current.srcObject as MediaStream)
@@ -72,19 +72,21 @@ const HeadCountCameraComponent: React.FC<LocalCameraProps> = ({
     wsRef.current = null;
 
     setLocalActive(false);
-  };
+  }, []);
 
   // ✅ Ensure no stale streams when cameraId/companyId changes or component unmounts
   useEffect(() => {
     return () => stopLocalCamera();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [stopLocalCamera]);
 
+  const prevKeyRef = useRef<string>(`${cameraId}|${companyId || ""}`);
   useEffect(() => {
     // If user switches camera while active, stop cleanly (user can Start again)
-    if (localActive) stopLocalCamera();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cameraId, companyId]);
+    const key = `${cameraId}|${companyId || ""}`;
+    const changed = prevKeyRef.current !== key;
+    if (changed && localActive) stopLocalCamera();
+    prevKeyRef.current = key;
+  }, [cameraId, companyId, localActive, stopLocalCamera]);
 
   const startLocalCamera = async () => {
     try {
@@ -201,6 +203,8 @@ const HeadCountCameraComponent: React.FC<LocalCameraProps> = ({
       {/* Recognition Overlay */}
       <div className="mt-3 aspect-video overflow-hidden rounded-lg border bg-gray-100">
         {localActive ? (
+          // MJPEG stream (not compatible with next/image optimizations)
+          // eslint-disable-next-line @next/next/no-img-element
           <img
             src={recUrl}
             alt="Recognition stream"

@@ -43,7 +43,7 @@ async def webrtc_signal(ws: WebSocket, container=Depends(get_container)):
 
             container.attendance_rt.set_company_for_camera(
                 camera_id,
-                company_from_msg or container.attendance_rt._default_company_id,
+                company_from_msg or container.attendance_rt.default_company_id,
             )
 
             st_from_msg = msg.get("type") or msg.get("streamType") or msg.get("mode")

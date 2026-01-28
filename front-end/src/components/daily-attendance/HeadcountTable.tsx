@@ -40,10 +40,6 @@ function safeDateTime(ts?: string | number | Date | null) {
   }
 }
 
-function dhakaTodayYYYYMMDD() {
-  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Dhaka" });
-}
-
 function StatusPill({ v }: { v: HeadcountRow["status"] }) {
   const cls =
     v === "MATCH"

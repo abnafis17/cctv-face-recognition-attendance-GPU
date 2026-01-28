@@ -94,7 +94,6 @@ export function useAttendanceEvents(options: UseAttendanceEventsOptions = {}) {
       cancelled = true;
       window.clearTimeout(first);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, pollIntervalMs, waitMs, limit, onEvents]);
 }
 

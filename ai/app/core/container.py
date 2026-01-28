@@ -93,10 +93,29 @@ class ServiceContainer:
     stream_clients: StreamClientManager = field(repr=False)
 
     def shutdown(self) -> None:
-        # best-effort cleanup; you can expand later
+        # Best-effort cleanup.
         try:
-            # stop all workers if you keep an index of cameras; here it's per camera stop.
+            self.enroller2_auto.stop()
+        except Exception:
             pass
+
+        try:
+            self.rec_worker.stop_all()
+        except Exception:
+            pass
+
+        try:
+            self.hls_rt.stop_all()
+        except Exception:
+            pass
+
+        try:
+            self.camera_rt.stop_all()
+        except Exception:
+            pass
+
+        try:
+            self.attendance_rt.shutdown()
         except Exception:
             pass
 

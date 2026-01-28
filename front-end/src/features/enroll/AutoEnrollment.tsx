@@ -547,7 +547,7 @@ export default function AutoEnrollment({
     window.speechSynthesis.cancel();
   }, [sessionStatus]);
 
-  const collected = session?.collected || {};
+  const collected = useMemo(() => session?.collected ?? {}, [session?.collected]);
 
   const doneCount = useMemo(() => {
     return STEPS.filter((s) => (collected?.[s] || 0) > 0).length;

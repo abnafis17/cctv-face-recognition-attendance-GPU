@@ -46,9 +46,7 @@ def _instruction_text(step: str) -> str:
     }.get(step, step)
 
 
-WELCOME_VOICE = (
-    "Let\'s set up face enrollment. Position your face in the frame.",
-)
+WELCOME_VOICE = "Let's set up face enrollment. Position your face in the frame."
 
 @dataclass
 class Enroll2AutoSession:

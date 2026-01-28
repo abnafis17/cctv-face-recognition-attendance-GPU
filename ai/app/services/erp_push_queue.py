@@ -71,3 +71,13 @@ class ERPPushQueue:
                 self.on_error(last_err, job)
 
             self.q.task_done()
+
+    def stop(self, timeout_s: float = 2.0) -> None:
+        """
+        Best-effort shutdown for the background worker thread.
+        """
+        self._stop.set()
+        try:
+            self._t.join(timeout=float(timeout_s))
+        except Exception:
+            pass

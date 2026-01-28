@@ -130,22 +130,6 @@ def _to_kps5(kps_any) -> Optional[np.ndarray]:
     return None
 
 
-    # expected is (5,2)
-    if kps.shape == (5, 2):
-        return kps.astype(np.float32, copy=False)
-
-    # sometimes flattened (10,)
-    if kps.ndim == 1 and kps.shape[0] == 10:
-        try:
-            kps = kps.reshape(5, 2)
-            return kps.astype(np.float32, copy=False)
-        except Exception:
-            return None
-
-    # anything else -> refuse (pose code expects exactly (5,2))
-    return None
-
-
 @dataclass
 class FaceDet:
     bbox: np.ndarray

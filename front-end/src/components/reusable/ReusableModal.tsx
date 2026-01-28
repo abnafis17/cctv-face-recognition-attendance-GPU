@@ -2,7 +2,6 @@
 
 import React, { useEffect, useRef } from 'react';
 import { XIcon } from 'lucide-react';
-import { max } from 'date-fns';
 
 interface ReusableModalProps {
   open: boolean;

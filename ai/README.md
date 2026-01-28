@@ -31,21 +31,15 @@ Edit `config.yaml`:
 ## 3) Enroll employee (auto-enrollment)
 Use the web UI (Front-end) Enrollment page to run the auto-enrollment flow (WebRTC laptop camera + guided angles).
 
-## 4) Run attendance (overlay + DB logging)
-```powershell
-python -m app.scripts.run_camera_attendance
-```
-Keys:
-- Q quit
-- R reload gallery
+## 4) Run attendance (web)
+Attendance is recorded via the recognition stream used by the web UI (Cameras/Headcount pages). Start AI + backend + front-end and view a recognition stream to begin logging.
 
-## 5) Run API + Dashboard
+## 5) Run AI API
 ```powershell
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 Open:
-- Dashboard: http://127.0.0.1:8000/
-- API docs:   http://127.0.0.1:8000/docs
+- API docs: http://127.0.0.1:8000/docs
 
 ## Smoothness tips
 - Increase `runtime.detect_every_n_frames` to 3

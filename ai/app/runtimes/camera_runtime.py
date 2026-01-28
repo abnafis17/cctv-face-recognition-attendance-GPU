@@ -47,6 +47,15 @@ class CameraRuntime:
             print(f"[CameraRuntime] stop failed for {camera_id}: {e}")
             return False
 
+    def stop_all(self) -> None:
+        with self._lock:
+            ids = list(self.cameras.keys())
+        for camera_id in ids:
+            try:
+                self.stop(camera_id)
+            except Exception:
+                pass
+
     def inject_frame(self, camera_id: str, frame: np.ndarray):
         """Inject a frame from a laptop/WebRTC source."""
         if camera_id not in self.injected_locks:
