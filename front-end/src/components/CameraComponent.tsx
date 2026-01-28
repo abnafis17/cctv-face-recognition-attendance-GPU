@@ -6,7 +6,6 @@ import React, {
   useState,
 } from "react";
 import { AI_HOST } from "@/config/axiosInstance";
-import Image from "next/image";
 
 interface LocalCameraProps {
   userId?: string; // cameraId
@@ -218,7 +217,6 @@ const LocalCamera: React.FC<LocalCameraProps> = ({
             className="h-full w-full object-cover"
             width={1280}
             height={720}
-            unoptimized
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-xs text-gray-500">
