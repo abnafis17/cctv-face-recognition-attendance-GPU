@@ -28,16 +28,8 @@ Edit `config.yaml`:
 - `camera.rtsp_url`
 - start with `1280x720`
 
-## 3) Enroll employee (multi-angle scan)
-```powershell
-python -m app.scripts.enroll_angles_rtsp --name "Alice"
-```
-Keys:
-- SPACE: capture
-- N: next angle
-- Q: quit
-
-If `pose.enable_pose_check: true`, the app shows yaw/pitch and whether the current face pose matches the required angle.
+## 3) Enroll employee (auto-enrollment)
+Use the web UI (Front-end) Enrollment page to run the auto-enrollment flow (WebRTC laptop camera + guided angles).
 
 ## 4) Run attendance (overlay + DB logging)
 ```powershell
@@ -49,7 +41,7 @@ Keys:
 
 ## 5) Run API + Dashboard
 ```powershell
-python -m app.server.api_server
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 Open:
 - Dashboard: http://127.0.0.1:8000/
