@@ -7,7 +7,7 @@ from typing import Dict, Optional
 
 import cv2
 from fastapi import FastAPI, Body, Header, Query, WebSocket, WebSocketDisconnect
-from fastapi.responses import StreamingResponse, Response,StreamingResponse
+from fastapi.responses import StreamingResponse, Response, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 # PeerConncection
@@ -480,6 +480,7 @@ def attendance_enabled(camera_id: str):
         "enabled": attendance_rt.is_attendance_enabled(camera_id),
     }
 
+
 @app.get("/attendance/voice-events")
 def attendance_voice_events(
     after_seq: int = 0,
@@ -490,7 +491,10 @@ def attendance_voice_events(
 ):
     resolved_company_id = str(company_id or x_company_id or "").strip() or None
     payload = attendance_rt.get_voice_events(
-        company_id=resolved_company_id, after_seq=after_seq, limit=limit, wait_ms=wait_ms
+        company_id=resolved_company_id,
+        after_seq=after_seq,
+        limit=limit,
+        wait_ms=wait_ms,
     )
     return {"ok": True, **payload}
 
@@ -636,6 +640,7 @@ def enroll2_auto_session_stop():
     s = enroller2_auto.status()
     return {"ok": True, "stopped": stopped, "session": (s.__dict__ if s else None)}
 
+
 @app.websocket("/webrtc/signal")
 async def webrtc_signal(ws: WebSocket):
     await ws.accept()
@@ -656,8 +661,7 @@ async def webrtc_signal(ws: WebSocket):
                 ingest_only = True
             # Bind laptop camera to a company so gallery-based recognition works
             company_from_msg = (
-                str(msg.get("companyId") or msg.get("company_id") or "").strip()
-                or None
+                str(msg.get("companyId") or msg.get("company_id") or "").strip() or None
             )
             if not company_from_msg:
                 company_from_msg = _infer_company_id_from_camera_id(camera_id)
@@ -705,7 +709,9 @@ async def webrtc_signal(ws: WebSocket):
                                     ai_fps=30.0,
                                 )
                                 try:
-                                    annotated = rec_worker.get_latest_annotated(camera_id)
+                                    annotated = rec_worker.get_latest_annotated(
+                                        camera_id
+                                    )
                                     if annotated is None:
                                         annotated = img
                                     hls_rt.start(camera_id)
@@ -733,20 +739,20 @@ async def webrtc_signal(ws: WebSocket):
                 # Without this, some networks fail to connect and the laptop camera appears "not working".
                 try:
                     deadline = time.time() + 2.0
-                    while (
-                        pc.iceGatheringState != "complete" and time.time() < deadline
-                    ):
+                    while pc.iceGatheringState != "complete" and time.time() < deadline:
                         await asyncio.sleep(0.05)
                 except Exception:
                     pass
 
-                await ws.send_json({
-                    "sdp": {
-                        "type": pc.localDescription.type,
-                        "sdp": pc.localDescription.sdp,
-                    },
-                    "cameraId": camera_id,
-                })
+                await ws.send_json(
+                    {
+                        "sdp": {
+                            "type": pc.localDescription.type,
+                            "sdp": pc.localDescription.sdp,
+                        },
+                        "cameraId": camera_id,
+                    }
+                )
 
             # -----------------------------
             # ICE CANDIDATE
@@ -776,5 +782,3 @@ async def webrtc_signal(ws: WebSocket):
                 attendance_rt.set_attendance_enabled(camera_id, False)
             except Exception:
                 pass
-
-
