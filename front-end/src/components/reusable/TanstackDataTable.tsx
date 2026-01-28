@@ -11,7 +11,6 @@ import {
   VisibilityState,
   ColumnFiltersState,
   RowSelectionState,
-  Table as TableType,
   Row,
 } from "@tanstack/react-table";
 import { ArrowUp, ArrowDown } from "lucide-react";
@@ -54,7 +53,6 @@ export function TanstackDataTable<TData>({
   cellHeight,
   headerCellClassName,
   freezeClassName,
-  ...props
 }: TanstackDataTableProps<TData>) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
@@ -67,6 +65,7 @@ export function TanstackDataTable<TData>({
     ? headerCellClassName
     : "whitespace-nowrap";
 
+  // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable<TData>({
     data,
     columns,

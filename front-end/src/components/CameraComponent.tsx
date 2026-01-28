@@ -1,4 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { AI_HOST } from "@/config/axiosInstance";
 import Image from "next/image";
 
@@ -16,6 +22,7 @@ const LocalCamera: React.FC<LocalCameraProps> = ({
   cameraName = "Laptop Camera",
 }) => {
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
 
@@ -53,25 +60,15 @@ const LocalCamera: React.FC<LocalCameraProps> = ({
     return `${base}/webrtc/signal`;
   }, []);
 
-  // Ensure no stale streams when component unmounts
-  useEffect(() => {
-    return () => stopLocalCamera();
-  }, []);
-
-  // If cameraId/companyId changes while active, stop cleanly (user can Start again)
-  useEffect(() => {
-    if (localActive) stopLocalCamera();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cameraId, companyId]);
-
-  const stopLocalCamera = () => {
+  const stopLocalCamera = useCallback(() => {
     setWsError("");
 
-    if (localVideoRef.current?.srcObject) {
-      (localVideoRef.current.srcObject as MediaStream)
-        .getTracks()
-        .forEach((t) => t.stop());
-    }
+    const stream =
+      localStreamRef.current ||
+      (localVideoRef.current?.srcObject as MediaStream | null);
+    if (stream) stream.getTracks().forEach((t) => t.stop());
+    localStreamRef.current = null;
+    if (localVideoRef.current) localVideoRef.current.srcObject = null;
 
     try {
       pcRef.current?.close();
@@ -85,7 +82,21 @@ const LocalCamera: React.FC<LocalCameraProps> = ({
     wsRef.current = null;
 
     setLocalActive(false);
-  };
+  }, []);
+
+  // Ensure no stale streams when component unmounts
+  useEffect(() => {
+    return () => stopLocalCamera();
+  }, [stopLocalCamera]);
+
+  // If cameraId/companyId changes while active, stop cleanly (user can Start again)
+  const prevKeyRef = useRef<string>(`${cameraId}|${companyId || ""}`);
+  useEffect(() => {
+    const key = `${cameraId}|${companyId || ""}`;
+    const changed = prevKeyRef.current !== key;
+    if (changed && localActive) stopLocalCamera();
+    prevKeyRef.current = key;
+  }, [cameraId, companyId, localActive, stopLocalCamera]);
 
   const startLocalCamera = async () => {
     try {
@@ -98,6 +109,7 @@ const LocalCamera: React.FC<LocalCameraProps> = ({
         video: { width: 640, height: 480 },
         audio: false,
       });
+      localStreamRef.current = stream;
 
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
@@ -198,7 +210,9 @@ const LocalCamera: React.FC<LocalCameraProps> = ({
 
       <div className="mt-3 aspect-video overflow-hidden rounded-lg border bg-gray-100">
         {localActive ? (
-          <Image
+          // MJPEG stream (not compatible with next/image optimizations)
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
             src={recUrl}
             alt="Recognition stream"
             className="h-full w-full object-cover"

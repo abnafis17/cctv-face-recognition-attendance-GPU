@@ -14,7 +14,7 @@ import EmployeeEditForm from "./EmployeeEditForm";
 
 const EmployeeListTable = () => {
   const { isOpen, open, close } = useModal();
-  const [skip, setSkip] = useState(0);
+  const [skip] = useState(0);
   const [loading, setLoading] = useState(false);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedUser, setSelectedUser] = useState<Employee | null>(null);

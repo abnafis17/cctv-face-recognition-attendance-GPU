@@ -7,8 +7,6 @@ import attendanceRoutes from "./attendance.routes";
 import statsRoutes from "./stats.routes";
 import camerasRoutes from "./cameras";
 import attendanceControl from "./attendanceControl";
-import enrollControl from "./enrollControl";
-import enrollSession from "./enrollSession";
 import cameraControl from "./cameras.control";
 import enroll2AutoRoutes from "./enroll2Auto.routes";
 import { authRouter } from "./auth.routes";
@@ -35,8 +33,6 @@ router.use("/cameras", requireCompany, cameraControl);
 
 // 🔹 controls
 router.use("/attendance-control", requireCompany, attendanceControl);
-router.use("/enroll", requireCompany, enrollControl);
-router.use("/enroll-session", requireCompany, enrollSession);
 
 router.use("/enroll2-auto", requireCompany, enroll2AutoRoutes);
 

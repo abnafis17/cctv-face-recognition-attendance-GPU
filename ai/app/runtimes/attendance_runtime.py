@@ -369,6 +369,22 @@ class AttendanceRuntime:
         else:
             print("[ERP] ERP_BASE_URL not set, ERP push disabled.")
 
+    @property
+    def default_company_id(self) -> Optional[str]:
+        return self._default_company_id
+
+    def shutdown(self) -> None:
+        """
+        Best-effort cleanup for background resources.
+        """
+        try:
+            if self.erp_queue is not None:
+                self.erp_queue.stop()
+        except Exception:
+            pass
+        finally:
+            self.erp_queue = None
+
     def push_voice_event(
         self,
         *,

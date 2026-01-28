@@ -5,7 +5,6 @@ import { AI_HOST } from "@/config/axiosInstance";
 import type { Camera } from "@/types";
 import Image from "next/image";
 import { getCompanyIdFromToken } from "@/lib/authStorage";
-import { useAttendanceVoice } from "@/hooks/useAttendanceVoice";
 import { useCameraCrud } from "@/hooks/useCameraCrud";
 import { useAttendanceToggle } from "@/hooks/useAttendanceToggle";
 import { useCamerasLoader } from "@/hooks/useCamerasLoader";

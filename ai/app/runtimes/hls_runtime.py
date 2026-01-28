@@ -19,3 +19,10 @@ class HLSRuntime:
         writer = self.writers.pop(camera_id, None)
         if writer:
             writer.stop()
+
+    def stop_all(self) -> None:
+        for camera_id in list(self.writers.keys()):
+            try:
+                self.stop(camera_id)
+            except Exception:
+                pass

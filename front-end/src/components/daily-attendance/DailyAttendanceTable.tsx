@@ -8,7 +8,7 @@ import { Card } from "@/components/ui/Card";
 import { cn } from "@/lib/utils";
 import { TanstackDataTable } from "../reusable/TanstackDataTable";
 import { Input } from "@/components/ui/input";
-import { Calendar as CalendarIcon, RefreshCcw, Search, X } from "lucide-react";
+import { RefreshCcw, Search, X } from "lucide-react";
 
 type DailyAttendanceRow = {
   id: string;

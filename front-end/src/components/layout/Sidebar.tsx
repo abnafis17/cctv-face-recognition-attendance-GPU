@@ -8,7 +8,6 @@ import {
   UserPlus,
   Users,
   CalendarClock,
-  SlidersHorizontal,
   LogOut,
 } from "lucide-react";
 import { clearAccessToken } from "@/lib/authStorage";
@@ -21,11 +20,6 @@ const nav = [
   { href: "/employees", label: "Employees", icon: Users },
   { href: "/daily-attendance", label: "Daily Attendance", icon: CalendarClock },
   { href: "/attendance", label: "Recognition History", icon: CalendarClock },
-  {
-    href: "/enrollment-control",
-    label: "Enrollment Control(Manual)",
-    icon: SlidersHorizontal,
-  },
 ];
 
 function isActive(pathname: string, href: string) {

@@ -8,7 +8,6 @@ import React, {
   useState,
 } from "react";
 import toast from "react-hot-toast";
-import Image from "next/image";
 
 import axiosInstance, { AI_HOST } from "@/config/axiosInstance";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -225,6 +224,7 @@ export default function AutoEnrollment({
   const [employeeId, setEmployeeId] = useState("");
   const [name, setName] = useState("");
 
+  const previewVideoRef = useRef<HTMLVideoElement | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -265,6 +265,12 @@ export default function AutoEnrollment({
     [camerasWithLaptop, cameraId]
   );
 
+  const selectedCamIsActive = useMemo(() => {
+    if (!cameraId) return false;
+    if (cameraId === laptopCameraId) return laptopActive;
+    return selectedCam?.isActive === true;
+  }, [cameraId, laptopActive, laptopCameraId, selectedCam?.isActive]);
+
   // IMPORTANT: stream must go to AI server like recognition page does
   const streamUrl = useMemo(() => {
     if (!cameraId) return "";
@@ -272,6 +278,71 @@ export default function AutoEnrollment({
       cameraId
     )}`;
   }, [cameraId]);
+
+  // MJPEG stream reliability: cache-bust + retry (some browsers keep stale connections)
+  const [streamAttempt, setStreamAttempt] = useState(0);
+  const [streamHasFrame, setStreamHasFrame] = useState(false);
+  const [streamRetries, setStreamRetries] = useState(0);
+  const streamRetryCountRef = useRef(0);
+  const streamRetryTimerRef = useRef<number | null>(null);
+
+  const streamSrc = useMemo(() => {
+    if (!streamUrl) return "";
+    const sep = streamUrl.includes("?") ? "&" : "?";
+    return `${streamUrl}${sep}t=${streamAttempt}`;
+  }, [streamAttempt, streamUrl]);
+
+  const resetStream = useCallback(() => {
+    if (streamRetryTimerRef.current) window.clearTimeout(streamRetryTimerRef.current);
+    streamRetryTimerRef.current = null;
+    streamRetryCountRef.current = 0;
+    setStreamRetries(0);
+    setStreamHasFrame(false);
+    setStreamAttempt((a) => a + 1);
+  }, []);
+
+  const scheduleStreamRetry = useCallback(() => {
+    streamRetryCountRef.current += 1;
+    const tries = streamRetryCountRef.current;
+    setStreamRetries(tries);
+    setStreamHasFrame(false);
+
+    const delay = Math.min(3000, 250 * 2 ** Math.min(tries, 4));
+    if (streamRetryTimerRef.current) window.clearTimeout(streamRetryTimerRef.current);
+    streamRetryTimerRef.current = window.setTimeout(() => {
+      setStreamAttempt((a) => a + 1);
+    }, delay);
+  }, []);
+
+  const forceStreamReloadNow = useCallback(() => {
+    if (streamRetryTimerRef.current) window.clearTimeout(streamRetryTimerRef.current);
+    streamRetryTimerRef.current = null;
+
+    streamRetryCountRef.current += 1;
+    const tries = streamRetryCountRef.current;
+    setStreamRetries(tries);
+    setStreamHasFrame(false);
+    setStreamAttempt((a) => a + 1);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (streamRetryTimerRef.current) window.clearTimeout(streamRetryTimerRef.current);
+    };
+  }, []);
+
+  // Watchdog: if MJPEG hangs without firing onError, force-reload until a frame appears.
+  useEffect(() => {
+    if (screen !== "enrolling") return;
+    if (!streamSrc) return;
+    if (streamHasFrame) return;
+
+    const t = window.setTimeout(() => {
+      forceStreamReloadNow();
+    }, 3500);
+
+    return () => window.clearTimeout(t);
+  }, [forceStreamReloadNow, screen, streamHasFrame, streamSrc]);
 
   const wsSignalUrl = useMemo(() => {
     const base = String(AI_HOST || "").replace(/^http/i, "ws").replace(/\/$/, "");
@@ -298,6 +369,10 @@ export default function AutoEnrollment({
   const stopLaptopCamera = useCallback(() => {
     try {
       localStreamRef.current?.getTracks().forEach((t) => t.stop());
+    } catch {}
+
+    try {
+      if (previewVideoRef.current) previewVideoRef.current.srcObject = null;
     } catch {}
 
     try {
@@ -328,6 +403,17 @@ export default function AutoEnrollment({
       audio: false,
     });
     localStreamRef.current = stream;
+
+    // Show local preview immediately (MJPEG may take a moment to appear)
+    try {
+      if (previewVideoRef.current) {
+        previewVideoRef.current.srcObject = stream;
+        previewVideoRef.current.muted = true;
+        await previewVideoRef.current.play();
+      }
+    } catch {}
+
+    setLaptopActive(true);
 
     const pc = new RTCPeerConnection();
     pcRef.current = pc;
@@ -365,7 +451,6 @@ export default function AutoEnrollment({
 
       if (data.sdp && data.cameraId === laptopCameraId) {
         await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
-        setLaptopActive(true);
       } else if (data.ice && data.cameraId === laptopCameraId) {
         await pc.addIceCandidate(data.ice);
       }
@@ -385,6 +470,23 @@ export default function AutoEnrollment({
       }
     };
   }, [companyId, laptopActive, laptopCameraId, stopLaptopCamera, wsSignalUrl]);
+
+  // If the local stream starts before the enrolling UI mounts, attach it once the <video> exists.
+  useEffect(() => {
+    if (screen !== "enrolling") return;
+    if (cameraId !== laptopCameraId) return;
+    if (streamHasFrame) return;
+
+    const stream = localStreamRef.current;
+    const video = previewVideoRef.current;
+    if (!stream || !video) return;
+
+    if (video.srcObject !== stream) {
+      video.srcObject = stream;
+      video.muted = true;
+      video.play().catch(() => {});
+    }
+  }, [cameraId, laptopActive, laptopCameraId, screen, streamHasFrame]);
 
   // ---- camera ensure ON (your existing backend logic) ----
   const ensureCameraOn = useCallback(
@@ -477,6 +579,7 @@ export default function AutoEnrollment({
       setSession(null);
       setRunning(false);
       setScreen("setup");
+      resetStream();
 
       // stop any speaking
       window.speechSynthesis.cancel();
@@ -487,7 +590,13 @@ export default function AutoEnrollment({
     } finally {
       setBusy(false);
     }
-  }, [cameraId, refreshStatus, stopCamera]);
+  }, [cameraId, refreshStatus, resetStream, stopCamera]);
+
+  // When enrolling (or camera changes), force a fresh MJPEG connection
+  useEffect(() => {
+    if (screen !== "enrolling") return;
+    resetStream();
+  }, [cameraId, resetStream, screen]);
 
   // ---- Polling (fast when running, slow when idle) ----
   useEffect(() => {
@@ -547,7 +656,7 @@ export default function AutoEnrollment({
     window.speechSynthesis.cancel();
   }, [sessionStatus]);
 
-  const collected = session?.collected || {};
+  const collected = useMemo(() => session?.collected ?? {}, [session?.collected]);
 
   const doneCount = useMemo(() => {
     return STEPS.filter((s) => (collected?.[s] || 0) > 0).length;
@@ -700,15 +809,15 @@ export default function AutoEnrollment({
                     Camera status:{" "}
                     <b
                       className={
-                        selectedCam?.isActive
+                        selectedCamIsActive
                           ? "text-green-700"
                           : "text-red-700"
                       }
                     >
-                      {selectedCam?.isActive ? "ON" : "OFF"}
+                      {selectedCamIsActive ? "ON" : "OFF"}
                     </b>
                     {" — "}
-                    {selectedCam?.isActive
+                    {selectedCamIsActive
                       ? "You should see the video preview."
                       : "It will start automatically when you press Start."}
                   </div>
@@ -794,22 +903,49 @@ export default function AutoEnrollment({
                 {/* Stream */}
                 <div className="space-y-3">
                   <div className="rounded-2xl border overflow-hidden bg-gray-100">
-                    {selectedCam?.isActive && streamUrl ? (
-                      <div className="aspect-video w-full">
-                        <Image
-                          src={streamUrl}
-                          alt="Enrollment Stream"
-                          className="h-full w-full object-cover"
-                          width={1280}
-                          height={720}
-                          unoptimized
+                    <div className="aspect-video w-full relative">
+                      {/* Local preview fallback (instant) while MJPEG overlay connects */}
+                      {cameraId === laptopCameraId && laptopActive && !streamHasFrame ? (
+                        <video
+                          ref={previewVideoRef}
+                          autoPlay
+                          playsInline
+                          muted
+                          className="absolute inset-0 h-full w-full object-cover"
                         />
-                      </div>
-                    ) : (
-                      <div className="aspect-video flex items-center justify-center text-sm text-gray-600">
-                        Starting camera…
-                      </div>
-                    )}
+                      ) : null}
+
+                      {streamSrc ? (
+                        // MJPEG stream (not compatible with next/image optimizations)
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          key={`${cameraId}:${streamAttempt}`}
+                          src={streamSrc}
+                          alt="Enrollment Stream"
+                          className={`absolute inset-0 h-full w-full object-cover ${
+                            streamHasFrame ? "opacity-100" : "opacity-0"
+                          }`}
+                          onLoad={() => {
+                            if (streamRetryTimerRef.current)
+                              window.clearTimeout(streamRetryTimerRef.current);
+                            streamRetryTimerRef.current = null;
+                            streamRetryCountRef.current = 0;
+                            setStreamRetries(0);
+                            setStreamHasFrame(true);
+                          }}
+                          onError={scheduleStreamRetry}
+                        />
+                      ) : null}
+
+                      {!streamHasFrame &&
+                      !(cameraId === laptopCameraId && laptopActive) ? (
+                        <div className="absolute inset-0 flex items-center justify-center text-sm text-gray-600">
+                          {streamRetries > 0
+                            ? "Reconnecting camera..."
+                            : "Starting camera..."}
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
 
                   {multiWarn && (
