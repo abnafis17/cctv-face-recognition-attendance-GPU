@@ -631,12 +631,11 @@ class AttendanceRuntime:
 
         cid = str(camera_id)
         desired = "on" if turn_on else "off"
-        url = "http://10.81.100.149/on" if turn_on else "http://10.81.100.149/off"
+        url = "http://10.81.100.54/on" if turn_on else "http://10.81.100.54/off"
         # CHANGE TO (optional safety):
         if not turn_on:
             return
-        url = "http://10.81.100.149/on"
-
+        url = "http://10.81.100.54/on"
         now = time.time()
         last_state = self._relay_state_by_camera.get(cid)
         last_ts = self._relay_last_ts_by_camera.get(cid, 0.0)
