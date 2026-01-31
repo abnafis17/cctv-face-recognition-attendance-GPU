@@ -6,6 +6,7 @@ export const API = {
   LOGOUT: "/auth/logout",
 
   EMPLOYEE_LIST: "/employees",
+  EMPLOYEE_GROUP_VALUES: "/employees/group-values",
   ATTENDANCE_LIST: "/attendance",
 
   DAILY_ATTENDANCE_LIST: "/attendance/daily",
