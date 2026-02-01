@@ -3,15 +3,23 @@ from __future__ import annotations
 import os
 import time
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple, Optional
 
 import cv2
 import numpy as np
 
 from ..clients.backend_client import BackendClient
-from ..vision.recognizer import FaceRecognizer, match_gallery
-from ..vision.tracker import SimpleTracker
+from ..vision.recognizer import match_gallery
+from ..vision.pipeline_config import Config
+from ..vision.motion_gate import MotionGate as SceneMotionGate
+from ..vision.adaptive_scheduler import AdaptiveScheduler
+from ..vision.tracker_manager import TrackerManager
+from ..vision.insightface_models import FaceDetector, FaceEmbedder
+from ..vision.gpu_arbiter import GPUArbiter, Detection
+from ..vision.recognizer_runtime import Recognizer, MatchResult
+from ..vision.attendance_debouncer import AttendanceDebouncer
+from ..vision.db_writer import DBWriter, AttendanceWriteJob
 from ..utils import now_iso, l2_normalize, quality_score
 
 from ..fas.gate import FASGate, GateConfig
@@ -19,9 +27,6 @@ from ..fas.gate import FASGate, GateConfig
 from datetime import datetime
 from ..clients.erp_client import ERPClient, ERPClientConfig
 from ..services.erp_push_queue import ERPPushQueue, ERPPushJob
-
-# add near your other imports (only if missing)
-import threading
 import urllib.request
 
 
@@ -37,21 +42,23 @@ CARD_UNKNOWN = (50, 30, 30)  # dark red card
 
 @dataclass
 class CameraScanState:
-    tracker: SimpleTracker = field(
-        default_factory=lambda: SimpleTracker(
-            iou_threshold=0.35,
-            max_age_frames=10,
-            smooth_alpha=0.55,  # smoother but still responsive for 60 fps
-            center_dist_threshold=140.0,  # allow lateral motion to stay on the same track
-            suppress_new_iou=0.65,  # don't spawn new tracks near an existing one
-            merge_iou=0.5,  # merge overlapping tracks
-            merge_center=90.0,  # merge close-center tracks
-        )
-    )
-    last_mark: Dict[str, float] = field(
-        default_factory=dict
-    )  # employee_id(str) -> last_mark_ts
+    tracker: TrackerManager
+    motion: SceneMotionGate
+    scheduler: AdaptiveScheduler
+    recognizer: Recognizer
+
+    last_det_seq: int = 0
     frame_idx: int = 0
+    company_id: Optional[str] = None
+
+    # basic per-camera stats (logged periodically)
+    frames_total: int = 0
+    det_applied_total: int = 0
+    rec_calls_total: int = 0
+    last_log_ts: float = 0.0
+    last_log_frames_total: int = 0
+    last_log_det_applied_total: int = 0
+    last_log_rec_calls_total: int = 0
 
 
 def _put_text_white(
@@ -279,9 +286,6 @@ class AttendanceRuntime:
         )
         self._default_client = BackendClient(company_id=self._default_company_id)
         self._clients_by_company: Dict[str, BackendClient] = {}
-        self.rec = FaceRecognizer(
-            model_name=model_name, use_gpu=use_gpu, min_face_size=min_face_size
-        )
 
         self.similarity_threshold = float(similarity_threshold)
         self.strict_similarity = float(os.getenv("STRICT_SIM_THRESHOLD", "0.5"))
@@ -289,6 +293,44 @@ class AttendanceRuntime:
         self.gallery_refresh_s = float(gallery_refresh_s)
         self.cooldown_s = int(cooldown_s)
         self.stable_hits_required = int(stable_hits_required)
+
+        # ---------------------------
+        # CPU-steady / GPU-burst pipeline config + models
+        # ---------------------------
+        self.cfg = Config.from_env(
+            similarity_threshold=self.similarity_threshold,
+            strict_similarity_threshold=self.strict_similarity,
+            min_att_quality=self.min_att_quality,
+            attendance_debounce_seconds=float(self.cooldown_s),
+            stable_id_confirmations=int(self.stable_hits_required),
+        )
+
+        # GPU-burst detector + CPU embedder (default) + round-robin arbiter
+        self._detector = FaceDetector(
+            model_name=model_name,
+            use_gpu=use_gpu,
+            min_face_size=min_face_size,
+        )
+        self._embedder = FaceEmbedder(model_name=model_name, use_gpu=use_gpu)
+
+        self._gpu = GPUArbiter(detect_fn=self._detect_faces, queue_size=int(self.cfg.queue_size))
+
+        # Async attendance writer (DB/HTTP/IO should never block the frame loop)
+        self._db_writer = DBWriter(write_fn=self._write_attendance_job, max_queue=1000)
+        self._debouncer = AttendanceDebouncer(self.cfg)
+
+        # Optional GPU monitoring (guarded; only logs if NVML is available).
+        self._nvml = None
+        self._nvml_handle = None
+        try:
+            import pynvml  # type: ignore
+
+            pynvml.nvmlInit()
+            self._nvml = pynvml
+            self._nvml_handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+        except Exception:
+            self._nvml = None
+            self._nvml_handle = None
 
         self._company_by_camera: Dict[str, str] = {}
 
@@ -378,12 +420,30 @@ class AttendanceRuntime:
         Best-effort cleanup for background resources.
         """
         try:
+            if getattr(self, "_gpu", None) is not None:
+                self._gpu.stop()
+        except Exception:
+            pass
+
+        try:
+            if getattr(self, "_db_writer", None) is not None:
+                self._db_writer.stop(drain_timeout_s=2.0)
+        except Exception:
+            pass
+
+        try:
             if self.erp_queue is not None:
                 self.erp_queue.stop()
         except Exception:
             pass
         finally:
             self.erp_queue = None
+
+        try:
+            if getattr(self, "_nvml", None) is not None:
+                self._nvml.nvmlShutdown()
+        except Exception:
+            pass
 
     def push_voice_event(
         self,
@@ -616,9 +676,33 @@ class AttendanceRuntime:
 
     def _get_state(self, camera_id: str) -> CameraScanState:
         cid = str(camera_id)
-        if cid not in self._cam_state:
-            self._cam_state[cid] = CameraScanState()
-        return self._cam_state[cid]
+        st = self._cam_state.get(cid)
+        if st is not None:
+            return st
+
+        motion = SceneMotionGate(
+            threshold=float(self.cfg.motion_threshold),
+            hysteresis_ratio=float(self.cfg.motion_hysteresis_ratio),
+            cooldown_seconds=float(self.cfg.motion_cooldown_seconds),
+            resize=(int(self.cfg.motion_resize_w), int(self.cfg.motion_resize_h)),
+        )
+        scheduler = AdaptiveScheduler(self.cfg)
+        tracker = TrackerManager(self.cfg)
+
+        def _match(emb: np.ndarray, *, _cid: str = cid) -> MatchResult:
+            return self._match_embedding(_cid, emb)
+
+        recognizer = Recognizer(self.cfg, embedder=self._embedder, match_embedding=_match)
+        now = time.time()
+        st = CameraScanState(
+            tracker=tracker,
+            motion=motion,
+            scheduler=scheduler,
+            recognizer=recognizer,
+            last_log_ts=now,
+        )
+        self._cam_state[cid] = st
+        return st
 
     def _relay_http(self, camera_id: str, turn_on: bool) -> None:
         # Lazy init so you don't have to touch __init__
@@ -656,9 +740,321 @@ class AttendanceRuntime:
 
         threading.Thread(target=_do, daemon=True).start()
 
+    # -------------------------
+    # Pipeline integration points
+    # -------------------------
+    def _detect_faces(self, frame_bgr: np.ndarray) -> List[Detection]:
+        dets = self._detector.detect(frame_bgr)
+        h, w = frame_bgr.shape[:2]
+        out: List[Detection] = []
+        for d in dets:
+            x1, y1, x2, y2 = [int(v) for v in d.bbox]
+            x1 = max(0, min(w - 1, x1))
+            y1 = max(0, min(h - 1, y1))
+            x2 = max(0, min(w, x2))
+            y2 = max(0, min(h, y2))
+            if x2 <= x1 or y2 <= y1:
+                continue
+            out.append(
+                Detection(
+                    bbox=(x1, y1, x2, y2),
+                    kps=d.kps,
+                    det_score=float(d.det_score),
+                )
+            )
+        return out
+
+    def _match_embedding(self, camera_id: str, emb: np.ndarray) -> MatchResult:
+        cid = str(camera_id)
+        company_id = self._company_by_camera.get(cid) or self._default_company_id
+        key = self._gallery_key(company_id)
+        gallery_matrix = self._gallery_matrix_by_company.get(key)
+        gallery_meta = self._gallery_meta_by_company.get(key, [])
+
+        if gallery_matrix is None or gallery_matrix.size == 0:
+            return MatchResult(person_id=None, name="Unknown", score=-1.0)
+
+        idx, sim = match_gallery(emb, gallery_matrix)
+        if idx != -1 and idx < len(gallery_meta):
+            _emp_int, emp_id_str, name = gallery_meta[idx]
+            return MatchResult(person_id=str(emp_id_str), name=str(name), score=float(sim))
+
+        return MatchResult(person_id=None, name="Unknown", score=float(sim))
+
+    def _write_attendance_job(self, job: AttendanceWriteJob) -> None:
+        cid = str(job.camera_id)
+        company_id = job.company_id
+
+        client = self._client_for_company(company_id)
+        stream_type = self.get_stream_type(cid)
+
+        # 1) Backend mark (attendance/headcount decided by stream_type)
+        client.create_attendance(
+            employee_id=str(job.employee_id),
+            timestamp=str(job.timestamp_iso),
+            camera_id=cid,
+            confidence=float(job.similarity),
+            snapshot_path=None,
+            event_type=stream_type,
+        )
+
+        # 2) Push to ERP + voice only for attendance mode (skip for headcount scans)
+        if stream_type == "attendance" and self.erp_queue is not None:
+            attendance_date = datetime.now().strftime("%d/%m/%Y")
+            in_time = datetime.now().strftime("%H:%M:%S")
+
+            erp_job = ERPPushJob(
+                attendance_date=attendance_date,
+                emp_id=str(job.employee_id),
+                in_time=in_time,
+                in_location=str(job.camera_name),
+            )
+
+            ok = self.erp_queue.enqueue(erp_job)
+            print(
+                f"[ERP] queued ok={ok} emp={erp_job.emp_id} date={erp_job.attendance_date} in={erp_job.in_time}"
+            )
+
+            if ok:
+                self.push_voice_event(
+                    employee_id=str(job.employee_id),
+                    name=str(job.name),
+                    camera_id=cid,
+                    camera_name=str(job.camera_name),
+                    company_id=company_id,
+                )
+
+    def _maybe_log_camera_stats(
+        self,
+        *,
+        camera_id: str,
+        state: CameraScanState,
+        tracks_total: int,
+        unknown_total: int,
+        now: float,
+        motion_score: float,
+    ) -> None:
+        interval = float(getattr(self.cfg, "log_interval_seconds", 5.0) or 0.0)
+        if interval <= 0.0:
+            return
+
+        if state.last_log_ts <= 0.0:
+            state.last_log_ts = now
+            state.last_log_frames_total = int(state.frames_total)
+            state.last_log_det_applied_total = int(state.det_applied_total)
+            state.last_log_rec_calls_total = int(state.rec_calls_total)
+            return
+
+        dt = now - float(state.last_log_ts)
+        if dt < interval:
+            return
+
+        frames = int(state.frames_total) - int(state.last_log_frames_total)
+        det_applied = int(state.det_applied_total) - int(state.last_log_det_applied_total)
+        rec_calls = int(state.rec_calls_total) - int(state.last_log_rec_calls_total)
+
+        fps = (frames / dt) if dt > 0 else 0.0
+        det_fps = (det_applied / dt) if dt > 0 else 0.0
+        rec_s = (rec_calls / dt) if dt > 0 else 0.0
+
+        q_len, q_drop = self._gpu.queue_stats(camera_id)
+        mode = state.scheduler.mode_label()
+        reasons = ",".join(state.scheduler.burst_reasons(limit=3))
+
+        gpu_util = None
+        try:
+            if getattr(self, "_nvml_handle", None) is not None and getattr(self, "_nvml", None) is not None:
+                util = self._nvml.nvmlDeviceGetUtilizationRates(self._nvml_handle)
+                gpu_util = int(getattr(util, "gpu", 0))
+        except Exception:
+            gpu_util = None
+
+        gpu_part = "" if gpu_util is None else f" gpu={gpu_util}%"
+        print(
+            f"[PIPE] cam={camera_id} fps={fps:.1f} det_fps={det_fps:.2f} rec/s={rec_s:.2f} "
+            f"tracks={tracks_total} unk={unknown_total} q={q_len} drop={q_drop} mode={mode} "
+            f"reasons={reasons} motion={motion_score:.3f}{gpu_part}"
+        )
+
+        state.last_log_ts = now
+        state.last_log_frames_total = int(state.frames_total)
+        state.last_log_det_applied_total = int(state.det_applied_total)
+        state.last_log_rec_calls_total = int(state.rec_calls_total)
+
     def process_frame(
         self, frame_bgr: np.ndarray, camera_id: str, name: str
     ) -> np.ndarray:
+        cid = str(camera_id)
+        camera_name = str(name)
+        company_id = self._company_by_camera.get(cid) or self._default_company_id
+
+        # Keep the existing gallery loading contract.
+        self._ensure_gallery(company_id)
+
+        state = self._get_state(cid)
+        state.company_id = company_id
+        state.frame_idx += 1
+        state.frames_total += 1
+
+        enable_attendance = self.is_attendance_enabled(cid)
+        annotated = frame_bgr.copy()
+
+        now = time.time()
+
+        # Always run CPU motion + CPU tracking each frame.
+        motion_active, motion_score = state.motion.update(frame_bgr, now=now)
+        tracks = state.tracker.update(frame_bgr, now=now)
+
+        # Apply newest detector result (if any).
+        events: set[str] = set()
+        det_res = self._gpu.get_latest_result(cid)
+        if det_res is not None and int(det_res.seq) != int(state.last_det_seq):
+            state.last_det_seq = int(det_res.seq)
+            state.det_applied_total += 1
+
+            new_ids = state.tracker.apply_detections(frame_bgr, det_res.detections, now=now)
+            if new_ids:
+                events.add("new_track")
+                new_id_set = set(new_ids)
+                # New tracks get immediate high-stakes recognition window.
+                for tr in state.tracker.tracks():
+                    if tr.track_id in new_id_set:
+                        tr.force_recognition_until_ts = max(
+                            tr.force_recognition_until_ts, now + float(self.cfg.burst_seconds)
+                        )
+            tracks = state.tracker.tracks()
+
+        # Scheduler mode update.
+        state.scheduler.update(
+            motion_active=motion_active,
+            tracks_present=bool(tracks),
+            events=events,
+            now=now,
+        )
+
+        # Scheduled GPU detection (round-robin arbitration, newest-frame only).
+        if state.scheduler.should_run_detection(now=now):
+            self._gpu.submit(cid, frame_bgr, ts=now)
+            state.scheduler.mark_detection_submitted(now=now)
+
+        # Scheduled per-track recognition (CPU by default).
+        rec_stats = state.recognizer.update_tracks(frame_bgr, tracks, state.scheduler, now=now)
+        state.rec_calls_total += int(rec_stats.get("recognition_calls", 0) or 0)
+
+        # Stable-id confirmations: count stable frames (closer to prior stable_name_hits behavior).
+        for tr in tracks:
+            if tr.person_id is not None:
+                tr.stable_id_hits = int(tr.stable_id_hits) + 1
+            else:
+                tr.stable_id_hits = 0
+
+        # HUD / overlay
+        _put_text_white(annotated, f"frame={state.frame_idx}", 12, 36, scale=1.05)
+        _put_text_white(
+            annotated,
+            f"mode={state.scheduler.mode_label()} motion={motion_score:.3f}",
+            12,
+            68,
+            scale=0.75,
+        )
+
+        h, w = annotated.shape[:2]
+        unknown_count = 0
+
+        for tr in tracks:
+            x1, y1, x2, y2 = [int(v) for v in tr.bbox]
+            known = tr.person_id is not None
+            if not known:
+                unknown_count += 1
+
+            color = ACCENT_KNOWN if known else ACCENT_UNKNOWN
+            cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 3)
+
+            label = tr.name if known else "Unknown"
+            _draw_label_card(annotated, label, x1, max(38, y1 - 14), known, scale=0.75)
+
+            # Attendance marking (debounced + verified + async writer)
+            if not enable_attendance:
+                continue
+            if not known:
+                continue
+            if not company_id:
+                continue
+
+            # Avoid partial edge faces and low-quality crops
+            if x1 <= 4 or y1 <= 4 or x2 >= (w - 4) or y2 >= (h - 4):
+                continue
+
+            q_score = quality_score((x1, y1, x2, y2), frame_bgr)
+            if q_score < float(self.cfg.min_att_quality):
+                continue
+
+            decision = self._debouncer.consider(
+                camera_id=cid,
+                camera_name=camera_name,
+                company_id=company_id,
+                track=tr,
+                scheduler=state.scheduler,
+                now=now,
+            )
+            if decision.job is None:
+                continue
+
+            # Final safety: ensure we still agree on the identity.
+            if tr.person_id != str(decision.job.employee_id):
+                continue
+
+            bbox_key = (x1, y1, x2, y2)
+
+            if self._fas_skip_laptop and str(cid).startswith("laptop-"):
+                fas_ok, fas_dbg = True, {"fas": "skipped_laptop"}
+            else:
+                fas_ok, fas_dbg = self.fas_gate.check(
+                    camera_id=cid,
+                    person_key=str(decision.job.employee_id),
+                    frame_bgr=frame_bgr,
+                    bbox=bbox_key,
+                    kps=tr.kps,
+                )
+
+            print(
+                "[FAS DEBUG]",
+                "emp=",
+                str(decision.job.employee_id),
+                "ok=",
+                fas_ok,
+                "dbg=",
+                fas_dbg,
+                "kps_none=",
+                tr.kps is None,
+            )
+
+            if not fas_ok:
+                continue
+
+            ok = self._db_writer.enqueue(decision.job)
+            if ok:
+                self._debouncer.mark_enqueued(
+                    camera_id=cid, employee_id=str(decision.job.employee_id), now=now
+                )
+            else:
+                print(
+                    f"[ATTENDANCE] writer queue full, dropped emp={decision.job.employee_id} cam={cid}"
+                )
+
+        # Monitoring (per camera, every few seconds)
+        self._maybe_log_camera_stats(
+            camera_id=cid,
+            state=state,
+            tracks_total=len(tracks),
+            unknown_total=unknown_count,
+            now=now,
+            motion_score=motion_score,
+        )
+
+        return annotated
+
+        """
         cid = str(camera_id)
         camera_name = str(name)
         company_id = self._company_by_camera.get(cid) or self._default_company_id
@@ -869,3 +1265,4 @@ class AttendanceRuntime:
         #     self._relay_http(cid, False)
 
         return annotated
+        """

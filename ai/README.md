@@ -45,3 +45,33 @@ Open:
 - Increase `runtime.detect_every_n_frames` to 3
 - Reduce `runtime.ai_fps`
 - Reduce resolution to 640x360 if CPU-only
+
+## CPU-steady / GPU-burst pipeline (upgrade)
+
+This repo now uses a **CPU-steady / GPU-burst** attendance pipeline to keep GPU usage low in idle scenes while staying responsive when motion/people appear.
+
+**What changed (minimal diffs):**
+- Updated `ai/app/runtimes/attendance_runtime.py` to refactor the face-processing loop:
+  - CPU motion gate runs every frame
+  - CPU tracker runs every frame (smooth boxes between detections)
+  - GPU face detection runs only on scheduled ticks (IDLE/NORMAL/BURST)
+  - Recognition runs per-track on refresh/high-stakes only
+  - Attendance writes are async (never block the frame loop)
+- Added new modular components under `ai/app/vision/`:
+  - `pipeline_config.py`, `motion_gate.py`, `adaptive_scheduler.py`, `gpu_arbiter.py`
+  - `insightface_models.py`, `tracker_manager.py`, `recognizer_runtime.py`
+  - `attendance_debouncer.py`, `db_writer.py`
+
+**What stayed the same:**
+- Capture/reconnect (`FrameGrabber`, `CameraRuntime`)
+- Streaming/UI endpoints (MJPEG/WebRTC/HLS flow + existing worker abstraction)
+- Existing backend + ERP + voice-event behaviors and signatures (moved behind an async writer)
+
+**Tuning (env vars):**
+- `MOTION_THRESHOLD`, `IDLE_SECONDS`
+- `DETECTION_FPS_IDLE`, `DETECTION_FPS_NORMAL`, `DETECTION_FPS_BURST`, `BURST_SECONDS`
+- `EMBED_REFRESH_SECONDS`, `UNKNOWN_BURST_AFTER_SECONDS`
+- `SIMILARITY_THRESHOLD`, `BORDERLINE_MARGIN`
+- `ATTENDANCE_DEBOUNCE_SECONDS`, `STABLE_ID_CONFIRMATIONS`, `GPU_QUEUE_SIZE`
+
+**Note:** For CSRT/KCF trackers install `opencv-contrib-python` (this repo’s `requirements*.txt` now uses it). If unavailable, the code falls back to another OpenCV tracker.
