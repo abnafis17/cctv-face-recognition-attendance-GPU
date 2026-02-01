@@ -1044,7 +1044,7 @@ class AttendanceRuntime:
             ok = self._db_writer.enqueue(decision.job)
             if ok:
                 self._debouncer.mark_enqueued(
-                    camera_id=cid, employee_id=str(decision.job.employee_id), now=now
+                    company_id=company_id, employee_id=str(decision.job.employee_id), now=now
                 )
             else:
                 print(

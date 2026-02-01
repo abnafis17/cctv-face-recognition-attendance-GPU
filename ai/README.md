@@ -76,6 +76,7 @@ This repo now uses a **CPU-steady / GPU-burst** attendance pipeline to keep GPU 
 - Tracking association: `TRACK_CENTER_MATCH_PX`, `TRACK_IOU_MATCH_THRESHOLD`
 - `ATTENDANCE_DEBOUNCE_SECONDS`, `STABLE_ID_CONFIRMATIONS`, `VERIFICATION_SAMPLES`, `ATTENDANCE_FAST_MODE`, `GPU_QUEUE_SIZE`
 - Recognition stability: `IDENTITY_HOLD_SECONDS`, `IDENTITY_HOLD_MIN_IOU`, `IDENTITY_HOLD_MAX_DET_MISSES`, `ATTENDANCE_MAX_EMBED_AGE_S`
+- Attendance cooldown behavior: debounce is per employee (company+employee id) and extends while they remain recognized.
 
 **Speed tips (very fast recognition):**
 - Raise stream processing rate: set `AI_FPS=25` to `AI_FPS=30` (or pass `ai_fps` in the recognition stream URL).

@@ -20,11 +20,24 @@ class DebounceResult:
 class AttendanceDebouncer:
     def __init__(self, cfg: Config):
         self.cfg = cfg
-        self._last_marked: Dict[str, float] = {}  # key = f"{camera_id}:{employee_id}"
+        # key = f"{company_id}:{employee_id}" (company_id can be empty)
+        self._last_marked: Dict[str, float] = {}
 
-    def mark_enqueued(self, *, camera_id: str, employee_id: str, now: Optional[float] = None) -> None:
+    @staticmethod
+    def _key(*, company_id: Optional[str], employee_id: str) -> str:
+        comp = str(company_id or "").strip()
+        emp = str(employee_id).strip()
+        return f"{comp}:{emp}"
+
+    def mark_enqueued(
+        self,
+        *,
+        company_id: Optional[str],
+        employee_id: str,
+        now: Optional[float] = None,
+    ) -> None:
         now = time.time() if now is None else float(now)
-        key = f"{str(camera_id)}:{str(employee_id)}"
+        key = self._key(company_id=company_id, employee_id=employee_id)
         self._last_marked[key] = now
 
     def consider(
@@ -69,10 +82,13 @@ class AttendanceDebouncer:
             if last_embed <= 0.0 or (now - last_embed) > max_age:
                 return DebounceResult(None, "stale_embedding")
 
-        key = f"{camera_id}:{track.person_id}"
+        key = self._key(company_id=company_id, employee_id=str(track.person_id))
         last = float(self._last_marked.get(key, 0.0))
         if (now - last) < float(self.cfg.attendance_debounce_seconds):
-            return DebounceResult(None, "debounce")
+            # Sliding debounce window: if we keep recognizing the same employee, keep extending the
+            # next allowed mark time. This prevents repeated marks while they remain in view.
+            self._last_marked[key] = now
+            return DebounceResult(None, "debounce_extend")
 
         # Fast path: if verification is configured to a single sample, mark immediately.
         need = int(self.cfg.verification_samples)

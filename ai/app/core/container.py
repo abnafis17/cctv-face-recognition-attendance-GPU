@@ -24,6 +24,7 @@ class StreamClientManager:
     - Track per stream type (attendance/headcount)
     - Enable/disable attendance pipeline based on active viewers
     """
+
     def __init__(self, attendance_rt: AttendanceRuntime):
         self._lock = threading.Lock()
         self._rec_stream_clients: Dict[str, int] = {}
@@ -53,7 +54,9 @@ class StreamClientManager:
     def inc(self, camera_id: str, stream_type: Optional[str]) -> int:
         stream_type = normalize_stream_type(stream_type)
         with self._lock:
-            self._rec_stream_clients[camera_id] = self._rec_stream_clients.get(camera_id, 0) + 1
+            self._rec_stream_clients[camera_id] = (
+                self._rec_stream_clients.get(camera_id, 0) + 1
+            )
             mode_counts = self._rec_stream_mode_counts.setdefault(camera_id, {})
             mode_counts[stream_type] = mode_counts.get(stream_type, 0) + 1
             self._update_attendance_state(camera_id)
@@ -126,7 +129,7 @@ def build_container() -> ServiceContainer:
     attendance_rt = AttendanceRuntime(
         use_gpu=False,
         similarity_threshold=0.35,
-        cooldown_s=10,
+        cooldown_s=60,
         stable_hits_required=3,
     )
 
