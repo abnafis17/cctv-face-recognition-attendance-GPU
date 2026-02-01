@@ -313,7 +313,9 @@ class AttendanceRuntime:
         )
         self._embedder = FaceEmbedder(model_name=model_name, use_gpu=use_gpu)
 
-        self._gpu = GPUArbiter(detect_fn=self._detect_faces, queue_size=int(self.cfg.queue_size))
+        self._gpu = GPUArbiter(
+            detect_fn=self._detect_faces, queue_size=int(self.cfg.queue_size)
+        )
 
         # Async attendance writer (DB/HTTP/IO should never block the frame loop)
         self._db_writer = DBWriter(write_fn=self._write_attendance_job, max_queue=1000)
@@ -692,7 +694,9 @@ class AttendanceRuntime:
         def _match(emb: np.ndarray, *, _cid: str = cid) -> MatchResult:
             return self._match_embedding(_cid, emb)
 
-        recognizer = Recognizer(self.cfg, embedder=self._embedder, match_embedding=_match)
+        recognizer = Recognizer(
+            self.cfg, embedder=self._embedder, match_embedding=_match
+        )
         now = time.time()
         st = CameraScanState(
             tracker=tracker,
@@ -715,11 +719,11 @@ class AttendanceRuntime:
 
         cid = str(camera_id)
         desired = "on" if turn_on else "off"
-        url = "http://10.81.100.54/on" if turn_on else "http://10.81.100.54/off"
+        url = "http://10.81.100.72/on" if turn_on else "http://10.81.100.72/off"
         # CHANGE TO (optional safety):
         if not turn_on:
             return
-        url = "http://10.81.100.54/on"
+        url = "http://10.81.100.72/on"
         now = time.time()
         last_state = self._relay_state_by_camera.get(cid)
         last_ts = self._relay_last_ts_by_camera.get(cid, 0.0)
@@ -777,7 +781,9 @@ class AttendanceRuntime:
         idx, sim = match_gallery(emb, gallery_matrix)
         if idx != -1 and idx < len(gallery_meta):
             _emp_int, emp_id_str, name = gallery_meta[idx]
-            return MatchResult(person_id=str(emp_id_str), name=str(name), score=float(sim))
+            return MatchResult(
+                person_id=str(emp_id_str), name=str(name), score=float(sim)
+            )
 
         return MatchResult(person_id=None, name="Unknown", score=float(sim))
 
@@ -850,7 +856,9 @@ class AttendanceRuntime:
             return
 
         frames = int(state.frames_total) - int(state.last_log_frames_total)
-        det_applied = int(state.det_applied_total) - int(state.last_log_det_applied_total)
+        det_applied = int(state.det_applied_total) - int(
+            state.last_log_det_applied_total
+        )
         rec_calls = int(state.rec_calls_total) - int(state.last_log_rec_calls_total)
 
         fps = (frames / dt) if dt > 0 else 0.0
@@ -863,7 +871,10 @@ class AttendanceRuntime:
 
         gpu_util = None
         try:
-            if getattr(self, "_nvml_handle", None) is not None and getattr(self, "_nvml", None) is not None:
+            if (
+                getattr(self, "_nvml_handle", None) is not None
+                and getattr(self, "_nvml", None) is not None
+            ):
                 util = self._nvml.nvmlDeviceGetUtilizationRates(self._nvml_handle)
                 gpu_util = int(getattr(util, "gpu", 0))
         except Exception:
@@ -916,7 +927,9 @@ class AttendanceRuntime:
                 continue
             ignore_boxes.append(tuple(int(v) for v in tr.bbox))
 
-        motion_active, motion_score = state.motion.update(frame_bgr, now=now, ignore_boxes=ignore_boxes)
+        motion_active, motion_score = state.motion.update(
+            frame_bgr, now=now, ignore_boxes=ignore_boxes
+        )
 
         # Apply newest detector result (if any).
         events: set[str] = set()
@@ -925,7 +938,9 @@ class AttendanceRuntime:
             state.last_det_seq = int(det_res.seq)
             state.det_applied_total += 1
 
-            new_ids = state.tracker.apply_detections(frame_bgr, det_res.detections, now=now)
+            new_ids = state.tracker.apply_detections(
+                frame_bgr, det_res.detections, now=now
+            )
             if new_ids:
                 events.add("new_track")
                 new_id_set = set(new_ids)
@@ -933,11 +948,14 @@ class AttendanceRuntime:
                 for tr in state.tracker.tracks():
                     if tr.track_id in new_id_set:
                         tr.force_recognition_until_ts = max(
-                            tr.force_recognition_until_ts, now + float(self.cfg.burst_seconds)
+                            tr.force_recognition_until_ts,
+                            now + float(self.cfg.burst_seconds),
                         )
             # Detection just updated boxes; force a quick recognition pass on fresh bboxes.
             for tr in state.tracker.tracks():
-                tr.force_recognition_until_ts = max(tr.force_recognition_until_ts, now + 0.35)
+                tr.force_recognition_until_ts = max(
+                    tr.force_recognition_until_ts, now + 0.35
+                )
             tracks = state.tracker.tracks()
 
         # Scheduler mode update.
@@ -964,7 +982,9 @@ class AttendanceRuntime:
             state.scheduler.mark_detection_submitted(now=now)
 
         # Scheduled per-track recognition (CPU by default).
-        rec_stats = state.recognizer.update_tracks(frame_bgr, tracks, state.scheduler, now=now)
+        rec_stats = state.recognizer.update_tracks(
+            frame_bgr, tracks, state.scheduler, now=now
+        )
         state.rec_calls_total += int(rec_stats.get("recognition_calls", 0) or 0)
 
         # HUD / overlay
@@ -1042,7 +1062,8 @@ class AttendanceRuntime:
                 (not fas_ok)
                 and isinstance(fas_dbg, dict)
                 and fas_dbg.get("fas") == "need_pose_change"
-                and str(os.getenv("FAS_ALLOW_NO_POSE_FOR_ATTENDANCE", "0")).strip() == "1"
+                and str(os.getenv("FAS_ALLOW_NO_POSE_FOR_ATTENDANCE", "0")).strip()
+                == "1"
             ):
                 fas_ok = True
                 fas_dbg = {**fas_dbg, "fas": "pose_bypassed"}
@@ -1067,7 +1088,9 @@ class AttendanceRuntime:
             ok = self._db_writer.enqueue(decision.job)
             if ok:
                 self._debouncer.mark_enqueued(
-                    company_id=company_id, employee_id=str(decision.job.employee_id), now=now
+                    company_id=company_id,
+                    employee_id=str(decision.job.employee_id),
+                    now=now,
                 )
             else:
                 print(
