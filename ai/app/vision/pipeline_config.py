@@ -4,6 +4,11 @@ import os
 from dataclasses import dataclass
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    v = str(os.getenv(name, str(int(default)))).strip().lower()
+    return v in ("1", "true", "yes", "on")
+
+
 def _env_float(name: str, default: float) -> float:
     try:
         return float(str(os.getenv(name, str(default))).strip())
@@ -37,13 +42,14 @@ class Config:
     # --- Scheduler ---
     idle_seconds: float = 2.0
     detection_fps_idle: float = 2.0
-    detection_fps_normal: float = 8.0
-    detection_fps_burst: float = 15.0
-    burst_seconds: float = 4.0
+    detection_fps_normal: float = 12.0
+    detection_fps_burst: float = 24.0
+    burst_seconds: float = 3.5
 
     # --- Recognition cadence ---
-    embed_refresh_seconds: float = 2.5
-    unknown_burst_after_seconds: float = 1.3
+    embed_refresh_seconds: float = 0.25
+    embed_refresh_seconds_unknown: float = 0.15
+    unknown_burst_after_seconds: float = 0.6
 
     # --- Matching thresholds ---
     similarity_threshold: float = 0.35
@@ -52,6 +58,7 @@ class Config:
     # --- Attendance gating ---
     attendance_debounce_seconds: float = 10.0
     stable_id_confirmations: int = 3
+    attendance_fast_mode: bool = False
 
     # --- Multi-camera GPU fairness ---
     queue_size: int = 3
@@ -59,7 +66,21 @@ class Config:
     # --- Tracker association ---
     track_max_age_frames: int = 30
     track_iou_match_threshold: float = 0.25
-    track_center_match_px: float = 120.0
+    track_center_match_px: float = 200.0
+    # How many consecutive detector cycles a track may miss before being removed.
+    # Lower values make boxes appear/disappear closer to pure-detector behavior (less "sticky").
+    # 0 => drop immediately on first miss.
+    track_max_det_misses_unknown: int = 0
+    # Keep known tracks alive longer so identity holds during fast movement.
+    track_max_det_misses_known: int = 12
+
+    # --- Identity hysteresis (reduce flicker during motion blur) ---
+    identity_hold_seconds: float = 1.5
+    identity_hold_min_iou: float = 0.05
+    identity_hold_max_det_misses: int = 1
+
+    # --- Attendance safety ---
+    attendance_max_embed_age_seconds: float = 0.9
 
     # --- Attendance quality gates (kept compatible with existing behavior) ---
     strict_similarity_threshold: float = 0.50
@@ -74,6 +95,11 @@ class Config:
     @classmethod
     def from_env(cls, **overrides) -> "Config":
         cfg = cls()
+
+        # Apply constructor/config overrides first, then allow env vars to override.
+        for k, v in overrides.items():
+            if hasattr(cfg, k):
+                setattr(cfg, k, v)
 
         # Motion
         cfg.motion_threshold = _env_float("MOTION_THRESHOLD", cfg.motion_threshold)
@@ -96,6 +122,9 @@ class Config:
         cfg.embed_refresh_seconds = _env_float(
             "EMBED_REFRESH_SECONDS", cfg.embed_refresh_seconds
         )
+        cfg.embed_refresh_seconds_unknown = _env_float(
+            "EMBED_REFRESH_UNKNOWN_SECONDS", cfg.embed_refresh_seconds_unknown
+        )
         cfg.unknown_burst_after_seconds = _env_float(
             "UNKNOWN_BURST_AFTER_SECONDS", cfg.unknown_burst_after_seconds
         )
@@ -109,30 +138,69 @@ class Config:
         cfg.min_att_quality = _env_float("MIN_ATT_QUALITY", cfg.min_att_quality)
 
         # Attendance gates
-        cfg.attendance_debounce_seconds = _env_float(
-            "ATTENDANCE_DEBOUNCE_SECONDS", cfg.attendance_debounce_seconds
-        )
-        cfg.stable_id_confirmations = _env_int(
-            "STABLE_ID_CONFIRMATIONS", cfg.stable_id_confirmations
-        )
+        if os.getenv("ATTENDANCE_DEBOUNCE_SECONDS") is not None:
+            cfg.attendance_debounce_seconds = _env_float(
+                "ATTENDANCE_DEBOUNCE_SECONDS", cfg.attendance_debounce_seconds
+            )
+        elif os.getenv("ATTENDANCE_COOLDOWN_S") is not None:
+            cfg.attendance_debounce_seconds = _env_float(
+                "ATTENDANCE_COOLDOWN_S", cfg.attendance_debounce_seconds
+            )
+
+        if os.getenv("STABLE_ID_CONFIRMATIONS") is not None:
+            cfg.stable_id_confirmations = _env_int(
+                "STABLE_ID_CONFIRMATIONS", cfg.stable_id_confirmations
+            )
+        elif os.getenv("STABLE_HITS_REQUIRED") is not None:
+            cfg.stable_id_confirmations = _env_int(
+                "STABLE_HITS_REQUIRED", cfg.stable_id_confirmations
+            )
 
         # Queues / tracking
         cfg.queue_size = max(1, _env_int("GPU_QUEUE_SIZE", cfg.queue_size))
         cfg.track_max_age_frames = max(
             1, _env_int("TRACK_MAX_AGE_FRAMES", cfg.track_max_age_frames)
         )
+        cfg.track_iou_match_threshold = _env_float(
+            "TRACK_IOU_MATCH_THRESHOLD", cfg.track_iou_match_threshold
+        )
+        cfg.track_center_match_px = _env_float(
+            "TRACK_CENTER_MATCH_PX", cfg.track_center_match_px
+        )
+        cfg.track_max_det_misses_unknown = max(
+            0, _env_int("TRACK_MAX_DET_MISSES_UNKNOWN", cfg.track_max_det_misses_unknown)
+        )
+        cfg.track_max_det_misses_known = max(
+            0, _env_int("TRACK_MAX_DET_MISSES_KNOWN", cfg.track_max_det_misses_known)
+        )
 
         # Logging / verification
         cfg.log_interval_seconds = _env_float("PIPELINE_LOG_INTERVAL_S", cfg.log_interval_seconds)
         cfg.verification_samples = max(1, _env_int("VERIFICATION_SAMPLES", cfg.verification_samples))
 
-        for k, v in overrides.items():
-            if hasattr(cfg, k):
-                setattr(cfg, k, v)
+        cfg.attendance_fast_mode = _env_bool("ATTENDANCE_FAST_MODE", cfg.attendance_fast_mode)
+        if cfg.attendance_fast_mode:
+            # Favor recall and speed over strictness (useful for fast-moving subjects).
+            cfg.stable_id_confirmations = min(int(cfg.stable_id_confirmations), 1)
+            cfg.strict_similarity_threshold = float(cfg.similarity_threshold)
+            cfg.verification_samples = 1
+            cfg.identity_hold_seconds = max(float(cfg.identity_hold_seconds), 2.0)
+
+        cfg.identity_hold_seconds = max(
+            0.0, _env_float("IDENTITY_HOLD_SECONDS", cfg.identity_hold_seconds)
+        )
+        cfg.identity_hold_min_iou = _env_float("IDENTITY_HOLD_MIN_IOU", cfg.identity_hold_min_iou)
+        cfg.identity_hold_max_det_misses = max(
+            0, _env_int("IDENTITY_HOLD_MAX_DET_MISSES", cfg.identity_hold_max_det_misses)
+        )
+        cfg.attendance_max_embed_age_seconds = max(
+            0.0,
+            _env_float("ATTENDANCE_MAX_EMBED_AGE_S", cfg.attendance_max_embed_age_seconds),
+        )
+
         return cfg
 
     @property
     def verification_required_avg_similarity(self) -> float:
         # High-stakes verification is stricter than the base match threshold.
         return float(self.similarity_threshold + self.borderline_margin)
-

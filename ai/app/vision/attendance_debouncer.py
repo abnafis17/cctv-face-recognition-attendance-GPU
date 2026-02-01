@@ -62,10 +62,31 @@ class AttendanceDebouncer:
         if float(track.similarity) < min_sim:
             return DebounceResult(None, "low_similarity")
 
+        # Require a fresh embedding for marks (prevents using a stale identity on a different face).
+        max_age = float(getattr(self.cfg, "attendance_max_embed_age_seconds", 0.0) or 0.0)
+        if max_age > 0.0:
+            last_embed = float(getattr(track, "last_embed_ts", 0.0) or 0.0)
+            if last_embed <= 0.0 or (now - last_embed) > max_age:
+                return DebounceResult(None, "stale_embedding")
+
         key = f"{camera_id}:{track.person_id}"
         last = float(self._last_marked.get(key, 0.0))
         if (now - last) < float(self.cfg.attendance_debounce_seconds):
             return DebounceResult(None, "debounce")
+
+        # Fast path: if verification is configured to a single sample, mark immediately.
+        need = int(self.cfg.verification_samples)
+        if need <= 1:
+            job = AttendanceWriteJob(
+                company_id=company_id,
+                camera_id=str(camera_id),
+                camera_name=str(camera_name),
+                employee_id=str(track.person_id),
+                name=str(track.name or track.person_id),
+                similarity=float(track.similarity),
+                timestamp_iso=now_iso(),
+            )
+            return DebounceResult(job, "verified_fast")
 
         # Start verification (high-stakes): force burst and collect 3 samples.
         track.verify_target_id = track.person_id
@@ -92,6 +113,25 @@ class AttendanceDebouncer:
         scheduler: AdaptiveScheduler,
         now: float,
     ) -> DebounceResult:
+        need = int(self.cfg.verification_samples)
+        if need <= 1:
+            target = str(track.verify_target_id or track.person_id or "").strip()
+            if not target:
+                self._reset_verification(track)
+                return DebounceResult(None, "verify_no_target")
+
+            job = AttendanceWriteJob(
+                company_id=company_id,
+                camera_id=str(camera_id),
+                camera_name=str(camera_name),
+                employee_id=target,
+                name=str(track.verify_target_name or track.name or target),
+                similarity=float(track.similarity),
+                timestamp_iso=now_iso(),
+            )
+            self._reset_verification(track)
+            return DebounceResult(job, "verified_fast")
+
         if track.last_embed_ts > 0.0 and track.last_embed_ts != track._verify_last_embed_ts:
             if track.person_id is not None:
                 track.verify_samples.append((track.person_id, float(track.similarity)))
@@ -101,7 +141,6 @@ class AttendanceDebouncer:
             self._reset_verification(track)
             return DebounceResult(None, "verify_timeout")
 
-        need = int(self.cfg.verification_samples)
         if len(track.verify_samples) < need:
             scheduler.force_burst("verify", now=now)
             track.force_recognition_until_ts = max(track.force_recognition_until_ts, now + self.cfg.burst_seconds)

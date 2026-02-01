@@ -141,8 +141,11 @@ class FaceEmbedder:
     def __init__(self, *, model_name: str = "buffalo_l", use_gpu: bool = True):
         use_gpu = _env_bool("USE_GPU", use_gpu)
 
-        # GPU-light default: embeddings on CPU unless explicitly enabled.
-        embed_use_gpu = _env_bool("EMBED_USE_GPU", False)
+        # Default behavior:
+        # - If EMBED_USE_GPU is explicitly set, honor it.
+        # - Otherwise, follow USE_GPU (restores legacy "fast" behavior when GPU is enabled).
+        raw = os.getenv("EMBED_USE_GPU")
+        embed_use_gpu = use_gpu if raw is None else _env_bool("EMBED_USE_GPU", False)
         providers = _pick_providers(use_gpu=use_gpu) if embed_use_gpu else ["CPUExecutionProvider"]
         ctx_id = 0 if (embed_use_gpu and "CUDAExecutionProvider" in providers) else -1
         self.model = model_zoo.get_model(model_name, providers=providers)

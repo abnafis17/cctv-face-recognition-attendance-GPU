@@ -117,6 +117,11 @@ class AdaptiveScheduler:
         force_until = float(getattr(track, "force_recognition_until_ts", 0.0) or 0.0)
         last_embed = float(getattr(track, "last_embed_ts", 0.0) or 0.0)
 
+        person_id = getattr(track, "person_id", None)
+        refresh = float(self.cfg.embed_refresh_seconds)
+        if person_id is None:
+            refresh = float(getattr(self.cfg, "embed_refresh_seconds_unknown", refresh))
+
         # In IDLE, recognition is normally disabled unless forced (verification/high-stakes).
         if self.state.mode == Mode.IDLE and now >= force_until:
             return False
@@ -126,7 +131,7 @@ class AdaptiveScheduler:
             min_period = 1.0 / max(1.0, float(self.cfg.detection_fps_burst))
             return (now - last_embed) >= max(0.05, min_period)
 
-        return (now - last_embed) >= float(self.cfg.embed_refresh_seconds)
+        return (now - last_embed) >= refresh
 
     def mode_label(self) -> str:
         return str(self.state.mode.value)
@@ -135,4 +140,3 @@ class AdaptiveScheduler:
         if limit <= 0:
             return []
         return list(self.state.recent_burst_reasons[-limit:])
-

@@ -34,9 +34,28 @@ def _center_dist(a: Tuple[int, int, int, int], b: Tuple[int, int, int, int]) -> 
     return float((dx * dx + dy * dy) ** 0.5)
 
 
-def _xyxy_to_xywh(b: Tuple[int, int, int, int]) -> Tuple[float, float, float, float]:
+def _xyxy_to_xywh_int(b: Tuple[int, int, int, int]) -> Tuple[int, int, int, int]:
     x1, y1, x2, y2 = b
-    return float(x1), float(y1), float(max(1, x2 - x1)), float(max(1, y2 - y1))
+    return int(x1), int(y1), int(max(1, x2 - x1)), int(max(1, y2 - y1))
+
+
+def _safe_tracker_init(tracker: Any, frame_bgr: np.ndarray, box_xyxy: Tuple[int, int, int, int]) -> bool:
+    """
+    OpenCV tracker bindings differ slightly across versions/builds.
+    Try a couple of bbox representations and never raise.
+    """
+    x, y, w, h = _xyxy_to_xywh_int(box_xyxy)
+    candidates = (
+        (int(x), int(y), int(w), int(h)),
+        (float(x), float(y), float(w), float(h)),
+    )
+    for bb in candidates:
+        try:
+            tracker.init(frame_bgr, bb)
+            return True
+        except Exception:
+            continue
+    return False
 
 
 def _xywh_to_xyxy(box: Tuple[float, float, float, float]) -> Tuple[int, int, int, int]:
@@ -85,6 +104,7 @@ class Track:
     created_ts: float
     last_seen_ts: float
     lost_frames: int = 0
+    det_misses: int = 0
 
     tracker_kind: str = "mil"
     tracker: Any = None
@@ -103,6 +123,8 @@ class Track:
     kps: Optional[np.ndarray] = None
     det_score: float = 0.0
     last_det_ts: float = 0.0
+    last_known_ts: float = 0.0
+    last_known_bbox: Optional[Tuple[int, int, int, int]] = None
 
     # verification (managed by AttendanceDebouncer)
     verify_target_id: Optional[str] = None
@@ -174,7 +196,12 @@ class TrackerManager:
         now = time.time() if now is None else float(now)
         h, w = frame_bgr.shape[:2]
 
-        det_boxes: List[Tuple[int, int, int, int]] = []
+        # Each detection result is a chance to re-confirm tracks. If a track isn't matched to
+        # any detection in this cycle, it's likely stale (trackers can drift and "hold" boxes).
+        for tr in self._tracks.values():
+            tr.det_misses = int(getattr(tr, "det_misses", 0) or 0) + 1
+
+        valid: List[Tuple[Tuple[int, int, int, int], Detection]] = []
         for d in detections:
             x1, y1, x2, y2 = d.bbox
             x1 = max(0, min(w - 1, int(x1)))
@@ -183,48 +210,87 @@ class TrackerManager:
             y2 = max(0, min(h, int(y2)))
             if x2 <= x1 or y2 <= y1:
                 continue
-            det_boxes.append((x1, y1, x2, y2))
+            valid.append(((x1, y1, x2, y2), d))
 
         assigned_tracks: set[int] = set()
         assigned_dets: set[int] = set()
 
-        for j, box in enumerate(det_boxes):
-            best_tid: Optional[int] = None
-            best_score = -1.0
+        # Global greedy matching (sorted pair scores) is more stable than "per detection"
+        # greedy loops when multiple faces are present.
+        pairs: List[Tuple[float, float, float, int, int]] = []  # (score, iou, -dist, tid, det_idx)
+        iou_thr = float(self.cfg.track_iou_match_threshold)
+        center_px = float(self.cfg.track_center_match_px)
+
+        for det_idx, (box, _det) in enumerate(valid):
+            bx1, by1, bx2, by2 = box
+            bw = max(1, bx2 - bx1)
+            bh = max(1, by2 - by1)
+            b_area = float(bw * bh)
             for tid, tr in self._tracks.items():
-                if tid in assigned_tracks:
+                tx1, ty1, tx2, ty2 = tr.bbox
+                tw = max(1, tx2 - tx1)
+                th = max(1, ty2 - ty1)
+                t_area = float(tw * th)
+                area_ratio = b_area / (t_area + 1e-6)
+                if area_ratio < 0.50 or area_ratio > 2.00:
                     continue
+
                 iou = _bbox_iou(tr.bbox, box)
                 dist = _center_dist(tr.bbox, box)
-                if iou >= float(self.cfg.track_iou_match_threshold) or dist <= float(
-                    self.cfg.track_center_match_px
-                ):
-                    score = iou - (dist / 10_000.0)
-                    if score > best_score:
-                        best_score = score
-                        best_tid = tid
-            if best_tid is None:
-                continue
-            assigned_tracks.add(best_tid)
-            assigned_dets.add(j)
 
-            tr = self._tracks[best_tid]
+                max_dim = float(max(tw, th, bw, bh))
+                # Avoid matching across people: require centers to be close relative to box size.
+                eff_center = min(center_px, 0.80 * max_dim)
+
+                if iou < iou_thr and dist > eff_center:
+                    continue
+
+                # Score: prioritize IoU, lightly penalize normalized distance.
+                score = float(iou) - float(dist) / max(1.0, (eff_center * 4.0))
+                pairs.append((score, float(iou), -float(dist), int(tid), int(det_idx)))
+
+        pairs.sort(reverse=True)
+
+        for _score, iou, neg_dist, tid, det_idx in pairs:
+            if tid in assigned_tracks or det_idx in assigned_dets:
+                continue
+            assigned_tracks.add(tid)
+            assigned_dets.add(det_idx)
+
+            box, det = valid[det_idx]
+            tr = self._tracks[tid]
+
+            # If a "known" track is re-associated with a very low IoU, treat it as a re-acquire:
+            # clear identity so we don't show the previous person's name on a different face.
+            if tr.person_id is not None and float(iou) < 0.05:
+                tr.person_id = None
+                tr.name = "Unknown"
+                tr.similarity = 0.0
+                tr.stable_id_hits = 0
+                tr.unknown_since_ts = now
+                tr.last_known_ts = 0.0
+                tr.last_known_bbox = None
+                tr.last_identity_change_ts = now
+                tr.force_recognition_until_ts = max(tr.force_recognition_until_ts, now + 0.8)
+
             tr.bbox = box
             tr.last_det_ts = now
             tr.last_seen_ts = now
             tr.lost_frames = 0
+            tr.det_misses = 0
 
             tr.tracker_kind = self._best_tracker_kind()
             tr.tracker = _create_tracker(tr.tracker_kind)
             if tr.tracker is not None:
-                tr.tracker.init(frame_bgr, _xyxy_to_xywh(box))
+                ok = _safe_tracker_init(tr.tracker, frame_bgr, box)
+                if not ok:
+                    tr.tracker = None
 
-            if j < len(detections):
-                tr.kps = detections[j].kps
-                tr.det_score = float(detections[j].det_score)
+            tr.kps = det.kps
+            tr.det_score = float(det.det_score)
 
         new_ids: List[int] = []
-        for j, box in enumerate(det_boxes):
+        for j, (box, det) in enumerate(valid):
             if j in assigned_dets:
                 continue
             tid = self._next_id
@@ -233,9 +299,10 @@ class TrackerManager:
             kind = self._best_tracker_kind()
             tracker = _create_tracker(kind)
             if tracker is not None:
-                tracker.init(frame_bgr, _xyxy_to_xywh(box))
+                ok = _safe_tracker_init(tracker, frame_bgr, box)
+                if not ok:
+                    tracker = None
 
-            det = detections[j] if j < len(detections) else None
             tr = Track(
                 track_id=tid,
                 bbox=box,
@@ -243,12 +310,27 @@ class TrackerManager:
                 last_seen_ts=now,
                 tracker_kind=kind,
                 tracker=tracker,
-                kps=None if det is None else det.kps,
-                det_score=0.0 if det is None else float(det.det_score),
+                kps=det.kps,
+                det_score=float(det.det_score),
                 last_det_ts=now,
+                det_misses=0,
             )
             self._tracks[tid] = tr
             new_ids.append(tid)
+
+        # Prune tracks that haven't been detector-confirmed recently.
+        # These cause "sticky" boxes because the tracker can keep returning a bbox even
+        # after the face is gone.
+        dead: list[int] = []
+        for tid, tr in self._tracks.items():
+            max_misses = int(self.cfg.track_max_det_misses_unknown)
+            if tr.person_id is not None:
+                max_misses = int(self.cfg.track_max_det_misses_known)
+            if int(getattr(tr, "det_misses", 0) or 0) > max_misses:
+                dead.append(tid)
+
+        for tid in dead:
+            self._tracks.pop(tid, None)
 
         return new_ids
 
@@ -257,4 +339,3 @@ class TrackerManager:
             if _create_tracker(kind) is not None:
                 return kind
         return "mil"
-

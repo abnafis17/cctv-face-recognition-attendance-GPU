@@ -70,8 +70,17 @@ This repo now uses a **CPU-steady / GPU-burst** attendance pipeline to keep GPU 
 **Tuning (env vars):**
 - `MOTION_THRESHOLD`, `IDLE_SECONDS`
 - `DETECTION_FPS_IDLE`, `DETECTION_FPS_NORMAL`, `DETECTION_FPS_BURST`, `BURST_SECONDS`
-- `EMBED_REFRESH_SECONDS`, `UNKNOWN_BURST_AFTER_SECONDS`
+- `EMBED_REFRESH_SECONDS`, `EMBED_REFRESH_UNKNOWN_SECONDS`, `UNKNOWN_BURST_AFTER_SECONDS`
 - `SIMILARITY_THRESHOLD`, `BORDERLINE_MARGIN`
-- `ATTENDANCE_DEBOUNCE_SECONDS`, `STABLE_ID_CONFIRMATIONS`, `GPU_QUEUE_SIZE`
+- Tracking/box lifetime: `TRACK_MAX_DET_MISSES_UNKNOWN`, `TRACK_MAX_DET_MISSES_KNOWN`, `TRACK_MAX_AGE_FRAMES`
+- Tracking association: `TRACK_CENTER_MATCH_PX`, `TRACK_IOU_MATCH_THRESHOLD`
+- `ATTENDANCE_DEBOUNCE_SECONDS`, `STABLE_ID_CONFIRMATIONS`, `VERIFICATION_SAMPLES`, `ATTENDANCE_FAST_MODE`, `GPU_QUEUE_SIZE`
+- Recognition stability: `IDENTITY_HOLD_SECONDS`, `IDENTITY_HOLD_MIN_IOU`, `IDENTITY_HOLD_MAX_DET_MISSES`, `ATTENDANCE_MAX_EMBED_AGE_S`
+
+**Speed tips (very fast recognition):**
+- Raise stream processing rate: set `AI_FPS=25` to `AI_FPS=30` (or pass `ai_fps` in the recognition stream URL).
+- If you have a GPU: embeddings follow `USE_GPU` by default; set `EMBED_USE_GPU=0` only if you want GPU-light behavior.
+- If boxes feel “sticky”: set `TRACK_MAX_DET_MISSES_UNKNOWN=0` (drop unknown boxes immediately when detector misses them).
+- If attendance is missed for fast-moving people: set `ATTENDANCE_FAST_MODE=1` (and optionally `FAS_ALLOW_NO_POSE_FOR_ATTENDANCE=1`).
 
 **Note:** For CSRT/KCF trackers install `opencv-contrib-python` (this repo’s `requirements*.txt` now uses it). If unavailable, the code falls back to another OpenCV tracker.

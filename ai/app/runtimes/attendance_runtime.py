@@ -922,6 +922,9 @@ class AttendanceRuntime:
                         tr.force_recognition_until_ts = max(
                             tr.force_recognition_until_ts, now + float(self.cfg.burst_seconds)
                         )
+            # Detection just updated boxes; force a quick recognition pass on fresh bboxes.
+            for tr in state.tracker.tracks():
+                tr.force_recognition_until_ts = max(tr.force_recognition_until_ts, now + 0.35)
             tracks = state.tracker.tracks()
 
         # Scheduler mode update.
@@ -940,13 +943,6 @@ class AttendanceRuntime:
         # Scheduled per-track recognition (CPU by default).
         rec_stats = state.recognizer.update_tracks(frame_bgr, tracks, state.scheduler, now=now)
         state.rec_calls_total += int(rec_stats.get("recognition_calls", 0) or 0)
-
-        # Stable-id confirmations: count stable frames (closer to prior stable_name_hits behavior).
-        for tr in tracks:
-            if tr.person_id is not None:
-                tr.stable_id_hits = int(tr.stable_id_hits) + 1
-            else:
-                tr.stable_id_hits = 0
 
         # HUD / overlay
         _put_text_white(annotated, f"frame={state.frame_idx}", 12, 36, scale=1.05)
@@ -1017,8 +1013,21 @@ class AttendanceRuntime:
                     kps=tr.kps,
                 )
 
+            # Optional: allow attendance even when only the pose-change challenge fails.
+            # This improves recall for fast-moving people where head-turn may not happen.
+            if (
+                (not fas_ok)
+                and isinstance(fas_dbg, dict)
+                and fas_dbg.get("fas") == "need_pose_change"
+                and str(os.getenv("FAS_ALLOW_NO_POSE_FOR_ATTENDANCE", "0")).strip() == "1"
+            ):
+                fas_ok = True
+                fas_dbg = {**fas_dbg, "fas": "pose_bypassed"}
+
             print(
                 "[FAS DEBUG]",
+                "cam=",
+                str(cid),
                 "emp=",
                 str(decision.job.employee_id),
                 "ok=",
