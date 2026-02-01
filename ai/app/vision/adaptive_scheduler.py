@@ -77,10 +77,14 @@ class AdaptiveScheduler:
 
         # If we're still within a burst window, keep burst.
         if now < self.state.burst_until_ts:
-            if self.state.mode != Mode.BURST:
-                self.state.mode = Mode.BURST
-                self.state.last_mode_change_ts = now
-            return self.state.mode
+            # Nothing requiring burst anymore (e.g., only a stable known track remains) => end early.
+            if not active and not events:
+                self.state.burst_until_ts = now
+            else:
+                if self.state.mode != Mode.BURST:
+                    self.state.mode = Mode.BURST
+                    self.state.last_mode_change_ts = now
+                return self.state.mode
 
         # Otherwise, pick between NORMAL and IDLE.
         desired = Mode.NORMAL if active else Mode.IDLE

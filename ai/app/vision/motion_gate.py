@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Optional, Sequence, Tuple
 import time
 
 import cv2
@@ -44,7 +44,14 @@ class MotionGate:
         self._prev_gray: Optional[np.ndarray] = None
         self.state = MotionState()
 
-    def update(self, frame_bgr: np.ndarray, *, now: Optional[float] = None) -> Tuple[bool, float]:
+    def update(
+        self,
+        frame_bgr: np.ndarray,
+        *,
+        now: Optional[float] = None,
+        ignore_boxes: Optional[Sequence[Tuple[int, int, int, int]]] = None,
+        ignore_pad_px: int = 4,
+    ) -> Tuple[bool, float]:
         now = time.time() if now is None else float(now)
 
         small = cv2.resize(frame_bgr, self.resize, interpolation=cv2.INTER_AREA)
@@ -59,8 +66,43 @@ class MotionGate:
         diff = cv2.absdiff(gray, self._prev_gray)
         self._prev_gray = gray
 
-        # Fraction of pixels with a meaningful change.
-        motion_score = float(np.count_nonzero(diff > self.diff_threshold) / diff.size)
+        # Fraction of pixels with a meaningful change (optionally ignoring regions such
+        # as already-tracked faces so a known person moving doesn't keep GPU in NORMAL).
+        changed = diff > self.diff_threshold
+
+        denom = diff.size
+        if ignore_boxes:
+            mask = np.ones_like(diff, dtype=np.uint8)
+            h0, w0 = frame_bgr.shape[:2]
+            hs, ws = diff.shape[:2]
+            sx = ws / float(max(1, w0))
+            sy = hs / float(max(1, h0))
+            pad = int(max(0, ignore_pad_px))
+
+            for (x1, y1, x2, y2) in ignore_boxes:
+                try:
+                    ix1 = int(round(float(x1) * sx)) - pad
+                    iy1 = int(round(float(y1) * sy)) - pad
+                    ix2 = int(round(float(x2) * sx)) + pad
+                    iy2 = int(round(float(y2) * sy)) + pad
+                except Exception:
+                    continue
+
+                ix1 = max(0, min(ws - 1, ix1))
+                iy1 = max(0, min(hs - 1, iy1))
+                ix2 = max(0, min(ws, ix2))
+                iy2 = max(0, min(hs, iy2))
+                if ix2 <= ix1 or iy2 <= iy1:
+                    continue
+                mask[iy1:iy2, ix1:ix2] = 0
+
+            denom = int(np.count_nonzero(mask))
+            if denom > 0:
+                motion_score = float(np.count_nonzero(changed & (mask > 0)) / denom)
+            else:
+                motion_score = 0.0
+        else:
+            motion_score = float(np.count_nonzero(changed) / denom)
         self.state.last_score = motion_score
 
         on_th = self.threshold
@@ -81,4 +123,3 @@ class MotionGate:
             self.state.last_motion_ts = now
 
         return self.state.active, motion_score
-

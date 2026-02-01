@@ -901,9 +901,22 @@ class AttendanceRuntime:
 
         now = time.time()
 
-        # Always run CPU motion + CPU tracking each frame.
-        motion_active, motion_score = state.motion.update(frame_bgr, now=now)
+        # Always run CPU tracking each frame.
         tracks = state.tracker.update(frame_bgr, now=now)
+
+        # Motion gate runs each frame too, but we ignore motion inside stable known tracks so
+        # a single recognized person walking/running doesn't keep GPU detection in NORMAL/BURST.
+        ignore_boxes: list[tuple[int, int, int, int]] = []
+        for tr in tracks:
+            if tr.verify_target_id:
+                continue
+            if tr.person_id is None:
+                continue
+            if int(tr.stable_id_hits) < int(self.cfg.stable_id_confirmations):
+                continue
+            ignore_boxes.append(tuple(int(v) for v in tr.bbox))
+
+        motion_active, motion_score = state.motion.update(frame_bgr, now=now, ignore_boxes=ignore_boxes)
 
         # Apply newest detector result (if any).
         events: set[str] = set()
@@ -928,9 +941,19 @@ class AttendanceRuntime:
             tracks = state.tracker.tracks()
 
         # Scheduler mode update.
+        tracks_attention = False
+        if len(tracks) >= 2:
+            tracks_attention = True
+        elif len(tracks) == 1:
+            tr0 = tracks[0]
+            tracks_attention = bool(
+                tr0.verify_target_id
+                or tr0.person_id is None
+                or int(tr0.stable_id_hits) < int(self.cfg.stable_id_confirmations)
+            )
         state.scheduler.update(
             motion_active=motion_active,
-            tracks_present=bool(tracks),
+            tracks_present=bool(tracks_attention),
             events=events,
             now=now,
         )

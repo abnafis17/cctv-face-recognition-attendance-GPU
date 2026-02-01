@@ -125,7 +125,14 @@ class Recognizer:
 
             # borderline around decision threshold => burst to disambiguate
             if abs(score - float(self.cfg.similarity_threshold)) <= float(self.cfg.borderline_margin):
-                scheduler.force_burst("borderline", now=now)
+                # For already-stable known tracks, prefer a recognition-only recheck instead of
+                # forcing GPU detection into BURST (keeps GPU cool when the same person is present).
+                stable_known = (
+                    tr.person_id is not None
+                    and int(getattr(tr, "stable_id_hits", 0) or 0) >= int(self.cfg.stable_id_confirmations)
+                )
+                if not stable_known:
+                    scheduler.force_burst("borderline", now=now)
                 tr.force_recognition_until_ts = max(tr.force_recognition_until_ts, now + self.cfg.burst_seconds)
                 borderlines += 1
 
