@@ -9,7 +9,7 @@ import React, {
 } from "react";
 import toast from "react-hot-toast";
 import { ColumnDef } from "@tanstack/react-table";
-import { Search, RefreshCcw, X, Check } from "lucide-react";
+import { Search, RefreshCcw, X, Check, Download } from "lucide-react";
 
 import axiosInstance, { API, AI_HOST } from "@/config/axiosInstance";
 import { Card } from "@/components/ui/Card";
@@ -20,6 +20,7 @@ import { getCompanyIdFromToken } from "@/lib/authStorage";
 import { useAttendanceEvents } from "@/hooks/useAttendanceEvents";
 import { useHeadcountEvents } from "@/hooks/useHeadcountEvents";
 import Image from "next/image";
+import { exportJsonToXlsx } from "@/lib/exportXlsx";
 
 import HeadCountCameraComponent from "./HeadCountCameraComponent";
 
@@ -388,6 +389,64 @@ export default function HeadcountPage() {
     if (statusFilter === "ALL") return hcRows;
     return hcRows.filter((r) => r.status === statusFilter);
   }, [hcRows, statusFilter]);
+
+  const canExport = useMemo(() => {
+    if (loading) return false;
+    if (headcountType === "headcount") return Boolean(groupBy && groupValue) && filteredHcRows.length > 0;
+    if (headcountType === "ot") return otRows.length > 0;
+    return false;
+  }, [filteredHcRows.length, groupBy, groupValue, headcountType, loading, otRows.length]);
+
+  const handleExport = useCallback(async () => {
+    try {
+      if (!canExport) return;
+
+      if (headcountType === "headcount") {
+        const exportRows = filteredHcRows.map((r, idx) => ({
+          SL: idx + 1,
+          "Employee ID": r.employeeId,
+          Name: r.name,
+          Status: r.status,
+          Date: dateStr,
+          GroupBy: groupBy || "",
+          GroupValue: groupValue || "",
+        }));
+
+        await exportJsonToXlsx({
+          data: exportRows,
+          sheetName: "Headcount",
+          fileName: `headcount_${dateStr}_${groupBy || "group"}_${groupValue || "all"}_${statusFilter}.xlsx`,
+        });
+        return;
+      }
+
+      const exportRows = otRows.map((r, idx) => ({
+        SL: idx + 1,
+        "Employee ID": r.employeeId,
+        Name: r.name,
+        Camera: r.cameraName ?? "",
+        "Headcount Time": r.headcountTime ?? "",
+        Date: dateStr,
+      }));
+
+      await exportJsonToXlsx({
+        data: exportRows,
+        sheetName: "OT",
+        fileName: `ot_headcount_${dateStr}.xlsx`,
+      });
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to export Excel");
+    }
+  }, [
+    canExport,
+    dateStr,
+    filteredHcRows,
+    groupBy,
+    groupValue,
+    headcountType,
+    otRows,
+    statusFilter,
+  ]);
 
   const cellBg = (s: HeadcountStatus) => {
     if (s === "MATCH") return "bg-green-50";
@@ -813,6 +872,17 @@ export default function HeadcountPage() {
               className={cn("mr-2 h-4 w-4", loading && "animate-spin")}
             />
             Refresh
+          </button>
+
+          <button
+            className="h-10 rounded-xl border border-gray-200 bg-white px-4 text-sm font-medium text-gray-900 hover:bg-gray-50 disabled:opacity-60 inline-flex items-center"
+            onClick={handleExport}
+            disabled={!canExport}
+            type="button"
+            title={canExport ? "Export to Excel" : "No data to export"}
+          >
+            <Download className="mr-2 h-4 w-4" />
+            Export
           </button>
         </div>
       </div>
