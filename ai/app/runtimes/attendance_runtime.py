@@ -716,14 +716,18 @@ class AttendanceRuntime:
             self._relay_min_interval_s = float(
                 os.getenv("RELAY_MIN_INTERVAL_S", "0.75")
             )
+            self._relay_http_timeout_s = float(
+                os.getenv("RELAY_HTTP_TIMEOUT_S", "0.4")
+            )
 
         cid = str(camera_id)
         desired = "on" if turn_on else "off"
-        url = "http://10.81.100.72/on" if turn_on else "http://10.81.100.72/off"
         # CHANGE TO (optional safety):
         if not turn_on:
             return
-        url = "http://10.81.100.72/on"
+        url = os.getenv("RELAY_ON_URL", "http://10.81.100.72/on").strip()
+        if not url:
+            url = "http://10.81.100.72/on"
         now = time.time()
         last_state = self._relay_state_by_camera.get(cid)
         last_ts = self._relay_last_ts_by_camera.get(cid, 0.0)
@@ -737,7 +741,10 @@ class AttendanceRuntime:
 
         def _do():
             try:
-                urllib.request.urlopen(url, timeout=0.4).read()
+                # Some relay devices respond slowly or never close the connection;
+                # we only need to fire the request, not read the full body.
+                resp = urllib.request.urlopen(url, timeout=self._relay_http_timeout_s)
+                resp.close()
                 print(f"[RELAY] {desired} cid={cid} url={url}")
             except Exception as e:
                 print(f"[RELAY] failed cid={cid} url={url} err={e}")
@@ -822,6 +829,7 @@ class AttendanceRuntime:
             )
 
             if ok:
+                self._relay_http(cid, True)
                 self.push_voice_event(
                     employee_id=str(job.employee_id),
                     name=str(job.name),
