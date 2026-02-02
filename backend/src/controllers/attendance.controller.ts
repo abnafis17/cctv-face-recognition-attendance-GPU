@@ -13,6 +13,17 @@ import {
 } from "../services/attendanceEvents";
 import { pushHeadcountEvent } from "../services/headcountEvents";
 
+function parseFirstSeenIsoFromNotes(notes?: string | null): string | null {
+  if (!notes) return null;
+  try {
+    const parsed = JSON.parse(notes);
+    const existingFirst = String(parsed?.firstSeen || "").trim();
+    return existingFirst || null;
+  } catch {
+    return null;
+  }
+}
+
 export async function createAttendance(req: Request, res: Response) {
   try {
     const companyId = String((req as any).companyId ?? "");
@@ -64,6 +75,78 @@ export async function createAttendance(req: Request, res: Response) {
       }
     }
 
+    // OT requisition mode: DO NOT write to Attendance table.
+    // Instead, upsert a per-employee/day OtRequisition row.
+    if (
+      eventType === "ot" ||
+      eventType === "ot-requisition" ||
+      eventType === "ot_requisition" ||
+      eventType === "otrequisition"
+    ) {
+      const ts = new Date(timestamp);
+      if (Number.isNaN(ts.getTime())) {
+        return res.status(400).json({ error: "Invalid timestamp" });
+      }
+
+      const dateStr = ts.toLocaleDateString("en-CA", { timeZone: "Asia/Dhaka" });
+      const otId = `${employee.id}:${dateStr}`;
+
+      // Preserve firstSeen across updates (stored in notes JSON)
+      let firstSeenIso = ts.toISOString();
+      try {
+        const existing = await prisma.otRequisition.findUnique({
+          where: { id: otId },
+          select: { notes: true },
+        });
+        const existingFirst = parseFirstSeenIsoFromNotes(existing?.notes ?? null);
+        if (existingFirst) firstSeenIso = existingFirst;
+      } catch {
+        // ignore malformed notes
+      }
+
+      const notes = JSON.stringify({ firstSeen: firstSeenIso });
+
+      const row = await prisma.otRequisition.upsert({
+        where: { id: otId },
+        create: {
+          id: otId,
+          companyId,
+          cameraId: cam ? cam.id : null,
+          employeeId: employee.id,
+          timestamp: ts,
+          confidence: confidence ?? null,
+          notes,
+        },
+        update: {
+          cameraId: cam ? cam.id : null,
+          timestamp: ts,
+          confidence: confidence ?? null,
+          notes,
+        },
+      });
+
+      // Push an event so OT clients can refresh without polling.
+      pushHeadcountEvent(companyId, {
+        at: new Date().toISOString(),
+        headcountId: row.id,
+        employeeId: employeePublicId(employee),
+        status: "OT",
+        timestamp: row.timestamp.toISOString(),
+        cameraId: row.cameraId,
+      });
+
+      return res.json({
+        ok: true,
+        otRequisition: {
+          id: row.id,
+          timestamp: row.timestamp.toISOString(),
+          cameraId: row.cameraId,
+        },
+        employeeId: employeePublicId(employee),
+        snapshotPath: snapshotPath ?? null,
+      });
+    }
+
     // Headcount mode: DO NOT write to Attendance table.
     // Instead, upsert a per-employee/day Headcount row so the headcount page can
     // compare "attendance (today)" vs "headcount (now)".
@@ -98,11 +181,8 @@ export async function createAttendance(req: Request, res: Response) {
           where: { id: headcountId },
           select: { notes: true },
         });
-        if (existing?.notes) {
-          const parsed = JSON.parse(existing.notes);
-          const existingFirst = String(parsed?.firstSeen || "").trim();
-          if (existingFirst) firstSeenIso = existingFirst;
-        }
+        const existingFirst = parseFirstSeenIsoFromNotes(existing?.notes ?? null);
+        if (existingFirst) firstSeenIso = existingFirst;
       } catch {
         // ignore malformed notes
       }

@@ -7,6 +7,7 @@ from typing import Dict, Optional
 from app.core.settings import (
     STREAM_TYPE_ATTENDANCE,
     STREAM_TYPE_HEADCOUNT,
+    STREAM_TYPE_OT,
     normalize_stream_type,
 )
 
@@ -21,7 +22,7 @@ class StreamClientManager:
     """
     Production behavior preserved:
     - Reference counting per camera
-    - Track per stream type (attendance/headcount)
+    - Track per stream type (attendance/headcount/ot)
     - Enable/disable attendance pipeline based on active viewers
     """
 
@@ -38,6 +39,7 @@ class StreamClientManager:
             and (
                 counts.get(STREAM_TYPE_ATTENDANCE, 0) > 0
                 or counts.get(STREAM_TYPE_HEADCOUNT, 0) > 0
+                or counts.get(STREAM_TYPE_OT, 0) > 0
             )
         )
         self._attendance_rt.set_attendance_enabled(camera_id, attendance_enabled)
@@ -49,6 +51,8 @@ class StreamClientManager:
                 active_type = STREAM_TYPE_ATTENDANCE
             elif counts.get(STREAM_TYPE_HEADCOUNT, 0) > 0:
                 active_type = STREAM_TYPE_HEADCOUNT
+            elif counts.get(STREAM_TYPE_OT, 0) > 0:
+                active_type = STREAM_TYPE_OT
         self._attendance_rt.set_stream_type(camera_id, active_type)
 
     def inc(self, camera_id: str, stream_type: Optional[str]) -> int:

@@ -37,6 +37,9 @@ const EmployeeListTable = () => {
   const handleUpdateEmployee = async (payload: {
     name?: string;
     empId?: string | null;
+    section?: string | null;
+    department?: string | null;
+    line?: string | null;
   }) => {
     if (!selectedUser) return;
 

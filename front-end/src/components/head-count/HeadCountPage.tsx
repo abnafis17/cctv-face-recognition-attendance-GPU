@@ -9,7 +9,7 @@ import React, {
 } from "react";
 import toast from "react-hot-toast";
 import { ColumnDef } from "@tanstack/react-table";
-import { Search, RefreshCcw, X } from "lucide-react";
+import { Search, RefreshCcw, X, Check } from "lucide-react";
 
 import axiosInstance, { API, AI_HOST } from "@/config/axiosInstance";
 import { Card } from "@/components/ui/Card";
@@ -34,21 +34,24 @@ type CameraOption = {
   isActive?: boolean;
 };
 
-type HeadcountStatus = "MATCH" | "UNMATCH" | "MISSING" | "ABSENT";
+type HeadcountType = "" | "headcount" | "ot";
+type HeadcountStatus = "MATCH" | "UNMATCH" | "ABSENT";
+type StatusFilter = "ALL" | HeadcountStatus;
+type GroupBy = "" | "section" | "department" | "line";
 
-type HeadcountRow = {
+type CrosscheckRow = {
   id: string;
   employeeId: string;
   name: string;
   status: HeadcountStatus;
+};
+
+type OtRow = {
+  id: string;
+  employeeId: string;
+  name: string;
   cameraName?: string | null;
-
-  prevFirstEntryTime?: string | null;
-  prevLastEntryTime?: string | null;
-
-  firstEntryTime?: string | null;
-  lastEntryTime?: string | null;
-  timestamp?: string | null;
+  headcountTime?: string | null;
 };
 
 const DEFAULT_LAPTOP_CAMERA_ID = "cmkdpsql0000112nsd5gcesq4";
@@ -61,18 +64,6 @@ function safeTimeOnly(ts?: string | number | Date | null) {
   try {
     if (!ts) return "—";
     return new Date(ts).toLocaleTimeString("en-GB", {
-      timeZone: "Asia/Dhaka",
-      hour12: false,
-    });
-  } catch {
-    return "—";
-  }
-}
-
-function safeDateTime(ts?: string | number | Date | null) {
-  try {
-    if (!ts) return "—";
-    return new Date(ts).toLocaleString("en-GB", {
       timeZone: "Asia/Dhaka",
       hour12: false,
     });
@@ -99,28 +90,39 @@ export default function HeadcountPage() {
   const [selectedCamId, setSelectedCamId] = useState<string>("");
 
   const [dateStr, setDateStr] = useState<string>(dhakaTodayYYYYMMDD());
-  const [rows, setRows] = useState<HeadcountRow[]>([]);
+  const [headcountType, setHeadcountType] = useState<HeadcountType>("");
+  const [hcRows, setHcRows] = useState<CrosscheckRow[]>([]);
+  const [otRows, setOtRows] = useState<OtRow[]>([]);
   const [loading, setLoading] = useState(false);
   const inflightRef = useRef(false);
 
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
+
+  const [groupBy, setGroupBy] = useState<GroupBy>("");
+  const [groupValue, setGroupValue] = useState<string>("");
+  const [groupValues, setGroupValues] = useState<string[]>([]);
+  const [groupValuesLoading, setGroupValuesLoading] = useState(false);
+
   const selectedCam = useMemo(
     () => cams.find((c) => c.id === selectedCamId) || null,
     [cams, selectedCamId],
   );
 
+  const streamType = headcountType === "ot" ? "ot" : "headcount";
+
   const remoteStreamUrl = useMemo(() => {
     if (!selectedCam) return "";
     const params = new URLSearchParams();
-    params.set("type", "headcount");
+    params.set("type", streamType);
     if (companyId) params.set("companyId", companyId);
     const query = params.toString();
     return `${AI_HOST}/camera/recognition/stream/${encodeURIComponent(
       selectedCam.id,
     )}/${encodeURIComponent(selectedCam.name)}${query ? `?${query}` : ""}`;
-  }, [selectedCam, companyId]);
+  }, [selectedCam, companyId, streamType]);
 
   const selectedCamIsActive = Boolean(selectedCam?.isActive);
 
@@ -133,6 +135,18 @@ export default function HeadcountPage() {
   useEffect(() => {
     setCompanyId(getCompanyIdFromToken() || "");
   }, []);
+
+  useEffect(() => {
+    setHcRows([]);
+    setOtRows([]);
+    setStatusFilter("ALL");
+
+    if (headcountType !== "headcount") {
+      setGroupBy("");
+      setGroupValue("");
+      setGroupValues([]);
+    }
+  }, [headcountType]);
 
   const fetchCameras = useCallback(async () => {
     try {
@@ -159,6 +173,39 @@ export default function HeadcountPage() {
   useEffect(() => {
     fetchCameras();
   }, [fetchCameras]);
+
+  const fetchGroupValues = useCallback(async (field: Exclude<GroupBy, "">) => {
+    setGroupValuesLoading(true);
+    try {
+      const res = await axiosInstance.get(API.EMPLOYEE_GROUP_VALUES, {
+        params: { field },
+      });
+      const list = (res?.data?.values || []) as string[];
+      setGroupValues(list.map((v) => String(v)).filter(Boolean));
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error || "Failed to load group values");
+      setGroupValues([]);
+    } finally {
+      setGroupValuesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (headcountType !== "headcount") {
+      setGroupValue("");
+      setGroupValues([]);
+      return;
+    }
+
+    if (!groupBy) {
+      setGroupValue("");
+      setGroupValues([]);
+      return;
+    }
+
+    setGroupValue("");
+    fetchGroupValues(groupBy);
+  }, [fetchGroupValues, groupBy, headcountType]);
 
   const [cameraActionLoading, setCameraActionLoading] = useState(false);
 
@@ -200,72 +247,97 @@ export default function HeadcountPage() {
 
   const fetchHeadcount = useCallback(
     async (opts?: { showSpinner?: boolean }) => {
+      const showSpinner = opts?.showSpinner ?? false;
+
+      if (!headcountType) {
+        setHcRows([]);
+        setOtRows([]);
+        return;
+      }
+
+      if (headcountType === "headcount") {
+        // Wait until group is selected for headcount view
+        if (!groupBy || !groupValue) {
+          setHcRows([]);
+          return;
+        }
+      }
+
       if (inflightRef.current) return;
       inflightRef.current = true;
-      const showSpinner = opts?.showSpinner ?? false;
 
       try {
         if (showSpinner) setLoading(true);
 
+        const params: any = {
+          date: dateStr,
+          q: debouncedSearch || undefined,
+          view: headcountType === "ot" ? "ot" : "headcount",
+        };
+        if (headcountType === "headcount" && groupBy && groupValue) {
+          params.groupBy = groupBy;
+          params.groupValue = groupValue;
+        }
+
         const res = await axiosInstance.get(API.HEADCOUNT_LIST, {
-          params: {
-            date: dateStr,
-            q: debouncedSearch || undefined,
-          },
+          params,
         });
 
         const data = (res.data || []) as any[];
 
-        const normalized: HeadcountRow[] = data.map((r) => ({
-          id: String(r.id ?? `${r.employeeId}-${dateStr}`),
-          employeeId: String(r.employeeId ?? ""),
-          name: String(r.name ?? ""),
-          status: (r.status ?? "ABSENT") as HeadcountStatus,
-          cameraName:
-            r.headcountCameraName ?? r.cameraName ?? null,
+        if (headcountType === "headcount") {
+          const normalized: CrosscheckRow[] = data.map((r) => {
+            const rawStatus = String(r.status ?? "ABSENT")
+              .trim()
+              .toUpperCase();
+            const status: HeadcountStatus =
+              rawStatus === "MATCH"
+                ? "MATCH"
+                : rawStatus === "UNMATCH"
+                  ? "UNMATCH"
+                  : "ABSENT";
 
-          prevFirstEntryTime:
-            r.prevFirstEntryTime ??
-            r.prevFirst ??
-            r.previousFirstEntryTime ??
-            null,
-          prevLastEntryTime:
-            r.prevLastEntryTime ??
-            r.prevLast ??
-            r.previousLastEntryTime ??
-            null,
+            return {
+              id: String(r.id ?? `${r.employeeId}-${dateStr}`),
+              employeeId: String(r.employeeId ?? ""),
+              name: String(r.name ?? ""),
+              status,
+            };
+          });
 
-          firstEntryTime:
-            r.firstEntryTime ??
-            r.hcFirst ??
-            r.headcountFirstSeen ??
-            r.headcountFirstEntryTime ??
-            r.headcountTime ??
-            null,
-          lastEntryTime:
-            r.lastEntryTime ??
-            r.hcLast ??
-            r.headcountLastSeen ??
-            r.headcountLastEntryTime ??
-            r.headcountTime ??
-            null,
-          timestamp: r.timestamp ?? r.lastSeen ?? null,
-        }));
+          setOtRows([]);
+          setHcRows(normalized);
+        } else {
+          const normalized: OtRow[] = data.map((r) => ({
+            id: String(r.id ?? `${r.employeeId}-${dateStr}`),
+            employeeId: String(r.employeeId ?? ""),
+            name: String(r.name ?? ""),
+            cameraName: r.headcountCameraName ?? r.cameraName ?? null,
+            headcountTime:
+              r.headcountLastEntryTime ??
+              r.headcountTime ??
+              r.timestamp ??
+              r.lastSeen ??
+              null,
+          }));
 
-        setRows(normalized);
+          setHcRows([]);
+          setOtRows(normalized);
+        }
       } catch (e: any) {
         const msg =
           e?.response?.data?.message ||
           e?.response?.data?.error ||
           "Failed to load headcount";
         toast.error(msg);
-        setRows([]);
+        setHcRows([]);
+        setOtRows([]);
       } finally {
         if (showSpinner) setLoading(false);
         inflightRef.current = false;
       }
     },
-    [dateStr, debouncedSearch],
+    [dateStr, debouncedSearch, groupBy, groupValue, headcountType],
   );
 
   useEffect(() => {
@@ -286,11 +358,11 @@ export default function HeadcountPage() {
 
   // Refresh headcount when either headcount scans or attendance marks happen (same day only).
   useHeadcountEvents({
-    enabled: isToday,
+    enabled: isToday && Boolean(headcountType),
     onEvents: () => scheduleRefresh(),
   });
   useAttendanceEvents({
-    enabled: isToday,
+    enabled: isToday && headcountType === "headcount",
     onEvents: () => scheduleRefresh(),
   });
 
@@ -303,32 +375,27 @@ export default function HeadcountPage() {
   const counts = useMemo(() => {
     let match = 0;
     let unmatch = 0;
-    let missing = 0;
     let absent = 0;
-    for (const r of rows) {
+    for (const r of hcRows) {
       if (r.status === "MATCH") match++;
       else if (r.status === "UNMATCH") unmatch++;
-      else if (r.status === "MISSING") missing++;
       else absent++;
     }
-    return { total: rows.length, match, unmatch, missing, absent };
-  }, [rows]);
+    return { total: hcRows.length, match, unmatch, absent };
+  }, [hcRows]);
 
-  const statusPill = (s: HeadcountStatus) => {
-    if (s === "MATCH") return "bg-green-100 text-green-800";
-    if (s === "UNMATCH") return "bg-red-100 text-red-800";
-    if (s === "MISSING") return "bg-orange-100 text-orange-800";
-    return "bg-yellow-100 text-yellow-800";
-  };
+  const filteredHcRows = useMemo(() => {
+    if (statusFilter === "ALL") return hcRows;
+    return hcRows.filter((r) => r.status === statusFilter);
+  }, [hcRows, statusFilter]);
 
   const cellBg = (s: HeadcountStatus) => {
     if (s === "MATCH") return "bg-green-50";
     if (s === "UNMATCH") return "bg-red-50";
-    if (s === "MISSING") return "bg-orange-50";
     return "bg-yellow-50";
   };
 
-  const columns: ColumnDef<HeadcountRow>[] = useMemo(
+  const headcountColumns: ColumnDef<CrosscheckRow>[] = useMemo(
     () => [
       {
         id: "sl",
@@ -357,42 +424,102 @@ export default function HeadcountPage() {
             {row.original.employeeId}
           </div>
         ),
-        size: 160,
+        size: 180,
       },
       {
         header: () => (
-          <div className="text-left font-bold w-full px-1 py-2">Name</div>
+          <div className="text-left font-bold w-full px-1 py-2">
+            Employee Name
+          </div>
         ),
         accessorKey: "name",
         cell: ({ row }) => (
-          <div
-            className={cn("text-left px-1 py-2", cellBg(row.original.status))}
-          >
+          <div className={cn("text-left px-1 py-2", cellBg(row.original.status))}>
             {row.original.name}
           </div>
         ),
-        size: 260,
+        size: 320,
+      },
+      {
+        id: "crossCheckStatus",
+        header: () => (
+          <div className="text-center font-bold w-full px-1 py-2">
+            Cross Check
+          </div>
+        ),
+        cell: ({ row }) => (
+          <div
+            className={cn(
+              "flex items-center justify-center gap-1 px-1 py-2",
+              cellBg(row.original.status),
+            )}
+          >
+            {row.original.status === "MATCH" ? (
+              <Check className="h-4 w-4 text-green-600" />
+            ) : row.original.status === "UNMATCH" ? (
+              <X className="h-4 w-4 text-red-600" />
+            ) : (
+              <span className="text-xs font-medium text-gray-400">ABSENT</span>
+            )}
+          </div>
+        ),
+        size: 150,
+      },
+    ],
+    [],
+  );
+
+  const otColumns: ColumnDef<OtRow>[] = useMemo(
+    () => [
+      {
+        id: "sl",
+        header: () => (
+          <div className="text-center font-bold w-full px-1 py-2">SL</div>
+        ),
+        cell: (info: any) => (
+          <div className="text-center px-1 py-2">{info.row.index + 1}</div>
+        ),
+        size: 40,
       },
       {
         header: () => (
-          <div className="text-center font-bold w-full px-1 py-2">Status</div>
-        ),
-        accessorKey: "status",
-        cell: ({ row }) => (
-          <div
-            className={cn("text-center px-1 py-2", cellBg(row.original.status))}
-          >
-            <span
-              className={cn(
-                "inline-flex rounded-full px-2 py-1 text-xs font-semibold",
-                statusPill(row.original.status),
-              )}
-            >
-              {row.original.status}
-            </span>
+          <div className="text-center font-bold w-full px-1 py-2">
+            Employee ID
           </div>
         ),
-        size: 120,
+        accessorKey: "employeeId",
+        cell: ({ row }) => (
+          <div className="text-center px-1 py-2 font-medium">
+            {row.original.employeeId}
+          </div>
+        ),
+        size: 180,
+      },
+      {
+        header: () => (
+          <div className="text-left font-bold w-full px-1 py-2">
+            Employee Name
+          </div>
+        ),
+        accessorKey: "name",
+        cell: ({ row }) => (
+          <div className="text-left px-1 py-2">{row.original.name}</div>
+        ),
+        size: 320,
+      },
+      {
+        header: () => (
+          <div className="text-center font-bold w-full px-1 py-2">
+            Headcount Time
+          </div>
+        ),
+        accessorKey: "headcountTime",
+        cell: ({ row }) => (
+          <div className="text-center px-1 py-2 text-xs text-gray-600">
+            {safeTimeOnly(row.original.headcountTime)}
+          </div>
+        ),
+        size: 160,
       },
       {
         header: () => (
@@ -400,89 +527,8 @@ export default function HeadcountPage() {
         ),
         accessorKey: "cameraName",
         cell: ({ row }) => (
-          <div
-            className={cn("text-center px-1 py-2", cellBg(row.original.status))}
-          >
-            {row.original.cameraName ?? "N/A"}
-          </div>
-        ),
-        size: 160,
-      },
-      {
-        header: () => (
-          <div className="text-center font-bold w-full px-1 py-2">
-            Prev First
-          </div>
-        ),
-        accessorKey: "prevFirstEntryTime",
-        cell: ({ row }) => (
-          <div
-            className={cn("text-center px-1 py-2", cellBg(row.original.status))}
-          >
-            {safeTimeOnly(row.original.prevFirstEntryTime)}
-          </div>
-        ),
-        size: 140,
-      },
-      {
-        header: () => (
-          <div className="text-center font-bold w-full px-1 py-2">
-            Prev Last
-          </div>
-        ),
-        accessorKey: "prevLastEntryTime",
-        cell: ({ row }) => (
-          <div
-            className={cn("text-center px-1 py-2", cellBg(row.original.status))}
-          >
-            {safeTimeOnly(row.original.prevLastEntryTime)}
-          </div>
-        ),
-        size: 140,
-      },
-      {
-        header: () => (
-          <div className="text-center font-bold w-full px-1 py-2">HC First</div>
-        ),
-        accessorKey: "firstEntryTime",
-        cell: ({ row }) => (
-          <div
-            className={cn("text-center px-1 py-2", cellBg(row.original.status))}
-          >
-            {safeTimeOnly(row.original.firstEntryTime)}
-          </div>
-        ),
-        size: 140,
-      },
-      {
-        header: () => (
-          <div className="text-center font-bold w-full px-1 py-2">HC Last</div>
-        ),
-        accessorKey: "lastEntryTime",
-        cell: ({ row }) => (
-          <div
-            className={cn("text-center px-1 py-2", cellBg(row.original.status))}
-          >
-            {safeTimeOnly(row.original.lastEntryTime)}
-          </div>
-        ),
-        size: 140,
-      },
-      {
-        header: () => (
-          <div className="text-center font-bold w-full px-1 py-2">
-            Last Seen (DateTime)
-          </div>
-        ),
-        accessorKey: "timestamp",
-        cell: ({ row }) => (
-          <div
-            className={cn(
-              "text-center px-1 py-2 text-xs text-gray-600",
-              cellBg(row.original.status),
-            )}
-          >
-            {safeDateTime(row.original.timestamp)}
+          <div className="text-center px-1 py-2">
+            {row.original.cameraName ?? "—"}
           </div>
         ),
         size: 200,
@@ -499,6 +545,7 @@ export default function HeadcountPage() {
           userId={companyId ? `laptop-${companyId}` : DEFAULT_LAPTOP_CAMERA_ID}
           companyId={companyId}
           cameraName="Laptop Camera"
+          streamType={streamType}
         />
 
         {selectedCam ? (
@@ -583,24 +630,121 @@ export default function HeadcountPage() {
             <div className="text-sm font-semibold text-gray-900">{dateStr}</div>
           </div>
 
-          <span className="inline-flex items-center rounded-full bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-700">
-            Total: {counts.total}
-          </span>
-          <span className="inline-flex items-center rounded-full bg-green-100 px-3 py-2 text-xs font-semibold text-green-800">
-            MATCH: {counts.match}
-          </span>
-          <span className="inline-flex items-center rounded-full bg-red-100 px-3 py-2 text-xs font-semibold text-red-800">
-            UNMATCH: {counts.unmatch}
-          </span>
-          <span className="inline-flex items-center rounded-full bg-orange-100 px-3 py-2 text-xs font-semibold text-orange-800">
-            MISSING: {counts.missing}
-          </span>
-          <span className="inline-flex items-center rounded-full bg-yellow-100 px-3 py-2 text-xs font-semibold text-yellow-800">
-            ABSENT: {counts.absent}
-          </span>
+          {headcountType === "headcount" && groupBy && groupValue ? (
+            <span className="inline-flex items-center rounded-full bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-700">
+              {groupBy === "section"
+                ? "Section"
+                : groupBy === "department"
+                  ? "Department"
+                  : "Line"}
+              : {groupValue}
+            </span>
+          ) : null}
+
+          {headcountType === "headcount" ? (
+            <>
+              <span className="inline-flex items-center rounded-full bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-700">
+                Total: {counts.total}
+              </span>
+              <span className="inline-flex items-center rounded-full bg-green-100 px-3 py-2 text-xs font-semibold text-green-800">
+                MATCH: {counts.match}
+              </span>
+              <span className="inline-flex items-center rounded-full bg-red-100 px-3 py-2 text-xs font-semibold text-red-800">
+                UNMATCH: {counts.unmatch}
+              </span>
+              <span className="inline-flex items-center rounded-full bg-yellow-100 px-3 py-2 text-xs font-semibold text-yellow-800">
+                ABSENT: {counts.absent}
+              </span>
+            </>
+          ) : headcountType === "ot" ? (
+            <span className="inline-flex items-center rounded-full bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-700">
+              Total: {otRows.length}
+            </span>
+          ) : null}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2 rounded-xl border bg-white px-3 py-2">
+            <label className="text-xs font-medium text-gray-600">Type</label>
+            <select
+              value={headcountType}
+              onChange={(e) => setHeadcountType(e.target.value as HeadcountType)}
+              className="text-sm outline-none bg-transparent"
+            >
+              <option value="">Select...</option>
+              <option value="headcount">Head count</option>
+              <option value="ot">OT requisition</option>
+            </select>
+          </div>
+
+          {headcountType === "headcount" ? (
+            <div className="flex items-center gap-2 rounded-xl border bg-white px-3 py-2">
+              <label className="text-xs font-medium text-gray-600">
+                Group by
+              </label>
+              <select
+                value={groupBy}
+                onChange={(e) => setGroupBy(e.target.value as GroupBy)}
+                className="text-sm outline-none bg-transparent"
+              >
+                <option value="">Select...</option>
+                <option value="section">Section</option>
+                <option value="department">Department</option>
+                <option value="line">Line</option>
+              </select>
+            </div>
+          ) : null}
+
+          {headcountType === "headcount" && groupBy ? (
+            <div className="flex items-center gap-2 rounded-xl border bg-white px-3 py-2">
+              <label className="text-xs font-medium text-gray-600">
+                {groupBy === "section"
+                  ? "Section"
+                  : groupBy === "department"
+                    ? "Department"
+                    : "Line"}
+              </label>
+              <select
+                value={groupValue}
+                onChange={(e) => setGroupValue(e.target.value)}
+                className="text-sm outline-none bg-transparent"
+                disabled={groupValuesLoading}
+              >
+                <option value="">
+                  {groupValuesLoading ? "Loading..." : "Select..."}
+                </option>
+                {!groupValuesLoading && groupValues.length === 0 ? (
+                  <option value="" disabled>
+                    No options
+                  </option>
+                ) : null}
+                {groupValues.map((v) => (
+                  <option key={v} value={v}>
+                    {v}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
+
+          {headcountType === "headcount" ? (
+            <div className="flex items-center gap-2 rounded-xl border bg-white px-3 py-2">
+              <label className="text-xs font-medium text-gray-600">Status</label>
+              <select
+                value={statusFilter}
+                onChange={(e) =>
+                  setStatusFilter(e.target.value as StatusFilter)
+                }
+                className="text-sm outline-none bg-transparent"
+              >
+                <option value="ALL">All</option>
+                <option value="MATCH">MATCH</option>
+                <option value="UNMATCH">UNMATCH</option>
+                <option value="ABSENT">ABSENT</option>
+              </select>
+            </div>
+          ) : null}
+
           {/* Search */}
           <div className="relative w-[280px]">
             <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -658,10 +802,10 @@ export default function HeadcountPage() {
             </select>
           </div>
 
-           <button
-             className="h-10 rounded-xl bg-gray-900 px-4 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-60 inline-flex items-center"
-             onClick={() => fetchHeadcount({ showSpinner: true })}
-             disabled={loading}
+          <button
+            className="h-10 rounded-xl bg-gray-900 px-4 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-60 inline-flex items-center"
+            onClick={() => fetchHeadcount({ showSpinner: true })}
+            disabled={loading || !headcountType}
             type="button"
             title="Refresh"
           >
@@ -674,13 +818,17 @@ export default function HeadcountPage() {
       </div>
 
       {/* Table */}
-      <div className="mt-4 rounded-md border bg-white">
-        {loading ? (
-          <TableLoading />
-        ) : (
-          <TanstackDataTable data={rows} columns={columns} />
-        )}
-      </div>
+      {headcountType === "" ? null : headcountType === "headcount" && !groupBy ? null : (
+        <div className="mt-4 rounded-md border bg-white">
+          {loading ? (
+            <TableLoading />
+          ) : headcountType === "headcount" ? (
+            <TanstackDataTable data={filteredHcRows} columns={headcountColumns} />
+          ) : (
+            <TanstackDataTable data={otRows} columns={otColumns} />
+          )}
+        </div>
+      )}
 
       {!loading && !selectedCamId ? (
         <div className="mt-4 rounded-xl border border-dashed border-gray-200 bg-gray-50 p-6 text-center">
@@ -688,20 +836,64 @@ export default function HeadcountPage() {
             Select a camera to start headcount capture
           </p>
           <p className="mt-1 text-xs text-gray-500">
-            Camera selection is only used for capture/streaming (table is
-            company-wide for the selected date).
+            Camera selection is only used for capture/streaming.
           </p>
         </div>
       ) : null}
 
-      {!loading && rows.length === 0 ? (
+      {!loading && headcountType === "" ? (
+        <div className="mt-4 rounded-xl border border-dashed border-gray-200 bg-gray-50 p-6 text-center">
+          <p className="text-sm font-medium text-gray-700">
+            Select Head count or OT requisition to show the table
+          </p>
+        </div>
+      ) : null}
+
+      {!loading && headcountType === "headcount" && !groupBy ? (
+        <div className="mt-4 rounded-xl border border-dashed border-gray-200 bg-gray-50 p-6 text-center">
+          <p className="text-sm font-medium text-gray-700">
+            Select Section / Department / Line to show the table
+          </p>
+        </div>
+      ) : null}
+
+      {!loading && headcountType === "headcount" && groupBy && !groupValue ? (
+        <div className="mt-4 rounded-xl border border-dashed border-gray-200 bg-gray-50 p-6 text-center">
+          <p className="text-sm font-medium text-gray-700">
+            Select a{" "}
+            {groupBy === "section"
+              ? "section"
+              : groupBy === "department"
+                ? "department"
+                : "line"}{" "}
+            to load the attendance list
+          </p>
+          <p className="mt-1 text-xs text-gray-500">
+            After selecting, the table will show MATCH/UNMATCH/ABSENT and update
+            as headcount events come in.
+          </p>
+        </div>
+      ) : !loading &&
+        headcountType === "headcount" &&
+        groupBy &&
+        groupValue &&
+        hcRows.length === 0 ? (
+        <div className="mt-4 rounded-xl border border-dashed border-gray-200 bg-gray-50 p-6 text-center">
+          <p className="text-sm font-medium text-gray-700">
+            No data for {dateStr}
+          </p>
+          <p className="mt-1 text-xs text-gray-500">
+            Clear search, change date, or start headcount capture to generate
+            headcount events.
+          </p>
+        </div>
+      ) : !loading && headcountType === "ot" && otRows.length === 0 ? (
         <div className="mt-4 rounded-xl border border-dashed border-gray-200 bg-gray-50 p-6 text-center">
           <p className="text-sm font-medium text-gray-700">
             No headcount data for {dateStr}
           </p>
           <p className="mt-1 text-xs text-gray-500">
-            Clear search, change date, or start headcount capture to generate
-            headcount events.
+            Start headcount capture to generate headcount events.
           </p>
         </div>
       ) : null}

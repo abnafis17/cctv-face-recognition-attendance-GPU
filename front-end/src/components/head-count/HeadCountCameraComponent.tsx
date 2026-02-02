@@ -5,6 +5,7 @@ interface LocalCameraProps {
   userId?: string; // cameraId
   companyId?: string; // for recognition gallery
   cameraName?: string; // NEW: display + recognition URL
+  streamType?: string; // "headcount" | "ot"
 }
 
 const DEFAULT_CAMERA_ID = "cmkdpsq300000j7284bwluxh2";
@@ -13,6 +14,7 @@ const HeadCountCameraComponent: React.FC<LocalCameraProps> = ({
   userId,
   companyId,
   cameraName,
+  streamType: streamTypeProp,
 }) => {
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -27,7 +29,7 @@ const HeadCountCameraComponent: React.FC<LocalCameraProps> = ({
   }, [companyId, userId]);
 
   const displayName = (cameraName?.trim() || "Laptop Camera").trim();
-  const streamType = "headcount";
+  const streamType = (streamTypeProp?.trim() || "headcount").trim();
 
   // Recognition MJPEG (same overlay as IP cameras)
   const recQuery = useMemo(() => {
@@ -79,14 +81,14 @@ const HeadCountCameraComponent: React.FC<LocalCameraProps> = ({
     return () => stopLocalCamera();
   }, [stopLocalCamera]);
 
-  const prevKeyRef = useRef<string>(`${cameraId}|${companyId || ""}`);
+  const prevKeyRef = useRef<string>(`${cameraId}|${companyId || ""}|${streamType}`);
   useEffect(() => {
     // If user switches camera while active, stop cleanly (user can Start again)
-    const key = `${cameraId}|${companyId || ""}`;
+    const key = `${cameraId}|${companyId || ""}|${streamType}`;
     const changed = prevKeyRef.current !== key;
     if (changed && localActive) stopLocalCamera();
     prevKeyRef.current = key;
-  }, [cameraId, companyId, localActive, stopLocalCamera]);
+  }, [cameraId, companyId, streamType, localActive, stopLocalCamera]);
 
   const startLocalCamera = async () => {
     try {

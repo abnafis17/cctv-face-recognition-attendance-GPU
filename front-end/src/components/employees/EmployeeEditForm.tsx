@@ -11,7 +11,13 @@ type Props = {
   setSelectedUser: React.Dispatch<React.SetStateAction<Employee | null>>;
   loading: boolean;
   onClose: () => void;
-  onSave: (payload: { name?: string; empId?: string | null }) => void;
+  onSave: (payload: {
+    name?: string;
+    empId?: string | null;
+    section?: string | null;
+    department?: string | null;
+    line?: string | null;
+  }) => void;
 };
 
 const EmployeeEditForm: React.FC<Props> = ({
@@ -53,6 +59,51 @@ const EmployeeEditForm: React.FC<Props> = ({
         />
       </div>
 
+      {/* Section */}
+      <div className="space-y-1">
+        <label className="text-sm font-medium">Section</label>
+        <input
+          className="w-full border rounded px-3 py-2 text-sm"
+          value={selectedUser?.section ?? ""}
+          onChange={(e) =>
+            setSelectedUser((prev) =>
+              prev ? { ...prev, section: e.target.value } : prev,
+            )
+          }
+          placeholder="Section"
+        />
+      </div>
+
+      {/* Department */}
+      <div className="space-y-1">
+        <label className="text-sm font-medium">Department</label>
+        <input
+          className="w-full border rounded px-3 py-2 text-sm"
+          value={selectedUser?.department ?? ""}
+          onChange={(e) =>
+            setSelectedUser((prev) =>
+              prev ? { ...prev, department: e.target.value } : prev,
+            )
+          }
+          placeholder="Department"
+        />
+      </div>
+
+      {/* Line */}
+      <div className="space-y-1">
+        <label className="text-sm font-medium">Line</label>
+        <input
+          className="w-full border rounded px-3 py-2 text-sm"
+          value={selectedUser?.line ?? ""}
+          onChange={(e) =>
+            setSelectedUser((prev) =>
+              prev ? { ...prev, line: e.target.value } : prev,
+            )
+          }
+          placeholder="Line"
+        />
+      </div>
+
       {/* Actions */}
       <div className="flex justify-end gap-2 pt-2">
         <button
@@ -72,6 +123,9 @@ const EmployeeEditForm: React.FC<Props> = ({
             onSave({
               name: selectedUser?.name,
               empId: selectedUser?.empId ?? null,
+              section: selectedUser?.section ?? null,
+              department: selectedUser?.department ?? null,
+              line: selectedUser?.line ?? null,
             })
           }
         >

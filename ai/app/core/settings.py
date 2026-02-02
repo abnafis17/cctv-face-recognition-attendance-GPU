@@ -6,7 +6,8 @@ from typing import Optional
 
 STREAM_TYPE_ATTENDANCE = "attendance"
 STREAM_TYPE_HEADCOUNT = "headcount"
-VALID_STREAM_TYPES = {STREAM_TYPE_ATTENDANCE, STREAM_TYPE_HEADCOUNT}
+STREAM_TYPE_OT = "ot"
+VALID_STREAM_TYPES = {STREAM_TYPE_ATTENDANCE, STREAM_TYPE_HEADCOUNT, STREAM_TYPE_OT}
 
 
 def env_float(name: str, default: float) -> float:
