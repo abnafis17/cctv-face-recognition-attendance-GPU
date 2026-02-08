@@ -64,6 +64,14 @@ class Recognizer:
             union = area_a + area_b - inter + 1e-6
             return float(inter / union)
 
+        def _bbox_center_distance(a: tuple[int, int, int, int], b: tuple[int, int, int, int]) -> float:
+            ax1, ay1, ax2, ay2 = a
+            bx1, by1, bx2, by2 = b
+            acx, acy = (ax1 + ax2) * 0.5, (ay1 + ay2) * 0.5
+            bcx, bcy = (bx1 + bx2) * 0.5, (by1 + by2) * 0.5
+            dx, dy = (acx - bcx), (acy - bcy)
+            return float((dx * dx + dy * dy) ** 0.5)
+
         for tr in tracks:
             if not scheduler.should_run_recognition(tr, now=now):
                 continue
@@ -74,10 +82,14 @@ class Recognizer:
             det_misses = int(getattr(tr, "det_misses", 0) or 0)
             hold_min_iou = float(getattr(self.cfg, "identity_hold_min_iou", 0.10) or 0.10)
             hold_max_det_misses = int(getattr(self.cfg, "identity_hold_max_det_misses", 1) or 1)
+            hold_max_center_shift_ratio = float(
+                getattr(self.cfg, "identity_hold_max_center_shift_ratio", 0.35) or 0.35
+            )
 
             last_known_bbox = getattr(tr, "last_known_bbox", None)
             cur_bbox = getattr(tr, "bbox", None)
             bbox_iou = 0.0
+            center_shift_ok = True
             if (
                 last_known_bbox is not None
                 and cur_bbox is not None
@@ -86,8 +98,25 @@ class Recognizer:
             ):
                 try:
                     bbox_iou = _bbox_iou(tuple(int(v) for v in cur_bbox), tuple(int(v) for v in last_known_bbox))
+                    center_shift = _bbox_center_distance(
+                        tuple(int(v) for v in cur_bbox),
+                        tuple(int(v) for v in last_known_bbox),
+                    )
+                    cx1, cy1, cx2, cy2 = tuple(int(v) for v in cur_bbox)
+                    kx1, ky1, kx2, ky2 = tuple(int(v) for v in last_known_bbox)
+                    max_dim = float(
+                        max(
+                            1,
+                            cx2 - cx1,
+                            cy2 - cy1,
+                            kx2 - kx1,
+                            ky2 - ky1,
+                        )
+                    )
+                    center_shift_ok = center_shift <= (hold_max_center_shift_ratio * max_dim)
                 except Exception:
                     bbox_iou = 0.0
+                    center_shift_ok = False
 
             det_age = (now - last_det_ts) if last_det_ts > 0 else 1e9
             hold_ok = (
@@ -96,9 +125,15 @@ class Recognizer:
                 and det_misses <= hold_max_det_misses
                 and det_age <= min(hold_s, 1.25)
                 and (last_known_bbox is None or bbox_iou >= hold_min_iou)
+                and center_shift_ok
             )
 
-            emb = self._embedder.embed(frame_bgr, bbox=tr.bbox, kps=tr.kps)
+            kps = tr.kps
+            kps_max_age = float(getattr(self.cfg, "kps_max_age_seconds", 0.0) or 0.0)
+            if kps_max_age > 0.0 and det_age > kps_max_age:
+                kps = None
+
+            emb = self._embedder.embed(frame_bgr, bbox=tr.bbox, kps=kps)
             tr.last_embed_ts = now
             calls += 1
 
@@ -122,6 +157,18 @@ class Recognizer:
 
             m = self._match_embedding(emb)
             score = float(m.score)
+            new_id = str(m.person_id) if m.person_id is not None else None
+
+            strict_thr = float(
+                max(
+                    float(self.cfg.similarity_threshold),
+                    float(getattr(self.cfg, "strict_similarity_threshold", self.cfg.similarity_threshold)),
+                )
+            )
+            is_new_or_flip = (
+                new_id is not None and (tr.person_id is None or tr.person_id != new_id)
+            )
+            accept_thr = strict_thr if is_new_or_flip else float(self.cfg.similarity_threshold)
 
             # borderline around decision threshold => burst to disambiguate
             if abs(score - float(self.cfg.similarity_threshold)) <= float(self.cfg.borderline_margin):
@@ -136,7 +183,7 @@ class Recognizer:
                 tr.force_recognition_until_ts = max(tr.force_recognition_until_ts, now + self.cfg.burst_seconds)
                 borderlines += 1
 
-            if m.person_id is None or score < float(self.cfg.similarity_threshold):
+            if new_id is None or score < accept_thr:
                 # If we had a confident identity very recently, keep it briefly even if the
                 # current embedding is low-confidence (motion blur / partial face).
                 if tr.person_id is not None and hold_ok:
@@ -162,7 +209,6 @@ class Recognizer:
                 continue
 
             # Known
-            new_id = str(m.person_id)
             if tr.person_id is not None and tr.person_id != new_id:
                 # Avoid rapid flips during movement. Only accept a new id if it is clearly
                 # above threshold+margin; otherwise show Unknown (never keep the old name).
@@ -187,6 +233,7 @@ class Recognizer:
             if tr.person_id == new_id:
                 tr.stable_id_hits = int(tr.stable_id_hits) + 1
             else:
+                tr.last_identity_change_ts = now
                 tr.stable_id_hits = 1
 
             tr.person_id = new_id

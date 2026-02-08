@@ -339,6 +339,7 @@ class AttendanceRuntime:
         self._gallery_last_load_by_company: Dict[str, float] = {}
         self._gallery_matrix_by_company: Dict[str, np.ndarray] = {}
         self._gallery_meta_by_company: Dict[str, List[Tuple[int, str, str]]] = {}
+        self._gallery_emp_ids_by_company: Dict[str, np.ndarray] = {}
 
         self._cam_state: Dict[str, CameraScanState] = {}
         self._enabled_for_attendance: Dict[str, bool] = {}
@@ -383,6 +384,12 @@ class AttendanceRuntime:
                 motion_window_sec=float(os.getenv("FAS_MOTION_WINDOW", "1.5")),
                 min_yaw_range=float(min_yaw_range),
                 use_heuristics=(os.getenv("FAS_USE_HEURISTICS", "1") == "1"),
+                close_face_max_area_ratio=float(
+                    os.getenv("FAS_CLOSE_FACE_MAX_AREA_RATIO", "0.18")
+                ),
+                close_face_max_width_ratio=float(
+                    os.getenv("FAS_CLOSE_FACE_MAX_WIDTH_RATIO", "0.60")
+                ),
                 cooldown_sec=float(os.getenv("FAS_COOLDOWN_SEC", "2.0")),
             ),
             input_size=(112, 112),
@@ -390,6 +397,9 @@ class AttendanceRuntime:
         # Laptop/WebRTC feeds can be noisy for anti-spoof models and may block
         # all marks. Default to bypassing FAS for camera ids like "laptop-<companyId>".
         self._fas_skip_laptop = os.getenv("FAS_SKIP_LAPTOP", "1") == "1"
+        self._door_unlock_on_recognition = (
+            str(os.getenv("DOOR_UNLOCK_ON_RECOGNITION", "0")).strip() == "1"
+        )
 
         # ---------------------------
         # ERP push (optional)
@@ -631,6 +641,7 @@ class AttendanceRuntime:
         if not company_id:
             self._gallery_matrix_by_company[key] = np.zeros((0, 512), dtype=np.float32)
             self._gallery_meta_by_company[key] = []
+            self._gallery_emp_ids_by_company[key] = np.zeros((0,), dtype=np.int32)
             self._gallery_last_load_by_company[key] = now
             return
 
@@ -641,6 +652,7 @@ class AttendanceRuntime:
             print(f"[GALLERY] load failed company={company_id or 'default'}: {e}")
             self._gallery_matrix_by_company[key] = np.zeros((0, 512), dtype=np.float32)
             self._gallery_meta_by_company[key] = []
+            self._gallery_emp_ids_by_company[key] = np.zeros((0,), dtype=np.int32)
             self._gallery_last_load_by_company[key] = now
             return
 
@@ -674,6 +686,12 @@ class AttendanceRuntime:
             np.stack(embs, axis=0) if embs else np.zeros((0, 512), dtype=np.float32)
         )
         self._gallery_meta_by_company[key] = meta
+        if meta:
+            self._gallery_emp_ids_by_company[key] = np.asarray(
+                [m[0] for m in meta], dtype=np.int32
+            )
+        else:
+            self._gallery_emp_ids_by_company[key] = np.zeros((0,), dtype=np.int32)
         self._gallery_last_load_by_company[key] = now
 
     def _get_state(self, camera_id: str) -> CameraScanState:
@@ -716,9 +734,7 @@ class AttendanceRuntime:
             self._relay_min_interval_s = float(
                 os.getenv("RELAY_MIN_INTERVAL_S", "0.75")
             )
-            self._relay_http_timeout_s = float(
-                os.getenv("RELAY_HTTP_TIMEOUT_S", "0.4")
-            )
+            self._relay_http_timeout_s = float(os.getenv("RELAY_HTTP_TIMEOUT_S", "0.4"))
 
         cid = str(camera_id)
         desired = "on" if turn_on else "off"
@@ -748,6 +764,53 @@ class AttendanceRuntime:
                 print(f"[RELAY] {desired} cid={cid} url={url}")
             except Exception as e:
                 print(f"[RELAY] failed cid={cid} url={url} err={e}")
+
+        threading.Thread(target=_do, daemon=True).start()
+
+    def _trigger_door_unlock(
+        self,
+        *,
+        camera_id: str,
+        employee_id: str,
+        name: str,
+        similarity: float,
+    ) -> None:
+        """
+        Fire-and-forget door unlock.
+        Called on EVERY known recognition.
+        No attendance debounce.
+        """
+
+        # ---- lightweight spam protection (VERY IMPORTANT) ----
+        # prevents unlock firing 30 times per second for same person
+        if not hasattr(self, "_door_last_fire"):
+            self._door_last_fire = {}  # key -> last_ts
+
+        key = f"{camera_id}:{employee_id}"
+        now = time.time()
+
+        # allow unlock once every X seconds per person
+        min_gap = float(os.getenv("DOOR_UNLOCK_MIN_GAP", "0.7"))
+        last = self._door_last_fire.get(key, 0.0)
+        if now - last < min_gap:
+            return
+
+        self._door_last_fire[key] = now
+
+        url = "http://10.81.100.72/silent"
+
+        def _do():
+            try:
+                # fire-and-forget HTTP call
+                resp = urllib.request.urlopen(url, timeout=0.4)
+                resp.close()
+
+                print(
+                    f"[DOOR] unlock fired cam={camera_id} emp={employee_id} "
+                    f"name={name} sim={similarity:.3f}"
+                )
+            except Exception as e:
+                print(f"[DOOR] unlock failed cam={camera_id} emp={employee_id} err={e}")
 
         threading.Thread(target=_do, daemon=True).start()
 
@@ -781,11 +844,25 @@ class AttendanceRuntime:
         key = self._gallery_key(company_id)
         gallery_matrix = self._gallery_matrix_by_company.get(key)
         gallery_meta = self._gallery_meta_by_company.get(key, [])
+        gallery_emp_ids = self._gallery_emp_ids_by_company.get(key)
 
         if gallery_matrix is None or gallery_matrix.size == 0:
             return MatchResult(person_id=None, name="Unknown", score=-1.0)
 
-        idx, sim = match_gallery(emb, gallery_matrix)
+        sims = gallery_matrix @ emb
+        idx = int(np.argmax(sims))
+        sim = float(sims[idx])
+        if (
+            gallery_emp_ids is not None
+            and gallery_emp_ids.size > 1
+            and float(self.cfg.distinct_sim_margin) > 0.0
+        ):
+            emp_id = int(gallery_emp_ids[idx])
+            mask = gallery_emp_ids != emp_id
+            if np.any(mask):
+                best_other = float(np.max(sims[mask]))
+                if (sim - best_other) < float(self.cfg.distinct_sim_margin):
+                    return MatchResult(person_id=None, name="Unknown", score=sim)
         if idx != -1 and idx < len(gallery_meta):
             _emp_int, emp_id_str, name = gallery_meta[idx]
             return MatchResult(
@@ -943,28 +1020,36 @@ class AttendanceRuntime:
         events: set[str] = set()
         det_res = self._gpu.get_latest_result(cid)
         if det_res is not None and int(det_res.seq) != int(state.last_det_seq):
-            state.last_det_seq = int(det_res.seq)
-            state.det_applied_total += 1
-
-            new_ids = state.tracker.apply_detections(
-                frame_bgr, det_res.detections, now=now
+            det_age = max(0.0, now - float(det_res.ts))
+            max_det_age = float(
+                getattr(self.cfg, "max_detection_result_age_seconds", 0.0) or 0.0
             )
-            if new_ids:
-                events.add("new_track")
-                new_id_set = set(new_ids)
-                # New tracks get immediate high-stakes recognition window.
-                for tr in state.tracker.tracks():
-                    if tr.track_id in new_id_set:
-                        tr.force_recognition_until_ts = max(
-                            tr.force_recognition_until_ts,
-                            now + float(self.cfg.burst_seconds),
-                        )
-            # Detection just updated boxes; force a quick recognition pass on fresh bboxes.
-            for tr in state.tracker.tracks():
-                tr.force_recognition_until_ts = max(
-                    tr.force_recognition_until_ts, now + 0.35
+            state.last_det_seq = int(det_res.seq)
+
+            if max_det_age > 0.0 and det_age > max_det_age:
+                state.scheduler.force_burst("stale_det", now=now)
+            else:
+                state.det_applied_total += 1
+
+                new_ids = state.tracker.apply_detections(
+                    frame_bgr, det_res.detections, now=now
                 )
-            tracks = state.tracker.tracks()
+                if new_ids:
+                    events.add("new_track")
+                    new_id_set = set(new_ids)
+                    # New tracks get immediate high-stakes recognition window.
+                    for tr in state.tracker.tracks():
+                        if tr.track_id in new_id_set:
+                            tr.force_recognition_until_ts = max(
+                                tr.force_recognition_until_ts,
+                                now + float(self.cfg.burst_seconds),
+                            )
+                # Detection just updated boxes; force a quick recognition pass on fresh bboxes.
+                for tr in state.tracker.tracks():
+                    tr.force_recognition_until_ts = max(
+                        tr.force_recognition_until_ts, now + 0.35
+                    )
+                tracks = state.tracker.tracks()
 
         # Scheduler mode update.
         tracks_attention = False
@@ -1011,6 +1096,15 @@ class AttendanceRuntime:
         for tr in tracks:
             x1, y1, x2, y2 = [int(v) for v in tr.bbox]
             known = tr.person_id is not None
+            # 🔓 DOOR UNLOCK — EVERY KNOWN RECOGNITION (NO DELAY)
+            if known and self._door_unlock_on_recognition:
+                self._trigger_door_unlock(
+                    camera_id=cid,
+                    employee_id=str(tr.person_id),
+                    name=str(tr.name),
+                    similarity=float(tr.similarity),
+                )
+
             if not known:
                 unknown_count += 1
 
@@ -1021,6 +1115,13 @@ class AttendanceRuntime:
             _draw_label_card(annotated, label, x1, max(38, y1 - 14), known, scale=0.75)
 
             # Attendance marking (debounced + verified + async writer)
+            if enable_attendance and known and company_id:
+                self._debouncer.note_seen(
+                    company_id=company_id,
+                    employee_id=str(tr.person_id),
+                    now=now,
+                )
+
             if not enable_attendance:
                 continue
             if not known:

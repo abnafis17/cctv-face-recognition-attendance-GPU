@@ -40,6 +40,28 @@ class AttendanceDebouncer:
         key = self._key(company_id=company_id, employee_id=employee_id)
         self._last_marked[key] = now
 
+    def note_seen(
+        self,
+        *,
+        company_id: Optional[str],
+        employee_id: str,
+        now: Optional[float] = None,
+    ) -> None:
+        """
+        Extend an active cooldown while the same person is still visible.
+        This ensures re-marking only happens after they have been out of camera long enough.
+        """
+        now = time.time() if now is None else float(now)
+        key = self._key(company_id=company_id, employee_id=employee_id)
+        last = float(self._last_marked.get(key, 0.0))
+        if last <= 0.0:
+            return
+        cooldown = float(self.cfg.attendance_debounce_seconds)
+        if cooldown <= 0.0:
+            return
+        if (now - last) < cooldown:
+            self._last_marked[key] = now
+
     def consider(
         self,
         *,
@@ -74,6 +96,14 @@ class AttendanceDebouncer:
         min_sim = float(max(self.cfg.similarity_threshold, self.cfg.strict_similarity_threshold))
         if float(track.similarity) < min_sim:
             return DebounceResult(None, "low_similarity")
+
+        min_identity_age = float(
+            getattr(self.cfg, "attendance_min_identity_age_seconds", 0.0) or 0.0
+        )
+        if min_identity_age > 0.0:
+            last_change = float(getattr(track, "last_identity_change_ts", 0.0) or 0.0)
+            if last_change <= 0.0 or (now - last_change) < min_identity_age:
+                return DebounceResult(None, "identity_too_fresh")
 
         # Require a fresh embedding for marks (prevents using a stale identity on a different face).
         max_age = float(getattr(self.cfg, "attendance_max_embed_age_seconds", 0.0) or 0.0)

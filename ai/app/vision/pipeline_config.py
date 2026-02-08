@@ -54,6 +54,8 @@ class Config:
     # --- Matching thresholds ---
     similarity_threshold: float = 0.35
     borderline_margin: float = 0.05
+    # Require top1 to be meaningfully higher than the best different-person match.
+    distinct_sim_margin: float = 0.05
 
     # --- Attendance gating ---
     attendance_debounce_seconds: float = 10.0
@@ -67,6 +69,9 @@ class Config:
     track_max_age_frames: int = 30
     track_iou_match_threshold: float = 0.25
     track_center_match_px: float = 200.0
+    # Clear known identity when detector re-association is likely a different person.
+    track_known_reacquire_clear_iou: float = 0.18
+    track_known_reacquire_clear_center_ratio: float = 0.65
     # How many consecutive detector cycles a track may miss before being removed.
     # Lower values make boxes appear/disappear closer to pure-detector behavior (less "sticky").
     # 0 => drop immediately on first miss.
@@ -78,9 +83,14 @@ class Config:
     identity_hold_seconds: float = 1.5
     identity_hold_min_iou: float = 0.05
     identity_hold_max_det_misses: int = 1
+    identity_hold_max_center_shift_ratio: float = 0.35
 
     # --- Attendance safety ---
     attendance_max_embed_age_seconds: float = 0.9
+    attendance_min_identity_age_seconds: float = 0.35
+    max_detection_result_age_seconds: float = 0.45
+    # Only trust detector landmarks (kps) if a detection was recent.
+    kps_max_age_seconds: float = 0.45
 
     # --- Attendance quality gates (kept compatible with existing behavior) ---
     strict_similarity_threshold: float = 0.50
@@ -91,6 +101,7 @@ class Config:
 
     # --- Verification ---
     verification_samples: int = 3
+    allow_single_sample_attendance: bool = False
 
     @classmethod
     def from_env(cls, **overrides) -> "Config":
@@ -132,6 +143,7 @@ class Config:
         # Thresholds
         cfg.similarity_threshold = _env_float("SIMILARITY_THRESHOLD", cfg.similarity_threshold)
         cfg.borderline_margin = _env_float("BORDERLINE_MARGIN", cfg.borderline_margin)
+        cfg.distinct_sim_margin = _env_float("DISTINCT_SIM_MARGIN", cfg.distinct_sim_margin)
         cfg.strict_similarity_threshold = _env_float(
             "STRICT_SIM_THRESHOLD", cfg.strict_similarity_threshold
         )
@@ -167,6 +179,23 @@ class Config:
         cfg.track_center_match_px = _env_float(
             "TRACK_CENTER_MATCH_PX", cfg.track_center_match_px
         )
+        cfg.track_known_reacquire_clear_iou = max(
+            0.0,
+            min(
+                1.0,
+                _env_float(
+                    "TRACK_KNOWN_REACQUIRE_CLEAR_IOU",
+                    cfg.track_known_reacquire_clear_iou,
+                ),
+            ),
+        )
+        cfg.track_known_reacquire_clear_center_ratio = max(
+            0.0,
+            _env_float(
+                "TRACK_KNOWN_REACQUIRE_CLEAR_CENTER_RATIO",
+                cfg.track_known_reacquire_clear_center_ratio,
+            ),
+        )
         cfg.track_max_det_misses_unknown = max(
             0, _env_int("TRACK_MAX_DET_MISSES_UNKNOWN", cfg.track_max_det_misses_unknown)
         )
@@ -177,14 +206,30 @@ class Config:
         # Logging / verification
         cfg.log_interval_seconds = _env_float("PIPELINE_LOG_INTERVAL_S", cfg.log_interval_seconds)
         cfg.verification_samples = max(1, _env_int("VERIFICATION_SAMPLES", cfg.verification_samples))
+        cfg.allow_single_sample_attendance = _env_bool(
+            "ALLOW_SINGLE_SAMPLE_ATTENDANCE", cfg.allow_single_sample_attendance
+        )
+        if not cfg.allow_single_sample_attendance:
+            cfg.verification_samples = max(2, int(cfg.verification_samples))
 
         cfg.attendance_fast_mode = _env_bool("ATTENDANCE_FAST_MODE", cfg.attendance_fast_mode)
         if cfg.attendance_fast_mode:
-            # Favor recall and speed over strictness (useful for fast-moving subjects).
-            cfg.stable_id_confirmations = min(int(cfg.stable_id_confirmations), 1)
-            cfg.strict_similarity_threshold = float(cfg.similarity_threshold)
-            cfg.verification_samples = 1
             cfg.identity_hold_seconds = max(float(cfg.identity_hold_seconds), 2.0)
+            keep_strict_checks = _env_bool("FAST_MODE_KEEP_STRICT_CHECKS", True)
+            if keep_strict_checks:
+                # Keep speed gains, but do not drop core anti-mismatch gates.
+                cfg.stable_id_confirmations = max(int(cfg.stable_id_confirmations), 2)
+                cfg.strict_similarity_threshold = max(
+                    float(cfg.strict_similarity_threshold),
+                    float(cfg.similarity_threshold + cfg.borderline_margin),
+                )
+                if not cfg.allow_single_sample_attendance:
+                    cfg.verification_samples = max(2, int(cfg.verification_samples))
+            else:
+                # Legacy unsafe fast mode (explicit opt-out of strict checks).
+                cfg.stable_id_confirmations = min(int(cfg.stable_id_confirmations), 1)
+                cfg.strict_similarity_threshold = float(cfg.similarity_threshold)
+                cfg.verification_samples = 1
 
         cfg.identity_hold_seconds = max(
             0.0, _env_float("IDENTITY_HOLD_SECONDS", cfg.identity_hold_seconds)
@@ -193,9 +238,30 @@ class Config:
         cfg.identity_hold_max_det_misses = max(
             0, _env_int("IDENTITY_HOLD_MAX_DET_MISSES", cfg.identity_hold_max_det_misses)
         )
+        cfg.identity_hold_max_center_shift_ratio = max(
+            0.0,
+            _env_float(
+                "IDENTITY_HOLD_MAX_CENTER_SHIFT_RATIO",
+                cfg.identity_hold_max_center_shift_ratio,
+            ),
+        )
         cfg.attendance_max_embed_age_seconds = max(
             0.0,
             _env_float("ATTENDANCE_MAX_EMBED_AGE_S", cfg.attendance_max_embed_age_seconds),
+        )
+        cfg.attendance_min_identity_age_seconds = max(
+            0.0,
+            _env_float(
+                "ATTENDANCE_MIN_ID_AGE_S",
+                cfg.attendance_min_identity_age_seconds,
+            ),
+        )
+        cfg.max_detection_result_age_seconds = max(
+            0.0,
+            _env_float("MAX_DET_RESULT_AGE_S", cfg.max_detection_result_age_seconds),
+        )
+        cfg.kps_max_age_seconds = max(
+            0.0, _env_float("KPS_MAX_AGE_S", cfg.kps_max_age_seconds)
         )
 
         return cfg

@@ -259,10 +259,22 @@ class TrackerManager:
 
             box, det = valid[det_idx]
             tr = self._tracks[tid]
+            dist = float(-neg_dist)
 
-            # If a "known" track is re-associated with a very low IoU, treat it as a re-acquire:
-            # clear identity so we don't show the previous person's name on a different face.
-            if tr.person_id is not None and float(iou) < 0.05:
+            # If a known track is re-associated with weak overlap or large center jump,
+            # treat it as a re-acquire to avoid carrying identity across people.
+            tx1, ty1, tx2, ty2 = tr.bbox
+            bx1, by1, bx2, by2 = box
+            t_max_dim = max(1, tx2 - tx1, ty2 - ty1)
+            b_max_dim = max(1, bx2 - bx1, by2 - by1)
+            clear_center_thr = (
+                float(getattr(self.cfg, "track_known_reacquire_clear_center_ratio", 0.65) or 0.65)
+                * float(max(t_max_dim, b_max_dim))
+            )
+            clear_iou_thr = float(getattr(self.cfg, "track_known_reacquire_clear_iou", 0.18) or 0.18)
+            if tr.person_id is not None and (
+                float(iou) < clear_iou_thr or dist > clear_center_thr
+            ):
                 tr.person_id = None
                 tr.name = "Unknown"
                 tr.similarity = 0.0
