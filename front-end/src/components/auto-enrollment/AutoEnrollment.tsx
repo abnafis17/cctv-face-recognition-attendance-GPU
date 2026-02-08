@@ -26,16 +26,22 @@ import { EnrollmentPanel } from "./components/EnrollmentPanel";
 export default function AutoEnrollment({
   cameras,
   loadCameras,
+  initialEmployeeId = "",
+  initialName = "",
+  reEnroll = false,
 }: {
   cameras: Camera[];
   loadCameras: () => Promise<void>;
+  initialEmployeeId?: string;
+  initialName?: string;
+  reEnroll?: boolean;
 }) {
   const companyId = getCompanyIdFromToken();
   const laptopCameraId = companyId ? `laptop-${companyId}` : DEFAULT_LAPTOP_CAMERA_ID;
 
   const [cameraId, setCameraId] = useState<string>(laptopCameraId);
-  const [employeeId, setEmployeeId] = useState("");
-  const [name, setName] = useState("");
+  const [employeeId, setEmployeeId] = useState(initialEmployeeId);
+  const [name, setName] = useState(initialName);
 
   // ---- Laptop camera WebRTC publisher (to AI server) ----
   const {
@@ -64,6 +70,16 @@ export default function AutoEnrollment({
   useEffect(() => {
     if (!cameraId && camerasWithLaptop?.length) setCameraId(camerasWithLaptop[0].id);
   }, [camerasWithLaptop, cameraId]);
+
+  useEffect(() => {
+    if (!initialEmployeeId) return;
+    setEmployeeId(initialEmployeeId);
+  }, [initialEmployeeId]);
+
+  useEffect(() => {
+    if (!initialName) return;
+    setName(initialName);
+  }, [initialName]);
 
   const selectedCam = useMemo(
     () => camerasWithLaptop.find((c) => c.id === cameraId),
@@ -98,9 +114,7 @@ export default function AutoEnrollment({
     running,
     busy,
     screen,
-    setScreen,
     sessionStatus,
-    refreshStatus,
     start,
     stop,
     startDisabled,
@@ -108,6 +122,7 @@ export default function AutoEnrollment({
     cameraId,
     employeeId,
     name,
+    reEnroll,
     ensureCameraOn,
     stopCamera,
     onStopCleanup,
@@ -201,6 +216,12 @@ export default function AutoEnrollment({
   } = useErpEmployees({ debounceMs: 350, initialSearch: "" });
 
   const [selectedErpEmployeeId, setSelectedErpEmployeeId] = useState("");
+  const lockEmployeeIdentity = reEnroll && !!initialEmployeeId;
+
+  useEffect(() => {
+    if (!initialEmployeeId) return;
+    setSelectedErpEmployeeId(initialEmployeeId);
+  }, [initialEmployeeId]);
 
   const erpItems = useMemo(() => {
     return employees.map((e) => ({
@@ -276,6 +297,8 @@ export default function AutoEnrollment({
               setEmployeeId={setEmployeeId}
               name={name}
               setName={setName}
+              reEnroll={reEnroll}
+              lockEmployeeIdentity={lockEmployeeIdentity}
               start={start}
               startDisabled={startDisabled}
               tts={tts}

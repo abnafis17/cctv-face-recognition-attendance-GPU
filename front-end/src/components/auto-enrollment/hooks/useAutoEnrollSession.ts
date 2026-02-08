@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import axiosInstance from "@/config/axiosInstance";
 import type { Screen, Session } from "../types";
@@ -10,6 +10,7 @@ type UseAutoEnrollSessionArgs = {
   cameraId: string;
   employeeId: string;
   name: string;
+  reEnroll: boolean;
   ensureCameraOn: (camId: string) => Promise<boolean>;
   stopCamera: (camId: string) => Promise<void>;
   onStopCleanup: () => void;
@@ -19,6 +20,7 @@ export function useAutoEnrollSession({
   cameraId,
   employeeId,
   name,
+  reEnroll,
   ensureCameraOn,
   stopCamera,
   onStopCleanup,
@@ -64,13 +66,18 @@ export function useAutoEnrollSession({
       // Start auto-enroll session via backend proxy (NO CORS)
       const res = await axiosInstance.post<{ ok: boolean; session: Session }>(
         "/enroll2-auto/session/start",
-        { employeeId: employeeId.trim(), name: name.trim(), cameraId }
+        {
+          employeeId: employeeId.trim(),
+          name: name.trim(),
+          cameraId,
+          ...(reEnroll ? { reEnroll: true } : {}),
+        }
       );
 
       setSession(res.data.session);
       setRunning(true);
       setScreen("enrolling");
-      toast.success("Enrollment started");
+      toast.success(reEnroll ? "Re-enrollment started" : "Enrollment started");
     } catch (e: any) {
       toast.error(friendlyAxiosError(e));
       if (startedCamera && cameraId) {
@@ -83,7 +90,7 @@ export function useAutoEnrollSession({
     } finally {
       setBusy(false);
     }
-  }, [cameraId, employeeId, ensureCameraOn, name, stopCamera]);
+  }, [cameraId, employeeId, ensureCameraOn, name, reEnroll, stopCamera]);
 
   const stop = useCallback(async () => {
     setBusy(true);

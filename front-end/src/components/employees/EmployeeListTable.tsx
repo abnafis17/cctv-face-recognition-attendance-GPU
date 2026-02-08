@@ -8,11 +8,13 @@ import toast from "react-hot-toast";
 import axiosInstance, { API } from "@/config/axiosInstance";
 import ReusableModal from "../reusable/ReusableModal";
 import { useModal } from "@/hooks/useModal";
-import { SquarePen, Trash } from "lucide-react";
+import { RefreshCw, SquarePen, Trash } from "lucide-react";
 import ConfirmationModal from "../reusable/ConfirmationModal";
 import EmployeeEditForm from "./EmployeeEditForm";
+import { useRouter } from "next/navigation";
 
 const EmployeeListTable = () => {
+  const router = useRouter();
   const { isOpen, open, close } = useModal();
   const [skip] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -103,6 +105,16 @@ const EmployeeListTable = () => {
     open();
   };
 
+  const handleReEnroll = (employee: Employee) => {
+    const employeeId = String(employee.empId ?? employee.id).trim();
+    const params = new URLSearchParams({
+      employeeId,
+      name: employee.name,
+      reEnroll: "1",
+    });
+    router.push(`/enroll?${params.toString()}`);
+  };
+
   const handleModalClose = () => {
     close();
     setSelectedUser(null);
@@ -169,6 +181,14 @@ const EmployeeListTable = () => {
             onClick={() => handleEdit(row.original)}
           >
             <SquarePen className="h-4 w-4 text-gray-600 hover:text-blue-600" />
+          </button>
+
+          <button
+            title="Re-enroll Face"
+            className="p-1 hover:bg-gray-200 rounded cursor-pointer"
+            onClick={() => handleReEnroll(row.original)}
+          >
+            <RefreshCw className="h-4 w-4 text-emerald-600 hover:text-emerald-800" />
           </button>
 
           <button
