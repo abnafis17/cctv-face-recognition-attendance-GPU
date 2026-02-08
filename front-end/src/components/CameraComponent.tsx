@@ -1,41 +1,115 @@
-import React, { useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { AI_HOST } from "@/config/axiosInstance";
 
 interface LocalCameraProps {
   userId?: string; // cameraId
   companyId?: string; // for recognition gallery
+  cameraName?: string; // <-- NEW
 }
 
 const DEFAULT_CAMERA_ID = "cmkdpsq300000j7284bwluxh2";
 
-const LocalCamera: React.FC<LocalCameraProps> = ({ userId, companyId }) => {
+const LocalCamera: React.FC<LocalCameraProps> = ({
+  userId,
+  companyId,
+  cameraName = "Laptop Camera",
+}) => {
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
 
   const [localActive, setLocalActive] = useState(false);
+  const [wsError, setWsError] = useState<string>("");
 
-  const cameraId = (userId?.trim() || DEFAULT_CAMERA_ID).trim();
+  const cameraId = useMemo(() => {
+    if (userId?.trim()) return userId.trim();
+    if (companyId?.trim()) return `laptop-${companyId.trim()}`;
+    return DEFAULT_CAMERA_ID;
+  }, [companyId, userId]);
 
-  // Recognition MJPEG (same overlay as IP cameras) - no HLS buffering
-  const recQuery = companyId
-    ? `?companyId=${encodeURIComponent(companyId)}`
-    : "";
-  const recUrl = `${AI_HOST}/camera/recognition/stream/${cameraId}/${encodeURIComponent(
-    "Laptop Camera",
-  )}${recQuery}`;
+  const recQuery = useMemo(() => {
+    const params = new URLSearchParams();
+    params.set("type", "attendance");
+    if (companyId) params.set("companyId", companyId);
+    const query = params.toString();
+    return query ? `?${query}` : "";
+  }, [companyId]);
 
-  // ----------------------
-  // Start Camera (WebRTC ingest)
-  // ----------------------
+  const streamType = "attendance";
+
+  const recUrl = useMemo(() => {
+    // camera name + id must reflect current selection
+    return `${AI_HOST}/camera/recognition/stream/${encodeURIComponent(
+      cameraId,
+    )}/${encodeURIComponent(cameraName)}${recQuery}`;
+  }, [cameraId, cameraName, recQuery]);
+
+  const wsSignalUrl = useMemo(() => {
+    // keep WS host consistent with AI_HOST (avoid hard-coding)
+    const base = String(AI_HOST || "")
+      .replace(/^http/i, "ws")
+      .replace(/\/$/, "");
+    return `${base}/webrtc/signal`;
+  }, []);
+
+  const stopLocalCamera = useCallback(() => {
+    setWsError("");
+
+    const stream =
+      localStreamRef.current ||
+      (localVideoRef.current?.srcObject as MediaStream | null);
+    if (stream) stream.getTracks().forEach((t) => t.stop());
+    localStreamRef.current = null;
+    if (localVideoRef.current) localVideoRef.current.srcObject = null;
+
+    try {
+      pcRef.current?.close();
+    } catch {}
+
+    try {
+      wsRef.current?.close();
+    } catch {}
+
+    pcRef.current = null;
+    wsRef.current = null;
+
+    setLocalActive(false);
+  }, []);
+
+  // Ensure no stale streams when component unmounts
+  useEffect(() => {
+    return () => stopLocalCamera();
+  }, [stopLocalCamera]);
+
+  // If cameraId/companyId changes while active, stop cleanly (user can Start again)
+  const prevKeyRef = useRef<string>(`${cameraId}|${companyId || ""}`);
+  useEffect(() => {
+    const key = `${cameraId}|${companyId || ""}`;
+    const changed = prevKeyRef.current !== key;
+    if (changed && localActive) stopLocalCamera();
+    prevKeyRef.current = key;
+  }, [cameraId, companyId, localActive, stopLocalCamera]);
+
   const startLocalCamera = async () => {
     try {
+      setWsError("");
+
+      // if already running, restart cleanly
+      if (localActive) stopLocalCamera();
+
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: 640, height: 480 },
         audio: false,
       });
+      localStreamRef.current = stream;
 
-      // Local preview
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
         localVideoRef.current.muted = true;
@@ -45,12 +119,19 @@ const LocalCamera: React.FC<LocalCameraProps> = ({ userId, companyId }) => {
       const pc = new RTCPeerConnection();
       pcRef.current = pc;
 
-      // Add tracks
       stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
-      // WebSocket signaling
-      const ws = new WebSocket("ws://10.81.100.128:8000/webrtc/signal");
+      const ws = new WebSocket(wsSignalUrl);
       wsRef.current = ws;
+
+      ws.onerror = () => {
+        setWsError("WebSocket connection failed");
+      };
+
+      ws.onclose = () => {
+        // if the user didn’t click stop, surface as error
+        if (pcRef.current) setWsError("WebSocket connection closed");
+      };
 
       ws.onopen = async () => {
         const offer = await pc.createOffer();
@@ -61,6 +142,7 @@ const LocalCamera: React.FC<LocalCameraProps> = ({ userId, companyId }) => {
             sdp: pc.localDescription,
             cameraId,
             companyId,
+            type: streamType,
           }),
         );
       };
@@ -76,12 +158,13 @@ const LocalCamera: React.FC<LocalCameraProps> = ({ userId, companyId }) => {
       };
 
       pc.onicecandidate = (event) => {
-        if (event.candidate) {
+        if (event.candidate && ws.readyState === WebSocket.OPEN) {
           ws.send(
             JSON.stringify({
               ice: event.candidate,
               cameraId,
               companyId,
+              type: streamType,
             }),
           );
         }
@@ -90,32 +173,16 @@ const LocalCamera: React.FC<LocalCameraProps> = ({ userId, companyId }) => {
       setLocalActive(true);
     } catch (err) {
       console.error("Camera start failed", err);
-      alert("Camera access failed");
+      setWsError("Camera access failed");
+      stopLocalCamera();
     }
-  };
-
-  // ----------------------
-  // Stop Camera
-  // ----------------------
-  const stopLocalCamera = () => {
-    if (localVideoRef.current?.srcObject) {
-      (localVideoRef.current.srcObject as MediaStream)
-        .getTracks()
-        .forEach((t) => t.stop());
-    }
-
-    pcRef.current?.close();
-    wsRef.current?.close();
-
-    setLocalActive(false);
   };
 
   return (
     <div className="rounded-xl border bg-white p-4 shadow-sm max-w-md">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <div className="font-semibold text-sm">Laptop Camera</div>
+          <div className="font-semibold text-sm">{cameraName}</div>
           <div className="text-xs text-gray-500">WebRTC + HLS</div>
         </div>
 
@@ -130,8 +197,7 @@ const LocalCamera: React.FC<LocalCameraProps> = ({ userId, companyId }) => {
         </span>
       </div>
 
-      {/* Local Preview */}
-      <div className="mt-3 aspect-video overflow-hidden rounded-lg border bg-black">
+      {/* <div className="mt-3 aspect-video overflow-hidden rounded-lg border bg-black">
         <video
           ref={localVideoRef}
           autoPlay
@@ -139,15 +205,18 @@ const LocalCamera: React.FC<LocalCameraProps> = ({ userId, companyId }) => {
           muted
           className="h-full w-full object-cover"
         />
-      </div>
+      </div> */}
 
-      {/* Recognition Overlay (smooth MJPEG like IP cameras) */}
       <div className="mt-3 aspect-video overflow-hidden rounded-lg border bg-gray-100">
         {localActive ? (
+          // MJPEG stream (not compatible with next/image optimizations)
+          // eslint-disable-next-line @next/next/no-img-element
           <img
             src={recUrl}
             alt="Recognition stream"
             className="h-full w-full object-cover"
+            width={1280}
+            height={720}
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-xs text-gray-500">
@@ -156,7 +225,11 @@ const LocalCamera: React.FC<LocalCameraProps> = ({ userId, companyId }) => {
         )}
       </div>
 
-      {/* Controls */}
+      {wsError ? (
+        <div className="mt-2 text-xs text-red-600">{wsError}</div>
+      ) : null}
+      {/* <div className="mt-1 text-[11px] text-gray-500">CameraId: {cameraId}</div> */}
+
       <div className="mt-3 flex justify-end gap-2">
         {localActive ? (
           <button

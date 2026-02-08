@@ -70,6 +70,13 @@ class RecognitionWorker:
             self._latest_frame.pop(camera_id, None)
             self._latest_jpg.pop(camera_id, None)
 
+    def stop_all(self) -> None:
+        for camera_id in list(self._threads.keys()):
+            try:
+                self.stop(camera_id)
+            except Exception:
+                pass
+
     def get_latest_annotated(self, camera_id: str) -> Optional[np.ndarray]:
         lock = self._locks.setdefault(camera_id, threading.Lock())
         with lock:

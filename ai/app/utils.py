@@ -2,7 +2,7 @@ from __future__ import annotations
 import os
 import time
 from datetime import datetime
-from typing import Optional, Tuple, Any
+from typing import Optional, Tuple
 
 import numpy as np
 import cv2
@@ -161,47 +161,3 @@ def pose_matches(required: str, yaw: float, pitch: float, cfg_pose: dict) -> boo
 
     # front
     return (yl + tol) < yaw < (yr - tol) and (pu + tol) < pitch < (pd - tol)
-
-
-# -----------------------------
-# Browser Enrollment HUD overlay
-# -----------------------------
-def _put_line(img: np.ndarray, text: str, x: int, y: int, scale: float = 0.6, thick: int = 2):
-    # shadow
-    cv2.putText(img, text, (x + 1, y + 1), cv2.FONT_HERSHEY_SIMPLEX, scale, (0, 0, 0), thick + 2, cv2.LINE_AA)
-    cv2.putText(img, text, (x, y), cv2.FONT_HERSHEY_SIMPLEX, scale, (255, 255, 255), thick, cv2.LINE_AA)
-
-
-def draw_enroll_hud(frame_bgr: np.ndarray, session: Any, cfg_angles: list[str]) -> np.ndarray:
-    """
-    Draws enrollment status text on the frame (so browser shows what manual OpenCV window shows).
-    Only called from /camera/stream when an enrollment session is active for that camera.
-    """
-    img = frame_bgr.copy()
-
-    name = getattr(session, "name", "")
-    required = getattr(session, "current_angle", "front")
-    collected = getattr(session, "collected", {}) or {}
-    last_pose = getattr(session, "last_pose", None)
-    last_q = float(getattr(session, "last_quality", 0.0) or 0.0)
-    msg = getattr(session, "last_message", "") or ""
-
-    # Count captured angles (angle considered "done" if count > 0)
-    done = sum(1 for a in cfg_angles if int(collected.get(a, 0) or 0) > 0)
-    total = len(cfg_angles)
-
-    # Top banner
-    _put_line(img, f"Enroll: {name} | Required: {required} | {done}/{total}", 12, 30, 0.7, 2)
-    _put_line(img, "Use UI buttons: Start -> Capture -> Save (auto-stop) | Cancel clears staged", 12, 55, 0.55, 1)
-
-    # Debug pose line (like your manual script)
-    if last_pose is not None:
-        _put_line(img, f"pose => {last_pose} | quality={last_q:.1f}", 12, 80, 0.6, 2)
-    else:
-        _put_line(img, f"quality={last_q:.1f}", 12, 80, 0.6, 2)
-
-    # Message line
-    if msg:
-        _put_line(img, msg, 12, 105, 0.6, 2)
-
-    return img

@@ -9,7 +9,7 @@
 - `backend/.env`: set `AI_BASE_URL=http://<PC_A_IP>:8000` and add `http://<PC_A_IP>:3000` to `CORS_ORIGIN`
 
 2) Start services on PC A
-- AI (FastAPI): `cd ai; python -m uvicorn app.api_server:app --host 0.0.0.0 --port 8000`
+- AI (FastAPI): `cd ai; python -m uvicorn app.main:app --host 0.0.0.0 --port 8000`
 - Backend (Express): `cd backend; npm run dev` (default `PORT=3001`)
 - UI (Next.js): `cd front-end; npm run build; npm run start -- -H 0.0.0.0 -p 3000`
 

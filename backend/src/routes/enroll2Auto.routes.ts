@@ -4,7 +4,10 @@ import { prisma } from "../prisma";
 import { findEmployeeByAnyId } from "../utils/employee";
 
 const r = Router();
-const AI_BASE = process.env.AI_BASE_URL || "http://127.0.0.1:8000";
+const AI_BASE = (process.env.AI_BASE_URL || "http://127.0.0.1:8000").replace(
+  /\/$/,
+  ""
+);
 
 // POST /api/v1/enroll2-auto/session/start
 r.post("/session/start", async (req, res) => {

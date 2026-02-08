@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import axiosInstance from "@/config/axiosInstance";
-import AutoEnrollment from "@/features/enroll/AutoEnrollment";
+import AutoEnrollment from "@/components/auto-enrollment/AutoEnrollment";
 
 type Camera = {
   id: string;
@@ -23,7 +23,7 @@ export default function Page() {
       setCams(res.data || []);
     } catch (e: any) {
       setErr(
-        e?.response?.data?.message || e?.message || "Failed to load cameras"
+        e?.response?.data?.message || e?.message || "Failed to load cameras",
       );
     } finally {
       setLoading(false);

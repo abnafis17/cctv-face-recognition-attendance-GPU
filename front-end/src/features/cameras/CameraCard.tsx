@@ -53,7 +53,13 @@ export default function CameraCard({
 
       <div className="mt-3 overflow-hidden rounded-lg border bg-gray-100">
         {camera.isActive ? (
-          <img src={streamUrl} className="h-64 w-full object-cover" />
+          // MJPEG stream (not compatible with next/image optimizations)
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={streamUrl}
+            alt={`${camera.name} stream`}
+            className="h-64 w-full object-cover"
+          />
         ) : (
           <div className="flex h-64 items-center justify-center text-sm text-gray-600">
             Camera OFF
