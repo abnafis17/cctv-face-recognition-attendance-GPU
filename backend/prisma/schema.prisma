@@ -33,6 +33,7 @@ model Company {
   pairCodes   PairCode[]
 
   headcounts Headcount[]
+  otRequisitions OtRequisition[]
 }
 
 model User {
@@ -56,6 +57,9 @@ model Employee {
   id        String  @id @default(cuid())
   empId     String? @map("emp_id")
   name      String
+  section   String?
+  department String?
+  line      String?
   companyId String?
   company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
@@ -66,10 +70,14 @@ model Employee {
   templates  FaceTemplate[]
 
   headcounts Headcount[]
+  otRequisitions OtRequisition[]
 
   @@unique([companyId, empId])
   @@index([empId])
   @@index([companyId])
+  @@index([companyId, section])
+  @@index([companyId, department])
+  @@index([companyId, line])
 }
 
 model FaceTemplate {
@@ -123,6 +131,7 @@ model Camera {
 
   attendances Attendance[]
   headcounts  Headcount[]
+  otRequisitions OtRequisition[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -243,4 +252,29 @@ model Headcount {
   @@index([cameraId, timestamp])
   @@index([employeeId, timestamp])
   @@index([companyId, status, timestamp])
+}
+
+model OtRequisition {
+  id         String   @id
+
+  employeeId String?
+  employee   Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+
+  companyId  String?
+  company    Company?  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  cameraId   String?
+  camera     Camera?   @relation(fields: [cameraId], references: [id], onDelete: SetNull)
+
+  timestamp  DateTime  @default(now())
+
+  confidence Float?
+  notes      String?
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([companyId, timestamp])
+  @@index([cameraId, timestamp])
+  @@index([employeeId, timestamp])
 }

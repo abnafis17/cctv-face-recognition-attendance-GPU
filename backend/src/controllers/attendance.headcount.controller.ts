@@ -28,7 +28,7 @@ function toISOStringOrNull(value?: Date | null) {
   return value ? value.toISOString() : null;
 }
 
-type HeadcountStatus = "MATCH" | "UNMATCH" | "MISSING" | "ABSENT";
+type HeadcountStatus = "MATCH" | "UNMATCH" | "ABSENT";
 
 function parseFirstSeenFromNotes(notes?: string | null): Date | null {
   if (!notes) return null;
@@ -81,14 +81,19 @@ export async function listHeadcountCameras(req: Request, res: Response) {
 
 /**
  * GET /headcount?date=YYYY-MM-DD&q=...
+ * Optional:
+ * - &view=headcount|ot
+ * - &groupBy=section|department|line&groupValue=...
  *
  * Important: camera selection on the headcount page is ONLY for capture/streaming.
- * The table is computed company-wide for the selected date (no camera filtering).
-  *
-  * Returns MATCH rows only:
-  * - "Headcount" = entries in the Headcount table (written when stream type=headcount)
-  * - "Attendance (this day)" = entries in the Attendance table (all cameras)
-  * - MATCH = employee appears in BOTH headcount and attendance for the selected day
+ * The table is computed for the selected date (no camera filtering).
+ *
+ * view=headcount:
+ * - MATCH   => employee appears in BOTH headcount and attendance for the selected day
+ * - UNMATCH => employee appears in headcount but NOT in attendance for the selected day
+ * - ABSENT  => employee appears in attendance but NOT in headcount for the selected day
+ *
+ * view=ot: returns only headcount rows (no attendance cross-check)
   */
 export async function listHeadcount(req: Request, res: Response) {
   try {
@@ -110,31 +115,198 @@ export async function listHeadcount(req: Request, res: Response) {
 
     const { start, end } = dhakaDayRange(dateStr);
 
-    // 1) Search -> resolve matching employees first
-    let searchEmployeeIds: string[] | null = null;
-    if (q.length > 0) {
-      const matchedEmployees = await prisma.employee.findMany({
+    const viewRaw = String(
+      req.query?.view ?? req.query?.view_type ?? req.query?.mode ?? ""
+    )
+      .trim()
+      .toLowerCase();
+    const view: "headcount" | "ot" =
+      viewRaw === "ot" ||
+      viewRaw === "ot-requisition" ||
+      viewRaw === "ot_requisition" ||
+      viewRaw === "otrequisition"
+        ? "ot"
+        : "headcount";
+
+    const groupByRaw = String(
+      req.query?.groupBy ?? req.query?.group_by ?? req.query?.by ?? ""
+    )
+      .trim()
+      .toLowerCase();
+    const groupValueRaw = String(
+      req.query?.groupValue ?? req.query?.group_value ?? req.query?.value ?? ""
+    ).trim();
+
+    const allowedGroupBys = new Set(["section", "department", "line"]);
+
+    if (groupByRaw && !allowedGroupBys.has(groupByRaw)) {
+      return res.status(400).json({
+        error: "Invalid groupBy",
+        allowed: Array.from(allowedGroupBys),
+        example: "/headcount?groupBy=department&groupValue=Business%20Innovation",
+      });
+    }
+
+    const groupBy = groupByRaw as "" | "section" | "department" | "line";
+    const groupValue = groupValueRaw;
+
+    if (groupBy && !groupValue) {
+      return res.status(400).json({
+        error: "groupValue is required when groupBy is provided",
+      });
+    }
+
+    const employeeWhere: any = {
+      companyId,
+      ...(groupBy ? { [groupBy]: groupValue } : {}),
+      ...(q.length
+        ? {
+            OR: [
+              { name: { contains: q, mode: "insensitive" } },
+              { empId: { contains: q, mode: "insensitive" } },
+              { id: { equals: q } },
+            ],
+          }
+        : {}),
+    };
+
+    if (view === "ot") {
+      const headLastByEmployee = await prisma.otRequisition.findMany({
         where: {
           companyId,
-          OR: [
-            { name: { contains: q, mode: "insensitive" } },
-            { empId: { contains: q, mode: "insensitive" } },
-            { id: { equals: q } },
-          ],
+          timestamp: { gte: start, lt: end },
         },
-        select: { id: true },
-        take: 5000,
+        distinct: ["employeeId"],
+        orderBy: [{ employeeId: "asc" }, { updatedAt: "desc" }],
+        select: {
+          employeeId: true,
+          timestamp: true,
+          cameraId: true,
+          confidence: true,
+          notes: true,
+        },
       });
 
-      if (matchedEmployees.length === 0) return res.json([]);
+      const headIds = headLastByEmployee
+        .map((x) => x.employeeId)
+        .filter((x): x is string => Boolean(x));
 
-      searchEmployeeIds = matchedEmployees.map((e) => e.id);
+      if (headIds.length === 0) return res.json([]);
+
+      const employees = await prisma.employee.findMany({
+        where: { ...employeeWhere, id: { in: headIds } },
+        select: { id: true, name: true, empId: true },
+        take: 50000,
+      });
+
+      if (employees.length === 0) return res.json([]);
+
+      const employeeMap = new Map(employees.map((e) => [e.id, e]));
+      const employeeIds = new Set(employees.map((e) => e.id));
+
+      const headLastMap = new Map(
+        headLastByEmployee
+          .filter(
+            (x): x is typeof x & { employeeId: string } =>
+              Boolean(x.employeeId) && employeeIds.has(String(x.employeeId)),
+          )
+          .map((x) => [String(x.employeeId), x]),
+      );
+
+      const allCamIds: string[] = [];
+      for (const employeeId of headLastMap.keys()) {
+        const camId = headLastMap.get(employeeId)?.cameraId;
+        if (camId) allCamIds.push(String(camId));
+      }
+
+      const cams = allCamIds.length
+        ? await prisma.camera.findMany({
+            where: { id: { in: allCamIds } },
+            select: { id: true, name: true },
+          })
+        : [];
+
+      const camName = new Map(cams.map((c) => [c.id, c.name]));
+
+      type OtRow = {
+        id: string;
+        date: string;
+
+        name: string;
+        employeeId: string;
+
+        headcountCameraId: string | null;
+        headcountCameraName: string | null;
+        headcountFirstEntryTime: string | null;
+        headcountLastEntryTime: string | null;
+        headcountTime: string | null;
+        headcountConfidence: number | null;
+
+        timestamp: string | null;
+      };
+
+      const rows: OtRow[] = Array.from(headLastMap.keys()).map(
+        (employeePkId) => {
+          const emp = employeeMap.get(employeePkId);
+          const publicEmployeeId = emp?.empId ?? employeePkId;
+
+          const head = headLastMap.get(employeePkId) as any;
+          const headFirst = parseFirstSeenFromNotes(head?.notes ?? null);
+          const headLast = head?.timestamp ?? null;
+
+          return {
+            id: `${employeePkId}:${dateStr}`,
+            date: dateStr,
+
+            name: emp?.name ?? "Unknown",
+            employeeId: publicEmployeeId,
+
+            headcountCameraId: head?.cameraId ?? null,
+            headcountCameraName:
+              head?.cameraId ? camName.get(String(head.cameraId)) ?? null : null,
+            headcountFirstEntryTime: toISOStringOrNull(headFirst),
+            headcountLastEntryTime: toISOStringOrNull(headLast),
+            headcountTime: toISOStringOrNull(headLast),
+            headcountConfidence:
+              typeof head?.confidence === "number" ? head.confidence : null,
+
+            timestamp: toISOStringOrNull(headLast),
+          };
+        },
+      );
+
+      rows.sort((a, b) => {
+        const ta = a.headcountTime ? Date.parse(a.headcountTime) : 0;
+        const tb = b.headcountTime ? Date.parse(b.headcountTime) : 0;
+        if (ta !== tb) return tb - ta;
+
+        const na = (a.name || "").toLowerCase();
+        const nb = (b.name || "").toLowerCase();
+        if (na !== nb) return na.localeCompare(nb);
+
+        return String(a.employeeId || "").localeCompare(
+          String(b.employeeId || ""),
+        );
+      });
+
+      return res.json(rows);
     }
+
+    // 1) Employees to include (company + optional group + optional search)
+    const candidates = await prisma.employee.findMany({
+      where: employeeWhere,
+      select: { id: true },
+      take: 50000,
+    });
+
+    if (candidates.length === 0) return res.json([]);
+
+    const candidateIds = candidates.map((e) => e.id);
 
     const baseDayWhere: any = {
       companyId,
       timestamp: { gte: start, lt: end },
-      ...(searchEmployeeIds ? { employeeId: { in: searchEmployeeIds } } : {}),
+      employeeId: { in: candidateIds },
     };
 
     // 2) Attendance today (all cameras) - distinct-by-employee
@@ -158,8 +330,7 @@ export async function listHeadcount(req: Request, res: Response) {
       where: {
         companyId,
         timestamp: { gte: start, lt: end },
-        employeeId: { not: null },
-        ...(searchEmployeeIds ? { employeeId: { in: searchEmployeeIds } } : {}),
+        employeeId: { in: candidateIds },
       },
       distinct: ["employeeId"],
       orderBy: [{ employeeId: "asc" }, { updatedAt: "desc" }],
@@ -173,17 +344,20 @@ export async function listHeadcount(req: Request, res: Response) {
       },
     });
 
-    const attIds = new Set(attLastByEmployee.map((x) => x.employeeId));
-    const headIds = new Set(
+    const attLastMap = new Map(attLastByEmployee.map((x) => [x.employeeId, x]));
+    const attFirstMap = new Map(attFirstByEmployee.map((x) => [x.employeeId, x]));
+    const headLastMap = new Map(
       headLastByEmployee
-        .map((x) => x.employeeId)
-        .filter((x): x is string => Boolean(x)),
+        .filter((x): x is typeof x & { employeeId: string } => Boolean(x.employeeId))
+        .map((x) => [String(x.employeeId), x]),
     );
 
-    // MATCH-only mode: return ONLY employees present in BOTH:
-    // - Attendance table for the day
-    // - Headcount table for the day
-    const employeeIds = Array.from(headIds).filter((id) => attIds.has(id));
+    const attendanceIds = new Set(attLastByEmployee.map((x) => x.employeeId));
+    const headIds = new Set(Array.from(headLastMap.keys()));
+    const employeeIds = Array.from(
+      new Set([...Array.from(attendanceIds), ...Array.from(headIds)]),
+    );
+
     if (employeeIds.length === 0) return res.json([]);
 
     const employees = await prisma.employee.findMany({
@@ -193,14 +367,6 @@ export async function listHeadcount(req: Request, res: Response) {
     });
 
     const employeeMap = new Map(employees.map((e) => [e.id, e]));
-
-    const attLastMap = new Map(attLastByEmployee.map((x) => [x.employeeId, x]));
-    const attFirstMap = new Map(attFirstByEmployee.map((x) => [x.employeeId, x]));
-    const headLastMap = new Map(
-      headLastByEmployee
-        .filter((x): x is typeof x & { employeeId: string } => Boolean(x.employeeId))
-        .map((x) => [x.employeeId, x]),
-    );
 
     // 5) Camera names (previous attendance + headcount camera)
     const allCamIds: string[] = [];
@@ -213,7 +379,7 @@ export async function listHeadcount(req: Request, res: Response) {
 
     const cams = allCamIds.length
       ? await prisma.camera.findMany({
-           where: { id: { in: allCamIds } },
+          where: { id: { in: allCamIds } },
           select: { id: true, name: true },
         })
       : [];
@@ -240,7 +406,7 @@ export async function listHeadcount(req: Request, res: Response) {
       previousLastEntryTime: string | null;
       previousTime: string | null;
 
-      status: "MATCH" | "UNMATCH" | "MISSING" | "ABSENT";
+      status: HeadcountStatus;
       timestamp: string | null;
     };
 
@@ -252,14 +418,12 @@ export async function listHeadcount(req: Request, res: Response) {
       const attLast = attLastMap.get(employeePkId);
       const attFirst = attFirstMap.get(employeePkId);
 
-      const hasHead =
-        Boolean(head) && ["MATCH", "UNMATCH"].includes(String(head?.status || ""));
-      const hasPrev = Boolean(attLast);
+      const hasHead = Boolean(head);
+      const hasAttendance = Boolean(attLast);
 
       let status: Row["status"];
-      if (hasHead && hasPrev) status = "MATCH";
-      else if (hasHead && !hasPrev) status = "UNMATCH";
-      else if (!hasHead && hasPrev) status = "MISSING";
+      if (hasHead && hasAttendance) status = "MATCH";
+      else if (hasHead && !hasAttendance) status = "UNMATCH";
       else status = "ABSENT";
 
       const headFirst = parseFirstSeenFromNotes(head?.notes ?? null);
@@ -275,7 +439,9 @@ export async function listHeadcount(req: Request, res: Response) {
 
         headcountCameraId: hasHead ? (head?.cameraId ?? null) : null,
         headcountCameraName:
-          hasHead && head?.cameraId ? camName.get(String(head.cameraId)) ?? null : null,
+          hasHead && head?.cameraId
+            ? camName.get(String(head.cameraId)) ?? null
+            : null,
         headcountFirstEntryTime: hasHead ? toISOStringOrNull(headFirst) : null,
         headcountLastEntryTime: hasHead ? toISOStringOrNull(headLast) : null,
         headcountTime: hasHead ? toISOStringOrNull(headLast) : null,
@@ -288,27 +454,17 @@ export async function listHeadcount(req: Request, res: Response) {
         previousFirstEntryTime: toISOStringOrNull(attFirst?.timestamp ?? null),
         previousLastEntryTime: toISOStringOrNull(attLast?.timestamp ?? null),
         previousTime: toISOStringOrNull(attLast?.timestamp ?? null),
-        timestamp:
-          status === "ABSENT" ? null : toISOStringOrNull(timestamp ?? null),
+        timestamp: toISOStringOrNull(timestamp ?? null),
 
         status,
       };
     });
 
-    // Return only matches
-    const filteredRows = rows.filter((r) => r.status === "MATCH");
-
     // Sort: MATCH first, then UNMATCH, then ABSENT; within group by name/id
     const rank = (s: Row["status"]) =>
-      s === "MATCH"
-        ? 0
-        : s === "UNMATCH"
-        ? 1
-        : s === "MISSING"
-        ? 2
-        : 3;
+      s === "MATCH" ? 0 : s === "UNMATCH" ? 1 : 2;
 
-    filteredRows.sort((a, b) => {
+    rows.sort((a, b) => {
       const ra = rank(a.status);
       const rb = rank(b.status);
       if (ra !== rb) return ra - rb;
@@ -322,7 +478,7 @@ export async function listHeadcount(req: Request, res: Response) {
       );
     });
 
-    return res.json(filteredRows);
+    return res.json(rows);
   } catch (e: any) {
     console.error("listHeadcount failed:", e);
     return res.status(500).json({

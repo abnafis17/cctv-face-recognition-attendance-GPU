@@ -1,6 +1,7 @@
 # ---- Core ----
 numpy>=1.23,<3
-opencv-python>=4.8,<5
+# For CSRT/KCF trackers (opencv-contrib); the code falls back to MIL if unavailable.
+opencv-contrib-python>=4.8,<5
 pyyaml>=6,<7
 tqdm>=4.64,<5
 

@@ -2,6 +2,9 @@ export type Employee = {
   id: string;
   empId?: string | null;
   name: string;
+  section?: string | null;
+  department?: string | null;
+  line?: string | null;
 };
 
 export type AttendanceRow = {

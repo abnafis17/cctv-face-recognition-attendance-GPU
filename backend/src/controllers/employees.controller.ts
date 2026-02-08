@@ -5,6 +5,13 @@ import {
   normalizeEmployeeIdentifier,
 } from "../utils/employee";
 
+function normalizeOptionalString(v: any): string | null {
+  if (v === null) return null;
+  if (v === undefined) return null;
+  const s = String(v).trim();
+  return s ? s : null;
+}
+
 export async function getEmployees(req: Request, res: Response) {
   try {
     const companyId = String((req as any).companyId ?? "");
@@ -21,11 +28,74 @@ export async function getEmployees(req: Request, res: Response) {
   }
 }
 
+export async function listEmployeeGroupValues(req: Request, res: Response) {
+  try {
+    const companyId = String((req as any).companyId ?? "");
+    if (!companyId) return res.status(400).json({ error: "Missing company id" });
+
+    const fieldRaw = String(
+      req.query?.field ?? req.query?.by ?? req.query?.groupBy ?? ""
+    )
+      .trim()
+      .toLowerCase();
+
+    const allowed = new Set(["section", "department", "line"]);
+    if (!allowed.has(fieldRaw)) {
+      return res.status(400).json({
+        error: "Invalid field",
+        allowed: Array.from(allowed),
+        example: "/employees/group-values?field=department",
+      });
+    }
+
+    const field = fieldRaw as "section" | "department" | "line";
+
+    const where: any = {
+      companyId,
+      [field]: { not: null },
+    };
+
+    const rows = await prisma.employee.findMany({
+      where,
+      distinct: [field],
+      orderBy: [{ [field]: "asc" } as any],
+      select: { [field]: true } as any,
+      take: 5000,
+    });
+
+    const values = rows
+      .map((r: any) => String(r?.[field] ?? "").trim())
+      .filter(Boolean);
+
+    return res.json({ field, values });
+  } catch (e: any) {
+    return res.status(500).json({
+      error: "Failed to load group values",
+      detail: e?.message ?? String(e),
+    });
+  }
+}
+
 export async function upsertEmployee(req: Request, res: Response) {
   try {
     const companyId = String((req as any).companyId ?? "");
     const name = String(req.body?.name ?? "").trim();
     if (!name) return res.status(400).json({ error: "name is required" });
+
+    const sectionRaw = req.body?.section ?? req.body?.section_name ?? undefined;
+    const departmentRaw =
+      req.body?.department ?? req.body?.department_name ?? undefined;
+    const lineRaw = req.body?.line ?? req.body?.line_name ?? undefined;
+
+    const groupData = {
+      ...(sectionRaw !== undefined
+        ? { section: normalizeOptionalString(sectionRaw) }
+        : {}),
+      ...(departmentRaw !== undefined
+        ? { department: normalizeOptionalString(departmentRaw) }
+        : {}),
+      ...(lineRaw !== undefined ? { line: normalizeOptionalString(lineRaw) } : {}),
+    } as any;
 
     const identifier =
       normalizeEmployeeIdentifier(
@@ -43,19 +113,20 @@ export async function upsertEmployee(req: Request, res: Response) {
           data: {
             name,
             ...(existing.empId ? {} : { empId: identifier }),
+            ...groupData,
           },
         });
         return res.json(employee);
       }
 
       const created = await prisma.employee.create({
-        data: { name, empId: identifier, companyId },
+        data: { name, empId: identifier, companyId, ...groupData },
       });
       return res.json(created);
     }
 
     const created = await prisma.employee.create({
-      data: { name, companyId },
+      data: { name, companyId, ...groupData },
     });
     return res.json(created);
   } catch (e: any) {
@@ -91,7 +162,18 @@ export async function updateEmployee(req: Request, res: Response) {
     const empIdRaw =
       req.body?.empId ?? req.body?.emp_id ?? req.body?.employeeId ?? undefined;
 
-    const data: { name?: string; empId?: string | null } = {};
+    const sectionRaw = req.body?.section ?? req.body?.section_name ?? undefined;
+    const departmentRaw =
+      req.body?.department ?? req.body?.department_name ?? undefined;
+    const lineRaw = req.body?.line ?? req.body?.line_name ?? undefined;
+
+    const data: {
+      name?: string;
+      empId?: string | null;
+      section?: string | null;
+      department?: string | null;
+      line?: string | null;
+    } = {};
 
     if (nameRaw !== undefined) {
       const name = String(nameRaw ?? "").trim();
@@ -103,6 +185,18 @@ export async function updateEmployee(req: Request, res: Response) {
       // allow clearing empId by sending null/empty string
       const normalized = normalizeEmployeeIdentifier(empIdRaw);
       data.empId = normalized ?? null;
+    }
+
+    if (sectionRaw !== undefined) {
+      data.section = normalizeOptionalString(sectionRaw);
+    }
+
+    if (departmentRaw !== undefined) {
+      data.department = normalizeOptionalString(departmentRaw);
+    }
+
+    if (lineRaw !== undefined) {
+      data.line = normalizeOptionalString(lineRaw);
     }
 
     if (Object.keys(data).length === 0) {

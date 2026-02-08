@@ -28,6 +28,8 @@ export const SetupPanel = React.memo(function SetupPanel({
   setEmployeeId,
   name,
   setName,
+  reEnroll,
+  lockEmployeeIdentity,
 
   start,
   startDisabled,
@@ -54,6 +56,8 @@ export const SetupPanel = React.memo(function SetupPanel({
   setEmployeeId: (v: string) => void;
   name: string;
   setName: (v: string) => void;
+  reEnroll: boolean;
+  lockEmployeeIdentity: boolean;
 
   start: () => void;
   startDisabled: boolean;
@@ -98,7 +102,16 @@ export const SetupPanel = React.memo(function SetupPanel({
       </div>
 
       <div className="rounded-2xl border bg-white p-5">
-        <div className="text-lg font-semibold">2) Enter employee details</div>
+        <div className="text-lg font-semibold">
+          {reEnroll ? "2) Confirm employee details" : "2) Enter employee details"}
+        </div>
+
+        {reEnroll && (
+          <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+            Re-enrollment mode: starting this session will replace the existing face
+            templates for this employee.
+          </div>
+        )}
 
         <div className="mt-4">
           <Label>Select from ERP (search by Name or ID)</Label>
@@ -109,7 +122,7 @@ export const SetupPanel = React.memo(function SetupPanel({
               items={erpItems}
               placeholder="Search employee..."
               searchPlaceholder="Type name or ID..."
-              disabled={busy}
+              disabled={busy || lockEmployeeIdentity}
               loading={erpLoading}
               onSearchChange={(q) => setErpSearch(q)}
               onChange={(empId) => {
@@ -135,7 +148,7 @@ export const SetupPanel = React.memo(function SetupPanel({
               value={employeeId}
               onChange={(e) => setEmployeeId(e.target.value)}
               placeholder="EMP001"
-              disabled={busy}
+              disabled={busy || lockEmployeeIdentity}
             />
           </div>
 
@@ -145,14 +158,14 @@ export const SetupPanel = React.memo(function SetupPanel({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="John Doe"
-              disabled={busy}
+              disabled={busy || lockEmployeeIdentity}
             />
           </div>
         </div>
 
         <div className="flex items-center gap-3 mt-5">
           <Button onClick={start} disabled={startDisabled}>
-            {busy ? "Starting…" : "Start Setup"}
+            {busy ? "Starting..." : reEnroll ? "Start Re-enrollment" : "Start Setup"}
           </Button>
 
           <div className="ml-auto flex items-center gap-2">

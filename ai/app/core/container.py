@@ -7,6 +7,7 @@ from typing import Dict, Optional
 from app.core.settings import (
     STREAM_TYPE_ATTENDANCE,
     STREAM_TYPE_HEADCOUNT,
+    STREAM_TYPE_OT,
     normalize_stream_type,
 )
 
@@ -21,9 +22,10 @@ class StreamClientManager:
     """
     Production behavior preserved:
     - Reference counting per camera
-    - Track per stream type (attendance/headcount)
+    - Track per stream type (attendance/headcount/ot)
     - Enable/disable attendance pipeline based on active viewers
     """
+
     def __init__(self, attendance_rt: AttendanceRuntime):
         self._lock = threading.Lock()
         self._rec_stream_clients: Dict[str, int] = {}
@@ -37,6 +39,7 @@ class StreamClientManager:
             and (
                 counts.get(STREAM_TYPE_ATTENDANCE, 0) > 0
                 or counts.get(STREAM_TYPE_HEADCOUNT, 0) > 0
+                or counts.get(STREAM_TYPE_OT, 0) > 0
             )
         )
         self._attendance_rt.set_attendance_enabled(camera_id, attendance_enabled)
@@ -48,12 +51,16 @@ class StreamClientManager:
                 active_type = STREAM_TYPE_ATTENDANCE
             elif counts.get(STREAM_TYPE_HEADCOUNT, 0) > 0:
                 active_type = STREAM_TYPE_HEADCOUNT
+            elif counts.get(STREAM_TYPE_OT, 0) > 0:
+                active_type = STREAM_TYPE_OT
         self._attendance_rt.set_stream_type(camera_id, active_type)
 
     def inc(self, camera_id: str, stream_type: Optional[str]) -> int:
         stream_type = normalize_stream_type(stream_type)
         with self._lock:
-            self._rec_stream_clients[camera_id] = self._rec_stream_clients.get(camera_id, 0) + 1
+            self._rec_stream_clients[camera_id] = (
+                self._rec_stream_clients.get(camera_id, 0) + 1
+            )
             mode_counts = self._rec_stream_mode_counts.setdefault(camera_id, {})
             mode_counts[stream_type] = mode_counts.get(stream_type, 0) + 1
             self._update_attendance_state(camera_id)
@@ -126,7 +133,7 @@ def build_container() -> ServiceContainer:
     attendance_rt = AttendanceRuntime(
         use_gpu=False,
         similarity_threshold=0.35,
-        cooldown_s=10,
+        cooldown_s=60,
         stable_hits_required=3,
     )
 

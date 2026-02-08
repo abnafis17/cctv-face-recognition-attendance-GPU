@@ -9,11 +9,22 @@ const AI_BASE = (process.env.AI_BASE_URL || "http://127.0.0.1:8000").replace(
   ""
 );
 
+function toBoolean(value: unknown): boolean {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value === 1;
+  if (typeof value === "string") {
+    const v = value.trim().toLowerCase();
+    return v === "1" || v === "true" || v === "yes" || v === "on";
+  }
+  return false;
+}
+
 // POST /api/v1/enroll2-auto/session/start
 r.post("/session/start", async (req, res) => {
   try {
     const companyId = String((req as any).companyId ?? "");
-    const { employeeId, name, cameraId } = req.body || {};
+    const { employeeId, name, cameraId, reEnroll } = req.body || {};
+    const isReEnroll = toBoolean(reEnroll);
 
     const identifier = String(employeeId ?? "").trim();
     if (identifier) {
@@ -24,10 +35,16 @@ r.post("/session/start", async (req, res) => {
           select: { id: true },
         });
         if (hasTemplate) {
-          return res.status(409).json({
-            ok: false,
-            error: "Already enrolled",
-            employee: { id: employee.id, empId: employee.empId, name: employee.name },
+          if (!isReEnroll) {
+            return res.status(409).json({
+              ok: false,
+              error: "Already enrolled",
+              employee: { id: employee.id, empId: employee.empId, name: employee.name },
+            });
+          }
+
+          await prisma.faceTemplate.deleteMany({
+            where: { employeeId: employee.id },
           });
         }
       }

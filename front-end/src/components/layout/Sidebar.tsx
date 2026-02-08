@@ -5,21 +5,23 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   Video,
-  UserPlus,
   Users,
   CalendarClock,
   LogOut,
+  Cctv,
+  GraduationCap,
+  History,
 } from "lucide-react";
 import { clearAccessToken } from "@/lib/authStorage";
 
 const nav = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/cameras", label: "Cameras (Live)", icon: Video },
+  // { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/cameras", label: "Cameras (Live)", icon: Cctv },
   { href: "/headcount", label: "Headcount Camera", icon: Video },
-  { href: "/enroll", label: "Enrollment(Auto)", icon: UserPlus },
+  { href: "/enroll", label: "Enrollment", icon: GraduationCap },
   { href: "/employees", label: "Employees", icon: Users },
   { href: "/daily-attendance", label: "Daily Attendance", icon: CalendarClock },
-  { href: "/attendance", label: "Recognition History", icon: CalendarClock },
+  { href: "/attendance", label: "Recognition History", icon: History },
 ];
 
 function isActive(pathname: string, href: string) {
