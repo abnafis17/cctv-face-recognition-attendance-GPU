@@ -27,6 +27,9 @@ function parseFirstSeenIsoFromNotes(notes?: string | null): string | null {
 export async function createAttendance(req: Request, res: Response) {
   try {
     const companyId = String((req as any).companyId ?? "");
+    if (!companyId) {
+      return res.status(400).json({ error: "Missing company id" });
+    }
     const {
       employeeId,
       timestamp,
@@ -52,27 +55,33 @@ export async function createAttendance(req: Request, res: Response) {
       nameIfCreate: "Unknown",
     });
 
-    let cam = cameraId
-      ? await findCameraByAnyId(String(cameraId), companyId)
+    const normalizedCameraId = String(cameraId ?? "").trim();
+    let cam = normalizedCameraId
+      ? await findCameraByAnyId(normalizedCameraId, companyId)
       : null;
-    if (cameraId && !cam) {
-      // Auto-register laptop/adhoc cameras so attendance is not blocked
-      try {
-        cam = await prisma.camera.create({
-          data: {
-            id: String(cameraId),
-            camId: String(cameraId),
-            name: "Laptop Camera",
+    if (normalizedCameraId && !cam) {
+      // Auto-register laptop/adhoc cameras so attendance is not blocked.
+      // Use (companyId, camId) upsert so we never create duplicates for the same company camera id.
+      const defaultName = normalizedCameraId.startsWith("laptop-")
+        ? "Laptop Camera"
+        : normalizedCameraId;
+
+      cam = await prisma.camera.upsert({
+        where: {
+          companyId_camId: {
             companyId,
-            // This is a virtual/browser camera; do not mark it as an active RTSP camera.
-            isActive: false,
+            camId: normalizedCameraId,
           },
-        });
-      } catch (err) {
-        // If create fails (race/duplicate), try to read again before failing.
-        cam = await findCameraByAnyId(String(cameraId), companyId);
-        if (!cam) return res.status(404).json({ error: "Camera not found" });
-      }
+        },
+        create: {
+          camId: normalizedCameraId,
+          name: defaultName,
+          companyId,
+          // This is a virtual/browser camera; do not mark it as an active RTSP camera.
+          isActive: false,
+        },
+        update: {},
+      });
     }
 
     // OT requisition mode: DO NOT write to Attendance table.

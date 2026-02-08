@@ -63,7 +63,15 @@ export async function listHeadcountCameras(req: Request, res: Response) {
 
     const cams = await prisma.camera.findMany({
       // Laptop cameras are rendered separately on the headcount page; keep dropdown for DB cameras.
-      where: { companyId, NOT: { id: { startsWith: "laptop-" } } },
+      where: {
+        companyId,
+        NOT: {
+          OR: [
+            { camId: { startsWith: "laptop-" } },
+            { id: { startsWith: "laptop-" } },
+          ],
+        },
+      },
       select: { id: true, name: true, rtspUrl: true, isActive: true },
       orderBy: [{ name: "asc" }],
       take: 5000,

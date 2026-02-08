@@ -21,6 +21,14 @@ export type Camera = {
   id: string;
   camId?: string | null;
   name: string;
-  rtspUrl: string;
+  rtspUrl?: string | null;
   isActive: boolean;
+  relayAgentId?: string | null;
+  rtspUrlEnc?: string | null;
+  sendFps?: number;
+  sendWidth?: number;
+  sendHeight?: number;
+  jpegQuality?: number;
+  createdAt?: string;
+  updatedAt?: string;
 };

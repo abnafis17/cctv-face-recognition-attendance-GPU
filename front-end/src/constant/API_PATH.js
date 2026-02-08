@@ -8,6 +8,7 @@ export const API = {
   EMPLOYEE_LIST: "/employees",
   EMPLOYEE_GROUP_VALUES: "/employees/group-values",
   ATTENDANCE_LIST: "/attendance",
+  CAMERAS: "/cameras",
 
   DAILY_ATTENDANCE_LIST: "/attendance/daily",
 

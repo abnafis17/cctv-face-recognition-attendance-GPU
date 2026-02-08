@@ -11,12 +11,14 @@ import {
   Cctv,
   GraduationCap,
   History,
+  ListVideo,
 } from "lucide-react";
 import { clearAccessToken } from "@/lib/authStorage";
 
 const nav = [
   // { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/cameras", label: "Cameras (Live)", icon: Cctv },
+  { href: "/camera-list", label: "Camera List", icon: ListVideo },
   { href: "/headcount", label: "Headcount Camera", icon: Video },
   { href: "/enroll", label: "Enrollment", icon: GraduationCap },
   { href: "/employees", label: "Employees", icon: Users },

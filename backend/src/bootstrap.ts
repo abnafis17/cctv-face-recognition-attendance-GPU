@@ -13,6 +13,13 @@ export async function bootstrap() {
       name: true,
       rtspUrl: true,
       isActive: true,
+      companyId: true,
+      relayAgentId: true,
+      rtspUrlEnc: true,
+      sendFps: true,
+      sendWidth: true,
+      sendHeight: true,
+      jpegQuality: true,
     },
   });
 
@@ -30,6 +37,13 @@ export async function bootstrap() {
           name: true,
           rtspUrl: true,
           isActive: true,
+          companyId: true,
+          relayAgentId: true,
+          rtspUrlEnc: true,
+          sendFps: true,
+          sendWidth: true,
+          sendHeight: true,
+          jpegQuality: true,
         },
       });
       if (!current) return;
@@ -41,13 +55,34 @@ export async function bootstrap() {
         data: { camId: `legacy__${publicId}__${Date.now()}` },
       });
 
-      await tx.camera.create({
+      const created = await tx.camera.create({
         data: {
           camId: publicId,
           name: current.name,
           rtspUrl: current.rtspUrl,
           isActive: current.isActive,
+          companyId: current.companyId,
+          relayAgentId: current.relayAgentId,
+          rtspUrlEnc: current.rtspUrlEnc,
+          sendFps: current.sendFps,
+          sendWidth: current.sendWidth,
+          sendHeight: current.sendHeight,
+          jpegQuality: current.jpegQuality,
         },
+        select: { id: true },
+      });
+
+      await tx.attendance.updateMany({
+        where: { cameraId: current.id },
+        data: { cameraId: created.id },
+      });
+      await tx.headcount.updateMany({
+        where: { cameraId: current.id },
+        data: { cameraId: created.id },
+      });
+      await tx.otRequisition.updateMany({
+        where: { cameraId: current.id },
+        data: { cameraId: created.id },
       });
 
       await tx.camera.delete({ where: { id: current.id } });

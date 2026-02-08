@@ -39,6 +39,23 @@ export async function registerUser(input: {
       data: { companyName },
     }));
 
+  const laptopCamId = `laptop-${company.id}`;
+  await prisma.camera.upsert({
+    where: {
+      companyId_camId: {
+        companyId: company.id,
+        camId: laptopCamId,
+      },
+    },
+    create: {
+      camId: laptopCamId,
+      name: "Laptop Camera",
+      companyId: company.id,
+      isActive: false,
+    },
+    update: {},
+  });
+
   const user = await prisma.user.create({
     data: {
       name: input.name ?? null,

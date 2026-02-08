@@ -6,11 +6,13 @@ import React, {
   useState,
 } from "react";
 import { AI_HOST } from "@/config/axiosInstance";
+import { cn } from "@/lib/utils";
 
 interface LocalCameraProps {
   userId?: string; // cameraId
   companyId?: string; // for recognition gallery
   cameraName?: string; // <-- NEW
+  className?: string;
 }
 
 const DEFAULT_CAMERA_ID = "cmkdpsq300000j7284bwluxh2";
@@ -19,6 +21,7 @@ const LocalCamera: React.FC<LocalCameraProps> = ({
   userId,
   companyId,
   cameraName = "Laptop Camera",
+  className,
 }) => {
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -179,35 +182,35 @@ const LocalCamera: React.FC<LocalCameraProps> = ({
   };
 
   return (
-    <div className="rounded-xl border bg-white p-4 shadow-sm max-w-md">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="font-semibold text-sm">{cameraName}</div>
-          <div className="text-xs text-gray-500">WebRTC + HLS</div>
+    <article
+      className={cn(
+        "rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm",
+        className,
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="truncate text-sm font-semibold text-zinc-900">
+            {cameraName}
+          </div>
+          <div className="text-xs text-zinc-500">WebRTC + HLS</div>
         </div>
 
-        <span
-          className={`text-xs px-2 py-0.5 rounded-full ${
+        <button
+          type="button"
+          onClick={localActive ? stopLocalCamera : startLocalCamera}
+          className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
             localActive
-              ? "bg-green-100 text-green-700"
-              : "bg-gray-100 text-gray-500"
+              ? "border-red-300 bg-red-50 text-red-700 hover:bg-red-100"
+              : "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
           }`}
         >
-          {localActive ? "ACTIVE" : "OFF"}
-        </span>
+          {localActive ? "Stop" : "Start"}
+        </button>
       </div>
 
-      {/* <div className="mt-3 aspect-video overflow-hidden rounded-lg border bg-black">
-        <video
-          ref={localVideoRef}
-          autoPlay
-          playsInline
-          muted
-          className="h-full w-full object-cover"
-        />
-      </div> */}
-
-      <div className="mt-3 aspect-video overflow-hidden rounded-lg border bg-gray-100">
+      <div className="relative mt-3 overflow-hidden rounded-xl border border-zinc-200 bg-zinc-950">
+        <div className="aspect-video w-full">
         {localActive ? (
           // MJPEG stream (not compatible with next/image optimizations)
           // eslint-disable-next-line @next/next/no-img-element
@@ -219,35 +222,38 @@ const LocalCamera: React.FC<LocalCameraProps> = ({
             height={720}
           />
         ) : (
-          <div className="flex h-full w-full items-center justify-center text-xs text-gray-500">
+            <div className="flex h-full w-full items-center justify-center text-sm text-zinc-300">
             Start camera to view recognition overlay
           </div>
         )}
+        </div>
+        <div className="pointer-events-none absolute left-2 top-2 rounded-md bg-black/70 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-white">
+          {localActive ? "LIVE" : "OFFLINE"}
+        </div>
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(transparent_0,rgba(255,255,255,0.05)_50%,transparent_100%)] bg-[length:100%_6px] opacity-20" />
       </div>
 
       {wsError ? (
-        <div className="mt-2 text-xs text-red-600">{wsError}</div>
+        <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-600">
+          {wsError}
+        </div>
       ) : null}
-      {/* <div className="mt-1 text-[11px] text-gray-500">CameraId: {cameraId}</div> */}
 
-      <div className="mt-3 flex justify-end gap-2">
-        {localActive ? (
-          <button
-            onClick={stopLocalCamera}
-            className="rounded-md border border-red-300 bg-red-50 px-3 py-1 text-xs text-red-600"
-          >
-            Stop Camera
-          </button>
-        ) : (
-          <button
-            onClick={startLocalCamera}
-            className="rounded-md border border-green-300 bg-green-50 px-3 py-1 text-xs text-green-700"
-          >
-            Start Camera
-          </button>
-        )}
+      <div className="mt-3 flex items-center justify-between">
+        <span className="truncate rounded-md bg-zinc-100 px-2 py-1 font-mono text-[10px] text-zinc-600">
+          {cameraId}
+        </span>
+        <span
+          className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+            localActive
+              ? "bg-emerald-100 text-emerald-700"
+              : "bg-zinc-100 text-zinc-500"
+          }`}
+        >
+          {localActive ? "ACTIVE" : "OFF"}
+        </span>
       </div>
-    </div>
+    </article>
   );
 };
 
