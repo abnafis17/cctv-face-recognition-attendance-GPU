@@ -12,14 +12,12 @@ import { ColumnDef } from "@tanstack/react-table";
 import { Search, RefreshCcw, X, Check, Download } from "lucide-react";
 
 import axiosInstance, { API, AI_HOST } from "@/config/axiosInstance";
-import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { TanstackDataTable } from "@/components/reusable/TanstackDataTable";
 import { getCompanyIdFromToken } from "@/lib/authStorage";
 import { useAttendanceEvents } from "@/hooks/useAttendanceEvents";
 import { useHeadcountEvents } from "@/hooks/useHeadcountEvents";
-import Image from "next/image";
 import { exportJsonToXlsx } from "@/lib/exportXlsx";
 
 import HeadCountCameraComponent from "./HeadCountCameraComponent";
@@ -55,6 +53,16 @@ type OtRow = {
   headcountTime?: string | null;
 };
 
+type HeadcountRemoteCameraCardProps = {
+  camera: CameraOption;
+  streamUrl: string;
+  selected: boolean;
+  busy: boolean;
+  onSelect: (cameraId: string) => void;
+  onStart: (cameraId: string) => void;
+  onStop: (cameraId: string) => void;
+};
+
 const DEFAULT_LAPTOP_CAMERA_ID = "cmkdpsql0000112nsd5gcesq4";
 
 function dhakaTodayYYYYMMDD() {
@@ -63,14 +71,27 @@ function dhakaTodayYYYYMMDD() {
 
 function safeTimeOnly(ts?: string | number | Date | null) {
   try {
-    if (!ts) return "—";
+    if (!ts) return "-";
     return new Date(ts).toLocaleTimeString("en-GB", {
       timeZone: "Asia/Dhaka",
       hour12: false,
     });
   } catch {
-    return "—";
+    return "-";
   }
+}
+
+function maskRtspUrl(url?: string | null): string {
+  const raw = String(url ?? "").trim();
+  if (!raw) return "-";
+
+  const protocolEnd = raw.indexOf("://");
+  const atIndex = raw.indexOf("@");
+  if (protocolEnd < 0 || atIndex < 0 || atIndex < protocolEnd) return raw;
+
+  const protocol = raw.slice(0, protocolEnd + 3);
+  const host = raw.slice(atIndex + 1);
+  return `${protocol}***:***@${host}`;
 }
 
 function TableLoading() {
@@ -84,11 +105,143 @@ function TableLoading() {
   );
 }
 
+function HeadcountRemoteCameraCard({
+  camera,
+  streamUrl,
+  selected,
+  busy,
+  onSelect,
+  onStart,
+  onStop,
+}: HeadcountRemoteCameraCardProps) {
+  const active = Boolean(camera.isActive);
+  const [streamHasFrame, setStreamHasFrame] = useState(false);
+
+  useEffect(() => {
+    setStreamHasFrame(false);
+  }, [active, streamUrl]);
+
+  return (
+    <article
+      className={cn(
+        "rounded-2xl border bg-white p-3 shadow-sm transition",
+        selected
+          ? "border-zinc-900 ring-2 ring-zinc-900/10"
+          : "border-zinc-200 hover:border-zinc-300",
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <button
+          type="button"
+          className="min-w-0 text-left"
+          onClick={() => onSelect(camera.id)}
+        >
+          <div className="truncate text-sm font-semibold text-zinc-900">
+            {camera.name}
+          </div>
+          <div
+            className="mt-1 truncate font-mono text-[11px] text-zinc-500"
+            title={camera.rtspUrl ?? ""}
+          >
+            {maskRtspUrl(camera.rtspUrl)}
+          </div>
+        </button>
+
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => (active ? onStop(camera.id) : onStart(camera.id))}
+          className={cn(
+            "rounded-lg border px-3 py-1.5 text-xs font-medium transition disabled:opacity-60",
+            active
+              ? "border-red-300 bg-red-50 text-red-700 hover:bg-red-100"
+              : "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
+          )}
+        >
+          {busy ? "Working..." : active ? "Stop" : "Start"}
+        </button>
+      </div>
+
+      <div
+        className={cn(
+          "relative mt-3 overflow-hidden rounded-xl border border-zinc-200",
+          streamHasFrame ? "bg-zinc-950" : "bg-zinc-100",
+        )}
+      >
+        <div className="aspect-video w-full">
+          {active ? (
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={streamUrl}
+                alt={`Camera ${camera.name} stream`}
+                className={cn(
+                  "h-full w-full object-cover transition-opacity duration-200",
+                  streamHasFrame ? "opacity-100" : "opacity-0",
+                )}
+                width={1280}
+                height={720}
+                onLoad={() => setStreamHasFrame(true)}
+                onError={() => setStreamHasFrame(false)}
+              />
+              {!streamHasFrame ? (
+                <div className="absolute inset-0 flex items-center justify-center text-sm text-zinc-500">
+                  Loading stream...
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <div className="flex h-full w-full items-center justify-center text-sm text-zinc-500">
+              Camera OFF
+            </div>
+          )}
+        </div>
+
+        <div className="pointer-events-none absolute right-2 top-2 rounded-md bg-black/70 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-white">
+          {active ? "LIVE" : "OFFLINE"}
+        </div>
+
+        {streamHasFrame ? (
+          <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(transparent_0,rgba(255,255,255,0.05)_50%,transparent_100%)] bg-[length:100%_6px] opacity-20" />
+        ) : null}
+      </div>
+
+      <div className="mt-3 flex items-center justify-between gap-2">
+        <button
+          type="button"
+          onClick={() => onSelect(camera.id)}
+          className={cn(
+            "rounded-lg border px-3 py-1 text-xs font-medium transition",
+            selected
+              ? "border-zinc-900 bg-zinc-900 text-white"
+              : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50",
+          )}
+        >
+          {selected ? "Selected" : "Select Camera"}
+        </button>
+
+        <span
+          className={cn(
+            "rounded-full px-2 py-0.5 text-[10px] font-semibold",
+            active
+              ? "bg-emerald-100 text-emerald-700"
+              : "bg-zinc-100 text-zinc-500",
+          )}
+        >
+          {active ? "ACTIVE" : "OFF"}
+        </span>
+      </div>
+    </article>
+  );
+}
+
 export default function HeadcountPage() {
   const [companyId, setCompanyId] = useState<string>("");
 
   const [cams, setCams] = useState<CameraOption[]>([]);
   const [selectedCamId, setSelectedCamId] = useState<string>("");
+  const [actionCamId, setActionCamId] = useState<string | null>(null);
+  const [laptopActive, setLaptopActive] = useState(false);
 
   const [dateStr, setDateStr] = useState<string>(dhakaTodayYYYYMMDD());
   const [headcountType, setHeadcountType] = useState<HeadcountType>("");
@@ -113,21 +266,21 @@ export default function HeadcountPage() {
   );
 
   const streamType = headcountType === "ot" ? "ot" : "headcount";
-
-  const remoteStreamUrl = useMemo(() => {
-    if (!selectedCam) return "";
+  const streamQuery = useMemo(() => {
     const params = new URLSearchParams();
     params.set("type", streamType);
     if (companyId) params.set("companyId", companyId);
     const query = params.toString();
-    return `${AI_HOST}/camera/recognition/stream/${encodeURIComponent(
-      selectedCam.id,
-    )}/${encodeURIComponent(selectedCam.name)}${query ? `?${query}` : ""}`;
-  }, [selectedCam, companyId, streamType]);
+    return query ? `?${query}` : "";
+  }, [companyId, streamType]);
 
-  const selectedCamIsActive = Boolean(selectedCam?.isActive);
-
-
+  const getRemoteStreamUrl = useCallback(
+    (camera: CameraOption) =>
+      `${AI_HOST}/camera/recognition/stream/${encodeURIComponent(
+        camera.id,
+      )}/${encodeURIComponent(camera.name)}${streamQuery}`,
+    [streamQuery],
+  );
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search.trim()), 350);
     return () => clearTimeout(t);
@@ -175,6 +328,33 @@ export default function HeadcountPage() {
     fetchCameras();
   }, [fetchCameras]);
 
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      fetchCameras();
+    }, 10000);
+
+    const onFocus = () => fetchCameras();
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") fetchCameras();
+    };
+
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [fetchCameras]);
+
+  useEffect(() => {
+    if (!selectedCamId) return;
+    if (!cams.some((cam) => cam.id === selectedCamId)) {
+      setSelectedCamId("");
+    }
+  }, [cams, selectedCamId]);
+
   const fetchGroupValues = useCallback(async (field: Exclude<GroupBy, "">) => {
     setGroupValuesLoading(true);
     try {
@@ -208,43 +388,39 @@ export default function HeadcountPage() {
     fetchGroupValues(groupBy);
   }, [fetchGroupValues, groupBy, headcountType]);
 
-  const [cameraActionLoading, setCameraActionLoading] = useState(false);
+  const setCameraPower = useCallback(
+    async (cameraId: string, action: "start" | "stop") => {
+      if (!cameraId) return;
+      setActionCamId(cameraId);
 
-  const startSelectedCamera = useCallback(async () => {
-    if (!selectedCamId) return;
-    setCameraActionLoading(true);
-    try {
-      await axiosInstance.post(`/cameras/start/${selectedCamId}`);
-      await fetchCameras();
-    } catch (error: any) {
-      const msg =
-        error?.response?.data?.message ||
-        (error instanceof Error ? error.message : "Failed to start camera");
-      toast.error(msg);
-    } finally {
-      setCameraActionLoading(false);
-    }
-  }, [fetchCameras, selectedCamId]);
+      try {
+        await axiosInstance.post(`/cameras/${action}/${cameraId}`);
+        await fetchCameras();
+      } catch (error: any) {
+        const msg =
+          error?.response?.data?.message ||
+          (error instanceof Error ? error.message : `Failed to ${action} camera`);
+        toast.error(msg);
+      } finally {
+        setActionCamId(null);
+      }
+    },
+    [fetchCameras],
+  );
 
-  const stopSelectedCamera = useCallback(async () => {
-    if (!selectedCamId) return;
-    setCameraActionLoading(true);
-    try {
-      await axiosInstance.post(`/cameras/stop/${selectedCamId}`);
-      await fetchCameras();
-    } catch (error: any) {
-      const msg =
-        error?.response?.data?.message ||
-        (error instanceof Error ? error.message : "Failed to stop camera");
-      toast.error(msg);
-    } finally {
-      setCameraActionLoading(false);
-    }
-  }, [fetchCameras, selectedCamId]);
+  const startCamera = useCallback(
+    async (cameraId: string) => {
+      await setCameraPower(cameraId, "start");
+    },
+    [setCameraPower],
+  );
 
-  const handleCameraSelect = useCallback((newId: string) => {
-    setSelectedCamId(newId);
-  }, []);
+  const stopCamera = useCallback(
+    async (cameraId: string) => {
+      await setCameraPower(cameraId, "stop");
+    },
+    [setCameraPower],
+  );
 
   const fetchHeadcount = useCallback(
     async (opts?: { showSpinner?: boolean }) => {
@@ -587,7 +763,7 @@ export default function HeadcountPage() {
         accessorKey: "cameraName",
         cell: ({ row }) => (
           <div className="text-center px-1 py-2">
-            {row.original.cameraName ?? "—"}
+            {row.original.cameraName ?? "-"}
           </div>
         ),
         size: 200,
@@ -596,90 +772,88 @@ export default function HeadcountPage() {
     [],
   );
 
+  const totalScreens = cams.length + 1;
+  const activeScreens =
+    cams.filter((camera) => Boolean(camera.isActive)).length +
+    (laptopActive ? 1 : 0);
+  const offlineScreens = Math.max(totalScreens - activeScreens, 0);
+
   return (
-    <Card title="Headcount" className="p-4">
-      {/* Two-grid layout always: Laptop + Selected DB Camera */}
-      <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
-        <HeadCountCameraComponent
-          userId={companyId ? `laptop-${companyId}` : DEFAULT_LAPTOP_CAMERA_ID}
-          companyId={companyId}
-          cameraName="Laptop Camera"
-          streamType={streamType}
-        />
+    <div className="space-y-4">
+      <header className="rounded-2xl border border-zinc-200 bg-white/90 p-4 shadow-sm backdrop-blur">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-zinc-900">Headcount Operations</h1>
+            <p className="mt-1 text-sm text-zinc-500">
+              Live headcount capture, camera monitoring, and cross-check reporting.
+            </p>
+            <p className="mt-1 text-xs text-zinc-500">AI Host: {AI_HOST}</p>
+          </div>
 
-        {selectedCam ? (
-          <div className="rounded-xl border bg-white p-4 shadow-sm">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="font-semibold">{selectedCam.name}</div>
-                {selectedCam.rtspUrl ? (
-                  <div className="mt-1 break-all text-xs text-gray-400">
-                    {selectedCam.rtspUrl}
-                  </div>
-                ) : null}
-              </div>
-              <span
-                className={cn(
-                  "text-xs px-2 py-0.5 rounded-full",
-                  selectedCamIsActive
-                    ? "bg-green-100 text-green-700"
-                    : "bg-gray-100 text-gray-500",
-                )}
-              >
-                {selectedCamIsActive ? "ACTIVE" : "OFF"}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-medium text-zinc-700">
+              Screens: <span className="ml-1 font-semibold text-zinc-900">{totalScreens}</span>
+            </span>
+            <span className="inline-flex items-center rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700">
+              Active: <span className="ml-1 font-semibold">{activeScreens}</span>
+            </span>
+            <span className="inline-flex items-center rounded-lg border border-zinc-200 bg-zinc-100 px-3 py-2 text-xs font-medium text-zinc-700">
+              Offline: <span className="ml-1 font-semibold">{offlineScreens}</span>
+            </span>
+            {selectedCam ? (
+              <span className="inline-flex max-w-[220px] items-center truncate rounded-lg border border-zinc-200 bg-zinc-100 px-3 py-2 text-xs font-medium text-zinc-700">
+                Selected: <span className="ml-1 truncate font-semibold">{selectedCam.name}</span>
               </span>
-            </div>
-
-            <div className="mt-3 overflow-hidden rounded-lg border bg-gray-100">
-              {selectedCamIsActive && remoteStreamUrl ? (
-                <div className="aspect-video w-full">
-                  <Image
-                    src={remoteStreamUrl}
-                    alt={`Camera ${selectedCam.name} stream`}
-                    className="h-full w-full object-cover"
-                    width={1280}
-                    height={720}
-                    unoptimized
-                  />
-                </div>
-              ) : (
-                <div className="aspect-video flex items-center justify-center text-sm text-gray-600">
-                  Camera OFF
-                </div>
-              )}
-            </div>
-
-            <div className="mt-3 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={
-                  selectedCamIsActive ? stopSelectedCamera : startSelectedCamera
-                }
-                className={cn(
-                  "rounded-md border px-3 py-1 text-xs font-semibold transition",
-                  selectedCamIsActive
-                    ? "border-red-300 bg-red-50 text-red-600"
-                    : "border-green-300 bg-green-50 text-green-700",
-                )}
-                disabled={!selectedCamId || cameraActionLoading}
-              >
-                {selectedCamIsActive ? "Stop Camera" : "Start Camera"}
-              </button>
-            </div>
+            ) : null}
           </div>
-        ) : (
-          <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 p-6 text-center flex items-center justify-center">
-            <div>
-              <p className="text-sm font-medium text-gray-700">
-                Select a camera from dropdown
-              </p>
-              <p className="mt-1 text-xs text-gray-500">
-                Start a camera to view its recognition stream here.
+        </div>
+      </header>
+
+      <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+        <div className="mb-4 flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-zinc-900">Camera Grid</h2>
+            <p className="text-xs text-zinc-500">
+              Live camera cards with direct start/stop control for headcount capture.
+            </p>
+          </div>
+          <span className="inline-flex items-center rounded-lg border border-zinc-200 bg-zinc-100 px-3 py-2 text-xs font-medium text-zinc-700">
+            Remote cameras: {cams.length}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+          <HeadCountCameraComponent
+            userId={companyId ? `laptop-${companyId}` : DEFAULT_LAPTOP_CAMERA_ID}
+            companyId={companyId}
+            cameraName="Laptop Camera"
+            streamType={streamType}
+            onActiveChange={setLaptopActive}
+          />
+
+          {cams.map((camera) => (
+            <HeadcountRemoteCameraCard
+              key={camera.id}
+              camera={camera}
+              streamUrl={getRemoteStreamUrl(camera)}
+              selected={selectedCamId === camera.id}
+              busy={actionCamId === camera.id}
+              onSelect={setSelectedCamId}
+              onStart={startCamera}
+              onStop={stopCamera}
+            />
+          ))}
+
+          {cams.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-zinc-300 bg-zinc-50 p-6 text-center md:col-span-2 xl:col-span-2 2xl:col-span-3">
+              <p className="text-sm font-medium text-zinc-700">No remote cameras found</p>
+              <p className="mt-1 text-xs text-zinc-500">
+                Add cameras in Camera List to start monitoring in this grid.
               </p>
             </div>
-          </div>
-        )}
-      </div>
+          ) : null}
+        </div>
+      </section>
 
       {/* Filters + counts */}
       <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -844,7 +1018,7 @@ export default function HeadcountPage() {
             <label className="text-xs font-medium text-gray-600">Camera</label>
             <select
               value={selectedCamId}
-              onChange={(e) => handleCameraSelect(e.target.value)}
+              onChange={(e) => setSelectedCamId(e.target.value)}
               className="text-sm outline-none bg-transparent"
             >
               <option value="">Select...</option>
@@ -967,6 +1141,8 @@ export default function HeadcountPage() {
           </p>
         </div>
       ) : null}
-    </Card>
+    </div>
   );
 }
+
+

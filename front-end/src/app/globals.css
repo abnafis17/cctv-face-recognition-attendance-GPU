@@ -122,4 +122,13 @@
   body {
     @apply bg-background text-foreground;
   }
+  button:not(:disabled),
+  input[type="button"]:not(:disabled),
+  input[type="submit"]:not(:disabled),
+  input[type="reset"]:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]):not([disabled]),
+  a[href],
+  summary {
+    cursor: pointer;
+  }
 }

@@ -8,13 +8,11 @@ export default function ProtectedShell({
 }) {
   return (
     <AuthGuard>
-      {/* Full viewport height, prevent whole-page scrolling */}
-      <div className="flex h-screen overflow-hidden bg-gray-50">
-        {/* Sidebar: fixed, full height */}
+      <div className="flex h-dvh overflow-hidden bg-gradient-to-br from-slate-200 via-slate-100 to-zinc-200">
         <Sidebar />
-
-        {/* Only main content scrolls */}
-        <main className="flex-1 overflow-y-auto p-6">{children}</main>
+        <main className="flex-1 overflow-y-auto overscroll-y-contain px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-[calc(env(safe-area-inset-top)+5.5rem)] md:px-5 md:pb-5 md:pt-6 lg:p-6">
+          {children}
+        </main>
       </div>
     </AuthGuard>
   );

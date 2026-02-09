@@ -1,11 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AI_HOST } from "@/config/axiosInstance";
+import { cn } from "@/lib/utils";
 
 interface LocalCameraProps {
-  userId?: string; // cameraId
-  companyId?: string; // for recognition gallery
-  cameraName?: string; // NEW: display + recognition URL
-  streamType?: string; // "headcount" | "ot"
+  userId?: string;
+  companyId?: string;
+  cameraName?: string;
+  streamType?: string;
+  className?: string;
+  onActiveChange?: (active: boolean) => void;
 }
 
 const DEFAULT_CAMERA_ID = "cmkdpsq300000j7284bwluxh2";
@@ -15,12 +18,16 @@ const HeadCountCameraComponent: React.FC<LocalCameraProps> = ({
   companyId,
   cameraName,
   streamType: streamTypeProp,
+  className,
+  onActiveChange,
 }) => {
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
 
   const [localActive, setLocalActive] = useState(false);
+  const [wsError, setWsError] = useState("");
 
   const cameraId = useMemo(() => {
     if (userId?.trim()) return userId.trim();
@@ -31,7 +38,6 @@ const HeadCountCameraComponent: React.FC<LocalCameraProps> = ({
   const displayName = (cameraName?.trim() || "Laptop Camera").trim();
   const streamType = (streamTypeProp?.trim() || "headcount").trim();
 
-  // Recognition MJPEG (same overlay as IP cameras)
   const recQuery = useMemo(() => {
     const params = new URLSearchParams();
     params.set("type", streamType);
@@ -54,13 +60,15 @@ const HeadCountCameraComponent: React.FC<LocalCameraProps> = ({
   }, []);
 
   const stopLocalCamera = useCallback(() => {
-    try {
-      if (localVideoRef.current?.srcObject) {
-        (localVideoRef.current.srcObject as MediaStream)
-          .getTracks()
-          .forEach((t) => t.stop());
-      }
-    } catch {}
+    setWsError("");
+
+    const stream =
+      localStreamRef.current ||
+      (localVideoRef.current?.srcObject as MediaStream | null);
+    if (stream) stream.getTracks().forEach((t) => t.stop());
+
+    localStreamRef.current = null;
+    if (localVideoRef.current) localVideoRef.current.srcObject = null;
 
     try {
       pcRef.current?.close();
@@ -76,14 +84,16 @@ const HeadCountCameraComponent: React.FC<LocalCameraProps> = ({
     setLocalActive(false);
   }, []);
 
-  // ✅ Ensure no stale streams when cameraId/companyId changes or component unmounts
+  useEffect(() => {
+    onActiveChange?.(localActive);
+  }, [localActive, onActiveChange]);
+
   useEffect(() => {
     return () => stopLocalCamera();
   }, [stopLocalCamera]);
 
   const prevKeyRef = useRef<string>(`${cameraId}|${companyId || ""}|${streamType}`);
   useEffect(() => {
-    // If user switches camera while active, stop cleanly (user can Start again)
     const key = `${cameraId}|${companyId || ""}|${streamType}`;
     const changed = prevKeyRef.current !== key;
     if (changed && localActive) stopLocalCamera();
@@ -92,11 +102,15 @@ const HeadCountCameraComponent: React.FC<LocalCameraProps> = ({
 
   const startLocalCamera = async () => {
     try {
-      // Important for phone: playsInline is used in the <video>, but we also keep constraints simple.
+      setWsError("");
+
+      if (localActive) stopLocalCamera();
+
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: 640, height: 480 },
         audio: false,
       });
+      localStreamRef.current = stream;
 
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
@@ -113,14 +127,11 @@ const HeadCountCameraComponent: React.FC<LocalCameraProps> = ({
       wsRef.current = ws;
 
       ws.onerror = () => {
-        stopLocalCamera();
+        setWsError("WebSocket connection failed");
       };
 
-      pc.onconnectionstatechange = () => {
-        const s = pc.connectionState;
-        if (s === "failed" || s === "disconnected" || s === "closed") {
-          stopLocalCamera();
-        }
+      ws.onclose = () => {
+        if (pcRef.current) setWsError("WebSocket connection closed");
       };
 
       ws.onopen = async () => {
@@ -148,7 +159,7 @@ const HeadCountCameraComponent: React.FC<LocalCameraProps> = ({
       };
 
       pc.onicecandidate = (event) => {
-        if (event.candidate) {
+        if (event.candidate && ws.readyState === WebSocket.OPEN) {
           ws.send(
             JSON.stringify({
               ice: event.candidate,
@@ -163,81 +174,87 @@ const HeadCountCameraComponent: React.FC<LocalCameraProps> = ({
       setLocalActive(true);
     } catch (err) {
       console.error("Camera start failed", err);
-      alert("Camera access failed");
+      setWsError("Camera access failed");
       stopLocalCamera();
     }
   };
 
   return (
-    <div className="rounded-xl border bg-white p-4 shadow-sm max-w-md">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="font-semibold text-sm">{displayName}</div>
-          <div className="text-xs text-gray-500">WebRTC + Recognition</div>
-          <div className="mt-0.5 text-[11px] text-gray-400 break-all">
-            CameraId: {cameraId}
+    <article
+      className={cn(
+        "rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm",
+        className,
+      )}
+    >
+      <video ref={localVideoRef} autoPlay playsInline muted className="hidden" />
+
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="truncate text-sm font-semibold text-zinc-900">
+            {displayName}
           </div>
+          <div className="text-xs text-zinc-500">WebRTC + Recognition</div>
         </div>
 
-        <span
-          className={`text-xs px-2 py-0.5 rounded-full ${
+        <button
+          type="button"
+          onClick={localActive ? stopLocalCamera : startLocalCamera}
+          className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
             localActive
-              ? "bg-green-100 text-green-700"
-              : "bg-gray-100 text-gray-500"
+              ? "border-red-300 bg-red-50 text-red-700 hover:bg-red-100"
+              : "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+          }`}
+        >
+          {localActive ? "Stop" : "Start"}
+        </button>
+      </div>
+
+      <div className="relative mt-3 overflow-hidden rounded-xl border border-zinc-200 bg-zinc-950">
+        <div className="aspect-video w-full">
+          {localActive ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={recUrl}
+              alt="Recognition stream"
+              className="h-full w-full object-cover"
+              width={1280}
+              height={720}
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center text-sm text-zinc-300">
+              Start camera to view recognition overlay
+            </div>
+          )}
+        </div>
+
+        <div className="pointer-events-none absolute right-2 top-2 rounded-md bg-black/70 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-white">
+          {localActive ? "LIVE" : "OFFLINE"}
+        </div>
+
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(transparent_0,rgba(255,255,255,0.05)_50%,transparent_100%)] bg-[length:100%_6px] opacity-20" />
+      </div>
+
+      {wsError ? (
+        <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-600">
+          {wsError}
+        </div>
+      ) : null}
+
+      <div className="mt-3 flex items-center justify-between">
+        <span className="truncate rounded-md bg-zinc-100 px-2 py-1 font-mono text-[10px] text-zinc-600">
+          {cameraId}
+        </span>
+        <span
+          className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+            localActive
+              ? "bg-emerald-100 text-emerald-700"
+              : "bg-zinc-100 text-zinc-500"
           }`}
         >
           {localActive ? "ACTIVE" : "OFF"}
         </span>
       </div>
-
-      {/* Local Preview */}
-      <div className="mt-3 aspect-video overflow-hidden rounded-lg border bg-black">
-        <video
-          ref={localVideoRef}
-          autoPlay
-          playsInline
-          muted
-          className="h-full w-full object-cover"
-        />
-      </div>
-
-      {/* Recognition Overlay */}
-      <div className="mt-3 aspect-video overflow-hidden rounded-lg border bg-gray-100">
-        {localActive ? (
-          // MJPEG stream (not compatible with next/image optimizations)
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={recUrl}
-            alt="Recognition stream"
-            className="h-full w-full object-cover"
-          />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center text-xs text-gray-500">
-            Start camera to view recognition overlay
-          </div>
-        )}
-      </div>
-
-      {/* Controls */}
-      <div className="mt-3 flex justify-end gap-2">
-        {localActive ? (
-          <button
-            onClick={stopLocalCamera}
-            className="rounded-md border border-red-300 bg-red-50 px-3 py-1 text-xs text-red-600"
-          >
-            Stop Camera
-          </button>
-        ) : (
-          <button
-            onClick={startLocalCamera}
-            className="rounded-md border border-green-300 bg-green-50 px-3 py-1 text-xs text-green-700"
-          >
-            Start Camera
-          </button>
-        )}
-      </div>
-    </div>
+    </article>
   );
 };
 

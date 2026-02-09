@@ -1,6 +1,6 @@
 "use client";
 
-import Image from "next/image";
+import React, { useEffect, useState } from "react";
 import type { Camera } from "@/types";
 
 function maskRtspUrl(url?: string | null): string {
@@ -34,6 +34,12 @@ const CameraMonitorCard: React.FC<Props> = ({
   onDisableAttendance,
 }) => {
   const active = Boolean(camera.isActive);
+  const [streamHasFrame, setStreamHasFrame] = useState(false);
+
+  // Reset loading state when camera state/url changes.
+  useEffect(() => {
+    setStreamHasFrame(false);
+  }, [active, streamUrl]);
 
   return (
     <article className="rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm">
@@ -59,28 +65,45 @@ const CameraMonitorCard: React.FC<Props> = ({
         </button>
       </div>
 
-      <div className="relative mt-3 overflow-hidden rounded-xl border border-zinc-200 bg-zinc-950">
+      <div
+        className={`relative mt-3 overflow-hidden rounded-xl border border-zinc-200 ${
+          streamHasFrame ? "bg-zinc-950" : "bg-zinc-100"
+        }`}
+      >
         <div className="aspect-video w-full">
           {active ? (
-            <Image
-              src={streamUrl}
-              alt={`Camera ${camera.name} Stream`}
-              className="h-full w-full object-cover"
-              width={1280}
-              height={720}
-              unoptimized
-            />
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={streamUrl}
+                alt={`Camera ${camera.name} Stream`}
+                className={`h-full w-full object-cover transition-opacity duration-200 ${
+                  streamHasFrame ? "opacity-100" : "opacity-0"
+                }`}
+                width={1280}
+                height={720}
+                onLoad={() => setStreamHasFrame(true)}
+                onError={() => setStreamHasFrame(false)}
+              />
+              {!streamHasFrame ? (
+                <div className="absolute inset-0 flex items-center justify-center text-sm text-zinc-500">
+                  Loading stream...
+                </div>
+              ) : null}
+            </>
           ) : (
-            <div className="flex h-full w-full items-center justify-center text-sm text-zinc-300">
+            <div className="flex h-full w-full items-center justify-center text-sm text-zinc-500">
               Camera OFF
             </div>
           )}
         </div>
 
-        <div className="pointer-events-none absolute left-2 top-2 rounded-md bg-black/70 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-white">
+        <div className="pointer-events-none absolute right-2 top-2 rounded-md bg-black/70 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-white">
           {active ? "LIVE" : "OFFLINE"}
         </div>
-        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(transparent_0,rgba(255,255,255,0.05)_50%,transparent_100%)] bg-[length:100%_6px] opacity-20" />
+        {streamHasFrame ? (
+          <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(transparent_0,rgba(255,255,255,0.05)_50%,transparent_100%)] bg-[length:100%_6px] opacity-20" />
+        ) : null}
       </div>
 
       <div className="mt-3 flex flex-wrap gap-2">

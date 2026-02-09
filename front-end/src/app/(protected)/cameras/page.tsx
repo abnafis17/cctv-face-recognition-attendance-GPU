@@ -1,14 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
-import {
-  CircleDot,
-  ListVideo,
-  RefreshCw,
-  ShieldCheck,
-  Video,
-} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ListVideo } from "lucide-react";
 import { AI_HOST } from "@/config/axiosInstance";
 import type { Camera } from "@/types";
 import { getCompanyIdFromToken } from "@/lib/authStorage";
@@ -31,8 +25,8 @@ function normalizeApiError(error: unknown, fallback: string): string {
 export default function CamerasPage() {
   const [cams, setCams] = useState<Camera[]>([]);
   const [err, setErr] = useState<string>("");
-  const [refreshing, setRefreshing] = useState(false);
   const [actionCamId, setActionCamId] = useState<string | null>(null);
+  const [laptopActive, setLaptopActive] = useState(false);
 
   const companyId = getCompanyIdFromToken();
 
@@ -47,22 +41,36 @@ export default function CamerasPage() {
   const { load } = useCamerasLoader({ setCams, setErr });
   const { enableAttendance, disableAttendance } = useAttendanceToggle({ setErr });
 
-  const totalScreens = cams.length + 1; // +1 for laptop camera
-  const activeScreens = cams.filter((c) => c.isActive).length;
-  const offlineScreens = cams.length - activeScreens;
+  const totalScreens = cams.length + 1; // +1 for laptop camera card
+  const activeScreens =
+    cams.filter((c) => c.isActive).length + (laptopActive ? 1 : 0);
+  const offlineScreens = Math.max(totalScreens - activeScreens, 0);
 
   const laptopCameraId = companyId
     ? `laptop-${companyId}`
     : "cmkdpsq300000j7284bwluxh2";
 
-  const refreshCameras = async () => {
-    try {
-      setRefreshing(true);
-      await load();
-    } finally {
-      setRefreshing(false);
-    }
-  };
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      load();
+    }, 10000);
+
+    const onFocus = () => {
+      load();
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") load();
+    };
+
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [load]);
 
   const startCamera = async (cam: Camera) => {
     try {
@@ -89,66 +97,39 @@ export default function CamerasPage() {
   };
 
   return (
-    <div className="space-y-5">
-      <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-zinc-900">Camera Control Panel</h1>
-            <p className="mt-1 text-sm text-zinc-500">
-              Live CCTV monitor wall with face recognition overlay (AI: {AI_HOST})
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={refreshCameras}
-              disabled={refreshing}
-              className="inline-flex items-center rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-60"
-            >
-              <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-              Refresh
-            </button>
-            <Link
-              href="/camera-list"
-              className="inline-flex items-center rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800"
-            >
-              <ListVideo className="mr-2 h-4 w-4" />
-              Camera List
-            </Link>
-          </div>
+    <div className="space-y-4">
+      <header className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-zinc-900">Camera Control Panel</h1>
+          <p className="mt-1 text-sm text-zinc-500">
+            Live camera view with recognition overlay (AI: {AI_HOST})
+          </p>
         </div>
 
-        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-          <div className="rounded-xl border bg-zinc-50 px-4 py-3">
-            <div className="text-xs uppercase tracking-wide text-zinc-500">Total Screens</div>
-            <div className="mt-1 text-2xl font-bold text-zinc-900">{totalScreens}</div>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-medium text-zinc-600">
+            <span>
+              Total: <span className="font-semibold text-zinc-900">{totalScreens}</span>
+            </span>
+            <span className="h-3 w-px bg-zinc-200" />
+            <span>
+              Active: <span className="font-semibold text-emerald-700">{activeScreens}</span>
+            </span>
+            <span className="h-3 w-px bg-zinc-200" />
+            <span>
+              Offline: <span className="font-semibold text-zinc-700">{offlineScreens}</span>
+            </span>
           </div>
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
-            <div className="text-xs uppercase tracking-wide text-emerald-700">Active Streams</div>
-            <div className="mt-1 text-2xl font-bold text-emerald-700">{activeScreens}</div>
-          </div>
-          <div className="rounded-xl border border-zinc-200 bg-white px-4 py-3">
-            <div className="text-xs uppercase tracking-wide text-zinc-500">Offline Streams</div>
-            <div className="mt-1 text-2xl font-bold text-zinc-700">{offlineScreens}</div>
-          </div>
-        </div>
 
-        <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-zinc-600">
-          <span className="inline-flex items-center rounded-full bg-zinc-100 px-2 py-1 font-medium">
-            <Video className="mr-1 h-3.5 w-3.5" />
-            Aspect Ratio: 16:9
-          </span>
-          <span className="inline-flex items-center rounded-full bg-zinc-100 px-2 py-1 font-medium">
-            <ShieldCheck className="mr-1 h-3.5 w-3.5" />
-            Attendance Controls Enabled
-          </span>
-          <span className="inline-flex items-center rounded-full bg-zinc-100 px-2 py-1 font-medium">
-            <CircleDot className="mr-1 h-3.5 w-3.5 text-red-500" />
-            CCTV Monitor View
-          </span>
+          <Link
+            href="/camera-list"
+            className="inline-flex items-center rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800"
+          >
+            <ListVideo className="mr-2 h-4 w-4" />
+            Camera List
+          </Link>
         </div>
-      </section>
+      </header>
 
       {err ? (
         <div className="rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -161,6 +142,7 @@ export default function CamerasPage() {
           userId={laptopCameraId}
           companyId={companyId || ""}
           cameraName="Laptop Camera"
+          onActiveChange={setLaptopActive}
         />
 
         {cams.map((camera) => (

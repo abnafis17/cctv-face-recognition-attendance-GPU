@@ -13,6 +13,7 @@ interface LocalCameraProps {
   companyId?: string; // for recognition gallery
   cameraName?: string; // <-- NEW
   className?: string;
+  onActiveChange?: (active: boolean) => void;
 }
 
 const DEFAULT_CAMERA_ID = "cmkdpsq300000j7284bwluxh2";
@@ -22,6 +23,7 @@ const LocalCamera: React.FC<LocalCameraProps> = ({
   companyId,
   cameraName = "Laptop Camera",
   className,
+  onActiveChange,
 }) => {
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -85,6 +87,10 @@ const LocalCamera: React.FC<LocalCameraProps> = ({
 
     setLocalActive(false);
   }, []);
+
+  useEffect(() => {
+    onActiveChange?.(localActive);
+  }, [localActive, onActiveChange]);
 
   // Ensure no stale streams when component unmounts
   useEffect(() => {
@@ -227,7 +233,7 @@ const LocalCamera: React.FC<LocalCameraProps> = ({
           </div>
         )}
         </div>
-        <div className="pointer-events-none absolute left-2 top-2 rounded-md bg-black/70 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-white">
+        <div className="pointer-events-none absolute right-2 top-2 rounded-md bg-black/70 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-white">
           {localActive ? "LIVE" : "OFFLINE"}
         </div>
         <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(transparent_0,rgba(255,255,255,0.05)_50%,transparent_100%)] bg-[length:100%_6px] opacity-20" />

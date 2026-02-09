@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  LayoutDashboard,
   Video,
   Users,
   CalendarClock,
@@ -12,8 +11,12 @@ import {
   GraduationCap,
   History,
   ListVideo,
+  Menu,
+  X,
 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { clearAccessToken } from "@/lib/authStorage";
+import { cn } from "@/lib/utils";
 
 const nav = [
   // { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -31,37 +34,62 @@ function isActive(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(href + "/");
 }
 
-export default function Sidebar() {
+function SidebarContent({
+  compact = false,
+  onNavigate,
+}: {
+  compact?: boolean;
+  onNavigate?: () => void;
+}) {
   const pathname = usePathname();
   const router = useRouter();
 
   function onLogout() {
     clearAccessToken();
     router.replace("/login");
+    onNavigate?.();
   }
 
   return (
-    <aside className="flex h-screen w-72 flex-col border-r bg-white">
-      {/* Header (fixed) */}
-      <div className="shrink-0 border-b px-5 py-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-zinc-900 text-white">
+    <>
+      <div
+        className={cn(
+          "shrink-0 border-b border-white/10",
+          compact ? "px-3 py-4" : "px-5 py-5"
+        )}
+      >
+        <div
+          className={cn(
+            "flex items-center",
+            compact ? "justify-center" : "gap-3"
+          )}
+        >
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-white ring-1 ring-white/20">
             <Video className="h-5 w-5" />
           </div>
-          <div>
-            <div className="text-sm font-semibold text-zinc-900">
-              CCTV Panel
+          {!compact && (
+            <div>
+              <div className="text-sm font-semibold text-white">CCTV Panel</div>
+              <div className="text-xs text-zinc-400">
+                Face Recognition Admin
+              </div>
             </div>
-            <div className="text-xs text-zinc-500">Face Recognition Admin</div>
-          </div>
+          )}
         </div>
       </div>
 
-      {/* Nav (scrolls only if too long) */}
-      <nav className="flex-1 overflow-y-auto px-3 py-4">
-        <div className="mb-2 px-2 text-[11px] font-medium uppercase tracking-wider text-zinc-400">
-          Main
-        </div>
+      <nav
+        className={cn(
+          "flex-1 overflow-y-auto",
+          compact ? "px-2 py-3" : "px-3 py-4"
+        )}
+        style={{ WebkitOverflowScrolling: "touch" }}
+      >
+        {!compact && (
+          <div className="mb-2 px-2 text-[11px] font-medium uppercase tracking-[0.18em] text-zinc-500">
+            Navigation
+          </div>
+        )}
 
         <div className="space-y-1">
           {nav.map((n) => {
@@ -72,40 +100,165 @@ export default function Sidebar() {
               <Link
                 key={n.href}
                 href={n.href}
-                className={[
-                  "flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition",
+                onClick={onNavigate}
+                title={compact ? n.label : undefined}
+                className={cn(
+                  "group flex items-center rounded-2xl transition-all duration-200",
+                  compact ? "justify-center px-2 py-3" : "gap-3 px-3 py-2.5",
                   active
-                    ? "bg-zinc-900 text-white"
-                    : "text-zinc-700 hover:bg-zinc-100",
-                ].join(" ")}
+                    ? "bg-white text-zinc-900 shadow-sm"
+                    : "text-zinc-300 hover:bg-white/10 hover:text-white"
+                )}
               >
                 <Icon
-                  className={[
-                    "h-4 w-4",
-                    active ? "text-white" : "text-zinc-500",
-                  ].join(" ")}
+                  className={cn(
+                    compact ? "h-5 w-5" : "h-4 w-4",
+                    active
+                      ? "text-zinc-900"
+                      : "text-zinc-400 group-hover:text-zinc-100"
+                  )}
                 />
-                <span className="truncate">{n.label}</span>
+                {compact ? (
+                  <span className="sr-only">{n.label}</span>
+                ) : (
+                  <span className="truncate text-sm">{n.label}</span>
+                )}
               </Link>
             );
           })}
         </div>
       </nav>
 
-      {/* Bottom actions (fixed) */}
-      <div className="shrink-0 border-t p-3">
+      <div
+        className={cn(
+          "shrink-0 border-t border-white/10",
+          compact ? "px-2 pb-3 pt-3" : "p-3"
+        )}
+      >
         <button
           onClick={onLogout}
-          className="flex w-full items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100"
+          title={compact ? "Logout" : undefined}
+          className={cn(
+            "flex w-full items-center rounded-xl border border-white/20 px-3 py-2.5 text-sm font-medium text-zinc-100 transition",
+            compact
+              ? "justify-center"
+              : "justify-center gap-2 hover:bg-white/10 active:scale-[0.99]"
+          )}
         >
           <LogOut className="h-4 w-4" />
-          Logout
+          {compact ? <span className="sr-only">Logout</span> : "Logout"}
         </button>
 
-        <div className="mt-3 px-1 text-center text-xs text-zinc-400">
-          © {new Date().getFullYear()} Pakiza Software Ltd
-        </div>
+        {!compact && (
+          <div className="mt-3 px-1 text-center text-xs text-zinc-500">
+            (c) {new Date().getFullYear()} Pakiza Software Ltd
+          </div>
+        )}
       </div>
-    </aside>
+    </>
+  );
+}
+
+export default function Sidebar() {
+  const pathname = usePathname();
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    const previousTouchAction = document.body.style.touchAction;
+
+    document.body.style.overflow = "hidden";
+    document.body.style.touchAction = "none";
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.body.style.touchAction = previousTouchAction;
+    };
+  }, [mobileOpen]);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileOpen(false);
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [mobileOpen]);
+
+  return (
+    <>
+      <header className="fixed inset-x-0 top-0 z-40 border-b border-zinc-200/80 bg-white/90 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] backdrop-blur md:hidden">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-zinc-900 text-white">
+              <Video className="h-4 w-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="truncate text-sm font-semibold text-zinc-900">
+                CCTV Panel
+              </div>
+              <div className="truncate text-[11px] text-zinc-500">
+                Face Recognition Admin
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            aria-label={mobileOpen ? "Close sidebar" : "Open sidebar"}
+            aria-expanded={mobileOpen}
+            aria-controls="mobile-sidebar"
+            onClick={() => setMobileOpen((prev) => !prev)}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-zinc-200 bg-white text-zinc-700 shadow-sm transition hover:bg-zinc-100 active:scale-[0.98]"
+          >
+            {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
+        </div>
+      </header>
+
+      <div
+        className={cn(
+          "fixed inset-0 z-50 md:hidden",
+          mobileOpen ? "pointer-events-auto" : "pointer-events-none"
+        )}
+        aria-hidden={!mobileOpen}
+      >
+        <button
+          aria-label="Close sidebar"
+          onClick={() => setMobileOpen(false)}
+          className={cn(
+            "absolute inset-0 bg-zinc-950/45 backdrop-blur-[2px] transition-opacity duration-200",
+            mobileOpen ? "opacity-100" : "opacity-0"
+          )}
+        />
+
+        <aside
+          id="mobile-sidebar"
+          className={cn(
+            "absolute inset-y-0 left-0 flex w-[85vw] max-w-[330px] flex-col bg-zinc-950 pt-[env(safe-area-inset-top)] text-zinc-100 shadow-2xl transition-transform duration-300 ease-out",
+            mobileOpen ? "translate-x-0" : "-translate-x-full"
+          )}
+        >
+          <SidebarContent onNavigate={() => setMobileOpen(false)} />
+          <div className="h-[calc(env(safe-area-inset-bottom)+0.75rem)] shrink-0" />
+        </aside>
+      </div>
+
+      <aside className="hidden h-dvh w-20 flex-col border-r border-zinc-200 bg-zinc-950 text-zinc-100 md:flex lg:hidden">
+        <SidebarContent compact />
+      </aside>
+
+      <aside className="hidden h-dvh w-72 flex-col border-r border-zinc-200 bg-zinc-950 text-zinc-100 lg:flex">
+        <SidebarContent />
+      </aside>
+    </>
   );
 }

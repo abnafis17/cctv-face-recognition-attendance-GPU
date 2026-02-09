@@ -1082,13 +1082,13 @@ class AttendanceRuntime:
 
         # HUD / overlay
         _put_text_white(annotated, f"frame={state.frame_idx}", 12, 36, scale=1.05)
-        _put_text_white(
-            annotated,
-            f"mode={state.scheduler.mode_label()} motion={motion_score:.3f}",
-            12,
-            68,
-            scale=0.75,
-        )
+        # _put_text_white(
+        #     annotated,
+        #     f"mode={state.scheduler.mode_label()} motion={motion_score:.3f}",
+        #     12,
+        #     68,
+        #     scale=0.75,
+        # )
 
         h, w = annotated.shape[:2]
         unknown_count = 0
