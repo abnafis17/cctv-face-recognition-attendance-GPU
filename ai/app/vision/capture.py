@@ -123,6 +123,11 @@ class FrameGrabber:
                 self._log_stream_info(prefix=f"Webcam[{idx}]", best_hint=best, cap=cap)
             else:
                 # RTSP/IP camera
+                # OpenCV+FFmpeg can buffer old frames; this reduces end-to-end lag.
+                os.environ.setdefault(
+                    "OPENCV_FFMPEG_CAPTURE_OPTIONS",
+                    "rtsp_transport;tcp|fflags;nobuffer|max_delay;0|flags;low_delay|reorder_queue_size;0",
+                )
                 cap = cv2.VideoCapture()
                 if (
                     self.cap_open_timeout_ms > 0

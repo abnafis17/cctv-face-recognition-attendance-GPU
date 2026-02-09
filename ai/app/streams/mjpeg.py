@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import time
 from typing import Optional, Generator
 
@@ -53,6 +54,10 @@ def mjpeg_generator_recognition(
     rec_worker = container.rec_worker
     stream_clients = container.stream_clients
 
+    max_cached_jpeg_age_s = max(
+        0.2, float(os.getenv("RECOGNITION_MAX_CACHED_JPEG_AGE_S", "1.5"))
+    )
+
     st = normalize_stream_type(stream_type)
     stream_clients.inc(camera_id, st)
 
@@ -65,7 +70,12 @@ def mjpeg_generator_recognition(
 
     try:
         while True:
-            jpg_bytes = rec_worker.get_latest_jpeg(camera_id)
+            jpg_bytes: Optional[bytes] = None
+            cached = rec_worker.get_latest_jpeg_item(camera_id)
+            if cached is not None:
+                cached_bytes, cached_ts = cached
+                if (time.time() - float(cached_ts)) <= max_cached_jpeg_age_s:
+                    jpg_bytes = cached_bytes
 
             if jpg_bytes is None:
                 raw = camera_rt.get_frame(camera_id)

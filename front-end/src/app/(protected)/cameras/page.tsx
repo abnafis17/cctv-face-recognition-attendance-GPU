@@ -181,22 +181,30 @@ export default function CamerasPage() {
           onActiveChange={setLaptopActive}
         />
 
-        {cams.map((camera) => (
+        {cams.map((camera) => {
+          const attendanceEnabled =
+            attendanceEnabledByCamId[camera.id] ?? Boolean(camera.attendance);
+          const streamUrl = attendanceEnabled
+            ? `${AI_HOST}/camera/recognition/stream/${encodeURIComponent(
+                camera.id,
+              )}/${encodeURIComponent(camera.name)}${streamQuery}`
+            : `${AI_HOST}/camera/stream/${encodeURIComponent(camera.id)}`;
+
+          return (
           <CameraMonitorCard
             key={camera.id}
             camera={camera}
-            streamUrl={`${AI_HOST}/camera/recognition/stream/${encodeURIComponent(
-              camera.id,
-            )}/${encodeURIComponent(camera.name)}${streamQuery}`}
+            streamUrl={streamUrl}
             busy={actionCamId === camera.id}
-            attendanceEnabled={attendanceEnabledByCamId[camera.id]}
+            attendanceEnabled={attendanceEnabled}
             attendanceBusy={attendanceActionCamId === camera.id}
             onStart={startCamera}
             onStop={stopCamera}
             onEnableAttendance={handleEnableAttendance}
             onDisableAttendance={handleDisableAttendance}
           />
-        ))}
+          );
+        })}
       </section>
     </div>
   );

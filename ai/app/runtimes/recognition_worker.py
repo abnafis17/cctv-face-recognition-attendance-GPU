@@ -89,6 +89,12 @@ class RecognitionWorker:
             item = self._latest_jpg.get(camera_id)
             return None if item is None else item[0]
 
+    def get_latest_jpeg_item(self, camera_id: str) -> Optional[Tuple[bytes, float]]:
+        lock = self._locks.setdefault(camera_id, threading.Lock())
+        with lock:
+            item = self._latest_jpg.get(camera_id)
+            return None if item is None else (item[0], float(item[1]))
+
     def _loop(self, camera_id: str, camera_name: str):
         last_t = 0.0
 
