@@ -107,11 +107,28 @@ export function useErpEmployees(options?: {
   const debounceRef = useRef<any>(null);
   const mountedRef = useRef(false);
 
+  const readOrganizationId = useCallback((): string => {
+    if (typeof window === "undefined") return "";
+
+    try {
+      const raw = localStorage.getItem("userInfo");
+      if (!raw) return "";
+      const userInfo = JSON.parse(raw);
+      return String(
+        userInfo?.organizationId ??
+          userInfo?.oragnizationId ??
+          userInfo?.company?.organization_id ??
+          "",
+      ).trim();
+    } catch {
+      return "";
+    }
+  }, []);
+
   const fetchEmployees = useCallback(async (q: string) => {
     setLoading(true);
     setError("");
 
-    const userInfo = JSON.parse(localStorage.getItem("userInfo") || "{}");
     const erpBase = String(ERP_HOST || "").trim();
     if (!erpBase) {
       setEmployees([]);
@@ -129,7 +146,7 @@ export function useErpEmployees(options?: {
         pageNumber: 0,
         pageSize: 0,
         search: q || "",
-        organizationId: userInfo.oragnizationId || "",
+        organizationId: readOrganizationId(),
       };
 
       const res = await erpAxios.post(
@@ -180,7 +197,7 @@ export function useErpEmployees(options?: {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [readOrganizationId]);
 
   // Debounced search effect
   useEffect(() => {

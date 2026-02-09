@@ -17,6 +17,9 @@ type AuthUser = {
   id: string;
   name?: string | null;
   email: string;
+  companyName?: string | null;
+  organizationId?: string | null;
+  oragnizationId?: string | null;
   role: string;
   isActive: boolean;
 };
@@ -67,6 +70,7 @@ export async function registerApi(input: {
       throw new Error("Invalid register response");
 
     setTokens(data.accessToken, data.refreshToken);
+    setUser(data.user);
     return data.user;
   } catch (err: any) {
     const msg =

@@ -1,6 +1,8 @@
 // src/routes/auth.routes.ts
 import { Router, Request, Response } from "express";
 import { ZodError } from "zod";
+import { prisma } from "../prisma";
+import { verifyAccessToken } from "../utils/jwt";
 
 import { registerSchema, loginSchema } from "../validators/auth.validators";
 import {
@@ -128,5 +130,51 @@ authRouter.post("/logout", async (req: Request, res: Response) => {
     return res.status(200).json({ ok: true });
   } catch (e) {
     return sendError(res, e, "Logout failed", 400);
+  }
+});
+
+authRouter.get("/me", async (req: Request, res: Response) => {
+  try {
+    const auth = String(req.headers.authorization ?? "").trim();
+    if (!auth.startsWith("Bearer ")) {
+      return res.status(401).json({ ok: false, message: "Unauthorized" });
+    }
+
+    const token = auth.slice("Bearer ".length).trim();
+    if (!token) {
+      return res.status(401).json({ ok: false, message: "Unauthorized" });
+    }
+
+    const payload = verifyAccessToken(token);
+    const userId = String(payload.sub ?? "").trim();
+    if (!userId) {
+      return res.status(401).json({ ok: false, message: "Unauthorized" });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { company: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({ ok: false, message: "User not found" });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      results: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        isActive: user.isActive,
+        companyId: user.companyId,
+        companyName: user?.company?.companyName ?? null,
+        organizationId: user?.company?.organization_id ?? null,
+        oragnizationId: user?.company?.organization_id ?? null,
+      },
+    });
+  } catch (e) {
+    return sendError(res, e, "Unauthorized", 401);
   }
 });

@@ -7,6 +7,8 @@ import {
   Users,
   CalendarClock,
   LogOut,
+  Building2,
+  Mail,
   Cctv,
   GraduationCap,
   History,
@@ -14,9 +16,10 @@ import {
   Menu,
   X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
-import { clearAccessToken } from "@/lib/authStorage";
+import { useEffect, useRef, useState } from "react";
+import { clearAccessToken, getAccessToken } from "@/lib/authStorage";
 import { cn } from "@/lib/utils";
+import axiosInstance from "@/config/axiosInstance";
 
 const nav = [
   // { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -34,6 +37,67 @@ function isActive(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(href + "/");
 }
 
+type SidebarIdentity = {
+  companyName: string;
+  email: string;
+};
+
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
+  const parts = String(token || "").split(".");
+  if (parts.length < 2) return null;
+
+  const raw = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+  const padded = raw + "=".repeat((4 - (raw.length % 4)) % 4);
+
+  try {
+    return JSON.parse(atob(padded));
+  } catch {
+    return null;
+  }
+}
+
+function readSidebarIdentity(): SidebarIdentity {
+  if (typeof window === "undefined") {
+    return {
+      companyName: "Company Account",
+      email: "Not available",
+    };
+  }
+
+  let companyName = "";
+  let email = "";
+
+  try {
+    const rawUserInfo = localStorage.getItem("userInfo");
+    const userInfo = rawUserInfo ? JSON.parse(rawUserInfo) : null;
+
+    companyName = String(
+      userInfo?.companyName ?? userInfo?.company?.companyName ?? "",
+    ).trim();
+    email = String(userInfo?.email ?? "").trim();
+  } catch {
+    // ignore localStorage parse errors
+  }
+
+  const accessToken = getAccessToken();
+  const payload = accessToken ? decodeJwtPayload(accessToken) : null;
+
+  if (payload) {
+    if (!email) {
+      email = String(payload.email ?? "").trim();
+    }
+
+    if (!companyName) {
+      companyName = String(payload.companyName ?? payload.company_name ?? "").trim();
+    }
+  }
+
+  return {
+    companyName: companyName || "Company Account",
+    email: email || "Not available",
+  };
+}
+
 function SidebarContent({
   compact = false,
   onNavigate,
@@ -43,6 +107,68 @@ function SidebarContent({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  const [identity, setIdentity] = useState<SidebarIdentity>(() =>
+    readSidebarIdentity(),
+  );
+  const syncedTokenRef = useRef<string>("");
+
+  useEffect(() => {
+    const localIdentity = readSidebarIdentity();
+    setIdentity(localIdentity);
+
+    const token = getAccessToken();
+    if (!token) {
+      syncedTokenRef.current = "";
+      return;
+    }
+
+    if (syncedTokenRef.current === token) return;
+
+    let cancelled = false;
+
+    const syncIdentityFromDb = async () => {
+      try {
+        const res = await axiosInstance.get("/auth/me");
+        const me = res?.data?.results ?? {};
+        const companyName = String(
+          me?.companyName ?? me?.company?.companyName ?? "",
+        ).trim();
+        const email = String(me?.email ?? "").trim();
+
+        if (!cancelled && (companyName || email)) {
+          syncedTokenRef.current = token;
+          const nextIdentity: SidebarIdentity = {
+            companyName: companyName || localIdentity.companyName,
+            email: email || localIdentity.email,
+          };
+          setIdentity(nextIdentity);
+
+          try {
+            const raw = localStorage.getItem("userInfo");
+            const current = raw ? JSON.parse(raw) : {};
+            localStorage.setItem(
+              "userInfo",
+              JSON.stringify({
+                ...current,
+                ...me,
+                companyName: companyName || current?.companyName || "",
+              }),
+            );
+          } catch {
+            // ignore localStorage parse errors
+          }
+        }
+      } catch {
+        // keep local identity if /auth/me fails
+      }
+    };
+
+    void syncIdentityFromDb();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pathname]);
 
   function onLogout() {
     clearAccessToken();
@@ -135,6 +261,34 @@ function SidebarContent({
           compact ? "px-2 pb-3 pt-3" : "p-3"
         )}
       >
+        {!compact && (
+          <div className="mb-3 rounded-xl border border-white/15 bg-white/[0.05] px-3 py-2.5">
+            <div className="text-[10px] font-medium uppercase tracking-[0.14em] text-zinc-500">
+              Account
+            </div>
+            <div className="mt-2 flex items-start gap-2.5">
+              <div className="mt-0.5 rounded-md bg-white/10 p-1.5 text-zinc-300">
+                <Building2 className="h-3.5 w-3.5" />
+              </div>
+              <div className="min-w-0">
+                <div
+                  className="truncate text-sm font-semibold text-white"
+                  title={identity.companyName}
+                >
+                  {identity.companyName}
+                </div>
+                <div
+                  className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-zinc-400"
+                  title={identity.email}
+                >
+                  <Mail className="h-3 w-3 shrink-0" />
+                  <span className="truncate">{identity.email}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         <button
           onClick={onLogout}
           title={compact ? "Logout" : undefined}

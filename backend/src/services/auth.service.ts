@@ -74,7 +74,12 @@ export async function registerUser(input: {
     },
   });
 
-  if (!user.companyId) {
+  const safeUser = {
+    ...user,
+    companyName: company.companyName,
+  };
+
+  if (!safeUser.companyId) {
     const err = new Error("User is not assigned to a company");
     // @ts-ignore
     err.statusCode = 500;
@@ -82,9 +87,9 @@ export async function registerUser(input: {
   }
 
   // auto-login on register (optional)
-  const tokens = await issueTokens(user);
+  const tokens = await issueTokens(safeUser);
 
-  return { user, ...tokens };
+  return { user: safeUser, ...tokens };
 }
 
 export async function loginUser(
@@ -126,6 +131,8 @@ export async function loginUser(
     role: user.role,
     isActive: user.isActive,
     companyId: user.companyId,
+    companyName: user?.company?.companyName ?? null,
+    organizationId: user?.company?.organization_id ?? null,
     oragnizationId: user?.company?.organization_id,
   };
 

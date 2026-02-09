@@ -557,7 +557,6 @@ const EmployeeListTable = () => {
               columns={employeeColumns}
               loading={loading}
               headerCellClassName="whitespace-nowrap bg-zinc-50"
-              className="[&_th]:border-zinc-200 [&_td]:border-zinc-200"
             />
           </div>
         </div>

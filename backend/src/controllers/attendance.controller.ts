@@ -24,6 +24,21 @@ function parseFirstSeenIsoFromNotes(notes?: string | null): string | null {
   }
 }
 
+function dhakaTodayYYYYMMDD() {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Dhaka" });
+}
+
+function isYYYYMMDD(s: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(s);
+}
+
+function dhakaDayRange(dateStr: string) {
+  const start = new Date(`${dateStr}T00:00:00+06:00`);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+  return { start, end };
+}
+
 export async function createAttendance(req: Request, res: Response) {
   try {
     const companyId = String((req as any).companyId ?? "");
@@ -50,6 +65,11 @@ export async function createAttendance(req: Request, res: Response) {
       return res
         .status(400)
         .json({ error: "employeeId and timestamp required" });
+
+    const parsedTimestamp = new Date(timestamp);
+    if (Number.isNaN(parsedTimestamp.getTime())) {
+      return res.status(400).json({ error: "Invalid timestamp" });
+    }
 
     const employee = await getOrCreateEmployeeByAnyId(identifier, companyId, {
       nameIfCreate: "Unknown",
@@ -93,10 +113,7 @@ export async function createAttendance(req: Request, res: Response) {
       eventType === "ot_requisition" ||
       eventType === "otrequisition"
     ) {
-      const ts = new Date(timestamp);
-      if (Number.isNaN(ts.getTime())) {
-        return res.status(400).json({ error: "Invalid timestamp" });
-      }
+      const ts = parsedTimestamp;
 
       const dateStr = ts.toLocaleDateString("en-CA", { timeZone: "Asia/Dhaka" });
       const otId = `${employee.id}:${dateStr}`;
@@ -161,10 +178,7 @@ export async function createAttendance(req: Request, res: Response) {
     // Instead, upsert a per-employee/day Headcount row so the headcount page can
     // compare "attendance (today)" vs "headcount (now)".
     if (eventType === "headcount") {
-      const ts = new Date(timestamp);
-      if (Number.isNaN(ts.getTime())) {
-        return res.status(400).json({ error: "Invalid timestamp" });
-      }
+      const ts = parsedTimestamp;
 
       // Dhaka-day id so the headcount page can query by date without camera filtering.
       const dateStr = ts.toLocaleDateString("en-CA", { timeZone: "Asia/Dhaka" });
@@ -246,7 +260,7 @@ export async function createAttendance(req: Request, res: Response) {
     const row = await prisma.attendance.create({
       data: {
         employeeId: employee.id,
-        timestamp: new Date(timestamp),
+        timestamp: parsedTimestamp,
         cameraId: cam ? cam.id : null,
         confidence: confidence ?? null,
         companyId,
@@ -369,14 +383,26 @@ export async function attendanceEvents(req: Request, res: Response) {
 
 export async function dataSync(req: Request, res: Response) {
   try {
-    // Example: return count of attendance records for data sync (Dhaka day range)
-    const start = new Date("2026-01-13T00:00:00+06:00"); // Dhaka start
-    const end = new Date("2026-01-14T00:00:00+06:00"); // next day start
+    const companyId = String((req as any).companyId ?? "").trim();
+    if (!companyId) {
+      return res.status(400).json({ error: "Missing company id" });
+    }
 
-    const attendanceCount = await prisma.attendance.findMany({
+    const dateInput = String(req.query?.date ?? "").trim();
+    const dateStr = dateInput || dhakaTodayYYYYMMDD();
+    if (!isYYYYMMDD(dateStr)) {
+      return res.status(400).json({
+        error: "Invalid date. Expected YYYY-MM-DD",
+        example: "2026-02-09",
+      });
+    }
+
+    const { start, end } = dhakaDayRange(dateStr);
+
+    const attendanceRows = await prisma.attendance.findMany({
       where: {
-        companyId: "cmk9dp01a0000vpskicoq1gj0",
-        createdAt: {
+        companyId,
+        timestamp: {
           gte: start,
           lt: end,
         },
@@ -389,27 +415,26 @@ export async function dataSync(req: Request, res: Response) {
       },
     });
 
-    console.log("Range:", start.toISOString(), "->", end.toISOString());
-    console.log("Records:", attendanceCount.length);
+    let pushedCount = 0;
+    let failedCount = 0;
+    let skippedCount = 0;
 
-    for (const emp of attendanceCount) {
-      const empId = emp.employee?.empId;
-
+    for (const row of attendanceRows) {
+      const empId = row.employee?.empId;
       if (!empId) {
-        console.log(`⚠️ Skipped: missing empId for attendanceId=${emp.id}`);
+        skippedCount += 1;
         continue;
       }
 
       try {
-        // ✅ EXACT ERP payload shape (same keys)
         const payload = {
-          attendanceDate: toDDMMYYYY(emp.timestamp),
-          empId: empId,
-          inTime: toBDTimeHHMMSS(emp.timestamp), // "HH:MM:SS" in Asia/Dhaka
+          attendanceDate: toDDMMYYYY(row.timestamp),
+          empId,
+          inTime: toBDTimeHHMMSS(row.timestamp),
           inLocation: "Reception_Camera",
         };
 
-        const response = await axios.post(
+        await axios.post(
           "http://172.20.60.101:7001/api/v2/Attendance/manual-attendance",
           payload,
           {
@@ -422,20 +447,20 @@ export async function dataSync(req: Request, res: Response) {
           }
         );
 
-        console.log(
-          `✅ Attendance marked for ${empId}`,
-          `✅ Attendance TIME ${payload.inTime}`,
-          `✅ Attendance DATE ${payload.attendanceDate}`
-        );
-      } catch (error) {
-        console.log(`❌ Failed to mark attendance for ${empId}`, error);
+        pushedCount += 1;
+      } catch {
+        failedCount += 1;
       }
     }
 
     return res.status(200).json({
       ok: true,
       results: {
-        attendanceCount: attendanceCount.length,
+        date: dateStr,
+        attendanceCount: attendanceRows.length,
+        pushedCount,
+        failedCount,
+        skippedCount,
       },
     });
   } catch (e: any) {
@@ -445,105 +470,3 @@ export async function dataSync(req: Request, res: Response) {
     });
   }
 }
-
-// export async function dataSync(req: Request, res: Response) {
-//   try {
-//     // const companyId = String((req as any).companyId ?? "");
-
-//     // Example: return count of attendance records for data sync
-//     const start = new Date("2026-01-13T00:00:00+06:00"); // Dhaka start
-//     const end = new Date("2026-01-14T00:00:00+06:00"); // next day start
-
-//     const attendanceCount = await prisma.attendance.findMany({
-//       where: {
-//         companyId: "cmk9dp01a0000vpskicoq1gj0",
-//         createdAt: {
-//           gte: start,
-//           lt: end,
-//         },
-//       },
-//       include: {
-//         employee: true,
-//       },
-//       orderBy: {
-//         timestamp: "asc",
-//       },
-//     });
-
-//     console.log(
-//       attendanceCount.length,
-//       new Date(Date.now() - 4 * 24 * 60 * 60 * 1000)
-//     );
-
-//     for (const emp of attendanceCount) {
-//       try {
-//         const response = await axios.post(
-//           "http://172.20.60.101:7001/api/v2/Attendance/manual-attendance",
-//           {
-//             attendanceDate: toDDMMYYYY(emp.timestamp),
-//             empId: emp.employee?.empId,
-//             inTime: emp.timestamp.toISOString().slice(11, 19),
-//             inLocation: "Reception_Camera",
-//           },
-//           {
-//             headers: {
-//               Accept: "application/json",
-//               "Content-Type": "application/json",
-//               "x-api-version": "2.0",
-//             },
-//             timeout: 10000,
-//           }
-//         );
-
-//         console.log(
-//           `✅ Attendance marked for ${emp.employee?.empId}`,
-//           `✅ Attendance tIME  ${emp.timestamp.toISOString().slice(11, 19)}`,
-//           `✅ Attendance DATE  ${toDDMMYYYY(emp.timestamp)}`
-//         );
-//       } catch (error) {
-//         console.log(
-//           `❌ Failed to mark attendance for ${emp.employee?.empId}`,
-//           error
-//         );
-//       }
-//     }
-
-//     return res.status(200).json({
-//       ok: true,
-//       results: {
-//         attendanceCount: attendanceCount.length,
-//       },
-//     });
-//   } catch (e: any) {
-//     res.status(500).json({
-//       error: "Failed to sync attendance data",
-//       detail: e?.message ?? String(e),
-//     });
-//   }
-// }
-
-// function toDDMMYYYY(dateTimeStr: any) {
-//   // accept Date object too
-//   if (dateTimeStr instanceof Date) {
-//     const dd = String(dateTimeStr.getDate()).padStart(2, "0");
-//     const mm = String(dateTimeStr.getMonth() + 1).padStart(2, "0");
-//     const yyyy = dateTimeStr.getFullYear();
-//     return `${dd}/${mm}/${yyyy}`;
-//   }
-
-//   // normalize to string (handles "string-like" values safely)
-//   const s = String(dateTimeStr).trim();
-
-//   // take only date part before space/T
-//   const datePart = s.split(/[ T]/)[0]; // "2026-01-04"
-//   const [yyyy, mm, dd] = datePart.split("-");
-
-//   if (!yyyy || !mm || !dd) {
-//     throw new Error(`Invalid datetime format: ${s}`);
-//   }
-
-//   return `${dd}/${mm}/${yyyy}`;
-// }
-
-// Test
-// console.log(toDDMMYYYY("2026-01-04 11:21:42")); // 04/01/2026

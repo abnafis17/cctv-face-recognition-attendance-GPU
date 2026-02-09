@@ -13,6 +13,15 @@ type UseCamerasLoaderArgs = {
 export function useCamerasLoader({ setCams, setErr }: UseCamerasLoaderArgs) {
   // prevent overlapping loads (same as page)
   const inFlightRef = useRef(false);
+  const mountedRef = useRef(true);
+
+  const parseApiError = useCallback((e: unknown, fallback: string) => {
+    return (
+      (e as any)?.response?.data?.error ||
+      (e as any)?.response?.data?.message ||
+      (e instanceof Error ? e.message : fallback)
+    );
+  }, []);
 
   // ---------- Shared loader (only for user-triggered refresh) ----------
   const load = useCallback(async () => {
@@ -22,50 +31,27 @@ export function useCamerasLoader({ setCams, setErr }: UseCamerasLoaderArgs) {
     try {
       setErr("");
       const response = await axiosInstance.get("/cameras"); // baseURL includes /api
-      if (response?.status === 200) setCams((response?.data || []) as Camera[]);
+      if (mountedRef.current && response?.status === 200) {
+        setCams((response?.data || []) as Camera[]);
+      }
     } catch (e: unknown) {
-      const msg =
-        (e as any)?.response?.data?.message ||
-        (e instanceof Error ? e.message : "Failed to load cameras");
-      setErr(msg);
+      if (mountedRef.current) {
+        setErr(parseApiError(e, "Failed to load cameras"));
+      }
     } finally {
       inFlightRef.current = false;
     }
-  }, [setCams, setErr]);
+  }, [parseApiError, setCams, setErr]);
 
   // ---------- Initial load ----------
   useEffect(() => {
-    let cancelled = false;
-
-    async function fetchCameras() {
-      if (inFlightRef.current) return;
-      inFlightRef.current = true;
-
-      try {
-        setErr("");
-        const response = await axiosInstance.get("/cameras");
-        if (!cancelled && response?.status === 200) {
-          setCams((response?.data || []) as Camera[]);
-        }
-      } catch (e: unknown) {
-        if (!cancelled) {
-          const msg =
-            (e as any)?.response?.data?.message ||
-            (e instanceof Error ? e.message : "Failed to load cameras");
-          setErr(msg);
-        }
-      } finally {
-        inFlightRef.current = false;
-      }
-    }
-
-    const first = window.setTimeout(() => fetchCameras(), 0);
+    mountedRef.current = true;
+    void load();
 
     return () => {
-      cancelled = true;
-      window.clearTimeout(first);
+      mountedRef.current = false;
     };
-  }, [setCams, setErr]);
+  }, [load]);
 
   return { load, inFlightRef };
 }
