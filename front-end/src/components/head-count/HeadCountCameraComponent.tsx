@@ -8,6 +8,7 @@ interface LocalCameraProps {
   cameraName?: string;
   streamType?: string;
   className?: string;
+  viewportClassName?: string;
   onActiveChange?: (active: boolean) => void;
 }
 
@@ -19,6 +20,7 @@ const HeadCountCameraComponent: React.FC<LocalCameraProps> = ({
   cameraName,
   streamType: streamTypeProp,
   className,
+  viewportClassName,
   onActiveChange,
 }) => {
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -210,7 +212,7 @@ const HeadCountCameraComponent: React.FC<LocalCameraProps> = ({
       </div>
 
       <div className="relative mt-3 overflow-hidden rounded-xl border border-zinc-200 bg-zinc-950">
-        <div className="aspect-video w-full">
+        <div className={cn("w-full", viewportClassName || "aspect-video")}>
           {localActive ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img

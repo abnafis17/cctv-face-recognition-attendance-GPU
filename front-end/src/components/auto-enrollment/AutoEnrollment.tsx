@@ -8,6 +8,9 @@ import { Badge } from "@/components/ui/badge";
 import { AI_HOST } from "@/config/axiosInstance";
 import { getCompanyIdFromToken } from "@/lib/authStorage";
 import { useErpEmployees } from "@/hooks/useErpEmployees";
+import {
+  deriveEmployeeHierarchy,
+} from "@/lib/employeeHierarchy";
 
 import type { Camera, Step } from "./types";
 import { DEFAULT_LAPTOP_CAMERA_ID, SCAN_1, SCAN_2, STEPS } from "./constants";
@@ -42,6 +45,10 @@ export default function AutoEnrollment({
   const [cameraId, setCameraId] = useState<string>(laptopCameraId);
   const [employeeId, setEmployeeId] = useState(initialEmployeeId);
   const [name, setName] = useState(initialName);
+  const [unit, setUnit] = useState("");
+  const [department, setDepartment] = useState("");
+  const [section, setSection] = useState("");
+  const [line, setLine] = useState("");
 
   // ---- Laptop camera WebRTC publisher (to AI server) ----
   const {
@@ -122,6 +129,10 @@ export default function AutoEnrollment({
     cameraId,
     employeeId,
     name,
+    unit,
+    department,
+    section,
+    line,
     reEnroll,
     ensureCameraOn,
     stopCamera,
@@ -211,25 +222,79 @@ export default function AutoEnrollment({
     employees,
     loading: erpLoading,
     error: erpError,
-    setSearch: setErpSearch,
-    search: erpSearch,
   } = useErpEmployees({ debounceMs: 350, initialSearch: "" });
 
   const [selectedErpEmployeeId, setSelectedErpEmployeeId] = useState("");
+  const [erpSearch, setErpSearch] = useState("");
   const lockEmployeeIdentity = reEnroll && !!initialEmployeeId;
+
+  const hierarchy = useMemo(
+    () =>
+      deriveEmployeeHierarchy(employees, {
+        unit,
+        department,
+        section,
+        line,
+      }),
+    [department, employees, line, section, unit]
+  );
+
+  useEffect(() => {
+    const next = hierarchy.normalizedSelection;
+    if (next.unit !== unit) setUnit(next.unit);
+    if (next.department !== department) setDepartment(next.department);
+    if (next.section !== section) setSection(next.section);
+    if (next.line !== line) setLine(next.line);
+  }, [
+    department,
+    hierarchy.normalizedSelection,
+    line,
+    section,
+    unit,
+  ]);
 
   useEffect(() => {
     if (!initialEmployeeId) return;
     setSelectedErpEmployeeId(initialEmployeeId);
   }, [initialEmployeeId]);
 
+  useEffect(() => {
+    if (!initialEmployeeId) return;
+    const picked = employees.find((e) => e.employeeId === initialEmployeeId);
+    if (!picked) return;
+    if (!initialName) setName(picked.employeeName);
+    setUnit(picked.unit || "");
+    setDepartment(picked.department || "");
+    setSection(picked.section || "");
+    setLine(picked.line || "");
+  }, [employees, initialEmployeeId, initialName, setName]);
+
+  const filteredEmployees = useMemo(() => {
+    const q = erpSearch.trim().toLowerCase();
+    const list = hierarchy.filteredRows;
+    if (!q) return list;
+
+    return list.filter((e) => {
+      const hay = `${e.employeeName} ${e.employeeId} ${e.unit} ${e.department} ${e.section} ${e.line}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [erpSearch, hierarchy.filteredRows]);
+
+  useEffect(() => {
+    if (!selectedErpEmployeeId) return;
+    const stillVisible = filteredEmployees.some(
+      (e) => e.employeeId === selectedErpEmployeeId
+    );
+    if (!stillVisible) setSelectedErpEmployeeId("");
+  }, [filteredEmployees, selectedErpEmployeeId]);
+
   const erpItems = useMemo(() => {
-    return employees.map((e) => ({
+    return filteredEmployees.map((e) => ({
       value: e.employeeId,
       label: `${e.employeeName} (${e.employeeId})`,
-      keywords: `${e.employeeName} ${e.employeeId}`,
+      keywords: `${e.employeeName} ${e.employeeId} ${e.unit} ${e.department} ${e.section} ${e.line}`,
     }));
-  }, [employees]);
+  }, [filteredEmployees]);
 
   const onPickEmployee = useCallback(
     (empId: string) => {
@@ -237,6 +302,10 @@ export default function AutoEnrollment({
       if (!picked) return;
       setEmployeeId(picked.employeeId);
       setName(picked.employeeName);
+      setUnit(picked.unit || "");
+      setDepartment(picked.department || "");
+      setSection(picked.section || "");
+      setLine(picked.line || "");
     },
     [employees]
   );
@@ -287,6 +356,16 @@ export default function AutoEnrollment({
               busy={busy}
               selectedErpEmployeeId={selectedErpEmployeeId}
               setSelectedErpEmployeeId={setSelectedErpEmployeeId}
+              hierarchyAvailability={hierarchy.availability}
+              hierarchyOptions={hierarchy.options}
+              unit={unit}
+              setUnit={setUnit}
+              department={department}
+              setDepartment={setDepartment}
+              section={section}
+              setSection={setSection}
+              line={line}
+              setLine={setLine}
               erpItems={erpItems}
               erpLoading={erpLoading}
               erpError={erpError}

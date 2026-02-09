@@ -18,22 +18,32 @@ type Props = {
   camera: Camera;
   streamUrl: string;
   busy?: boolean;
+  attendanceEnabled?: boolean;
+  attendanceBusy?: boolean;
   onStart: (camera: Camera) => void;
   onStop: (camera: Camera) => void;
-  onEnableAttendance: (camera: Camera) => void;
-  onDisableAttendance: (camera: Camera) => void;
+  onEnableAttendance: (camera: Camera) => Promise<void> | void;
+  onDisableAttendance: (camera: Camera) => Promise<void> | void;
 };
 
 const CameraMonitorCard: React.FC<Props> = ({
   camera,
   streamUrl,
   busy = false,
+  attendanceEnabled,
+  attendanceBusy = false,
   onStart,
   onStop,
   onEnableAttendance,
   onDisableAttendance,
 }) => {
   const active = Boolean(camera.isActive);
+  const attendanceMode =
+    attendanceEnabled === true
+      ? "enabled"
+      : attendanceEnabled === false
+        ? "disabled"
+        : "unknown";
   const [streamHasFrame, setStreamHasFrame] = useState(false);
 
   // Reset loading state when camera state/url changes.
@@ -109,17 +119,27 @@ const CameraMonitorCard: React.FC<Props> = ({
       <div className="mt-3 flex flex-wrap gap-2">
         <button
           type="button"
-          className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-medium text-sky-700 hover:bg-sky-100"
+          disabled={attendanceBusy || attendanceMode === "enabled"}
+          className={`rounded-lg border px-3 py-1 text-xs font-medium transition disabled:opacity-60 ${
+            attendanceMode === "enabled"
+              ? "border-sky-600 bg-sky-600 text-white"
+              : "border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100"
+          }`}
           onClick={() => onEnableAttendance(camera)}
         >
-          Enable Attendance
+          {attendanceBusy ? "Updating..." : "Enable Attendance"}
         </button>
         <button
           type="button"
-          className="rounded-lg border border-zinc-300 bg-white px-3 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+          disabled={attendanceBusy || attendanceMode === "disabled"}
+          className={`rounded-lg border px-3 py-1 text-xs font-medium transition disabled:opacity-60 ${
+            attendanceMode === "disabled"
+              ? "border-zinc-700 bg-zinc-900 text-white"
+              : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50"
+          }`}
           onClick={() => onDisableAttendance(camera)}
         >
-          Disable Attendance
+          {attendanceBusy ? "Updating..." : "Disable Attendance"}
         </button>
       </div>
     </article>

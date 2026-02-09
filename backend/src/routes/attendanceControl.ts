@@ -1,5 +1,7 @@
 import { Router } from "express";
 import axios from "axios";
+import { prisma } from "../prisma";
+import { findCameraByAnyId } from "../utils/camera";
 
 const r = Router();
 const AI = (process.env.AI_BASE_URL || "http://127.0.0.1:8000").replace(
@@ -17,6 +19,22 @@ function readCameraId(req: any): string {
   return String(raw || "").trim();
 }
 
+async function persistCameraAttendance(
+  companyId: string,
+  cameraId: string,
+  enabled: boolean
+) {
+  if (!companyId || !cameraId) return;
+
+  const camera = await findCameraByAnyId(cameraId, companyId);
+  if (!camera) return;
+
+  await prisma.camera.update({
+    where: { id: camera.id },
+    data: { attendance: enabled },
+  });
+}
+
 async function toggleAttendance(req: any, res: any, enabled: boolean) {
   try {
     const companyId = String((req as any).companyId ?? "");
@@ -29,9 +47,17 @@ async function toggleAttendance(req: any, res: any, enabled: boolean) {
       params: { camera_id: cameraId },
       headers: companyId ? { "x-company-id": companyId } : undefined,
     });
-    return res.status(ai.status).json(ai.data);
+
+    await persistCameraAttendance(companyId, cameraId, enabled);
+
+    return res.status(ai.status).json({
+      ...ai.data,
+      enabled,
+      running: enabled,
+      attendance: enabled,
+    });
   } catch (err: any) {
-    console.error("attendance toggle failed:");
+    console.error("attendance toggle failed:", err?.message ?? err);
     return res
       .status(500)
       .json({ ok: false, error: "Failed to update attendance state" });
@@ -58,9 +84,36 @@ r.get("/status", async (req, res) => {
       headers: companyId ? { "x-company-id": companyId } : undefined,
     });
     const enabled = Boolean((ai.data as any)?.enabled);
-    return res.status(ai.status).json({ ...ai.data, running: enabled });
+
+    await persistCameraAttendance(companyId, cameraId, enabled);
+
+    return res.status(ai.status).json({
+      ...ai.data,
+      enabled,
+      running: enabled,
+      attendance: enabled,
+    });
   } catch (err: any) {
-    console.error("attendance status failed");
+    const companyId = String((req as any).companyId ?? "");
+    const cameraId = readCameraId(req);
+
+    try {
+      const camera = await findCameraByAnyId(cameraId, companyId);
+      if (camera) {
+        const enabled = Boolean(camera.attendance);
+        return res.status(200).json({
+          ok: true,
+          enabled,
+          running: enabled,
+          attendance: enabled,
+          source: "db",
+        });
+      }
+    } catch (dbErr: any) {
+      console.error("attendance status db fallback failed:", dbErr?.message ?? dbErr);
+    }
+
+    console.error("attendance status failed:", err?.message ?? err);
     return res
       .status(500)
       .json({ ok: false, error: "Failed to get attendance status" });

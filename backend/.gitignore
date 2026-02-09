@@ -12,7 +12,6 @@ pnpm-debug.log*
 # Prisma
 prisma/dev.db
 prisma/dev.db-journal
-prisma/migrations/**/migration.sql
 
 # Env
 .env

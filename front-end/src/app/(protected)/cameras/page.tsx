@@ -26,6 +26,8 @@ export default function CamerasPage() {
   const [cams, setCams] = useState<Camera[]>([]);
   const [err, setErr] = useState<string>("");
   const [actionCamId, setActionCamId] = useState<string | null>(null);
+  const [attendanceActionCamId, setAttendanceActionCamId] = useState<string | null>(null);
+  const [attendanceEnabledByCamId, setAttendanceEnabledByCamId] = useState<Record<string, boolean>>({});
   const [laptopActive, setLaptopActive] = useState(false);
 
   const companyId = getCompanyIdFromToken();
@@ -72,6 +74,16 @@ export default function CamerasPage() {
     };
   }, [load]);
 
+  useEffect(() => {
+    setAttendanceEnabledByCamId(() => {
+      const next: Record<string, boolean> = {};
+      for (const camera of cams) {
+        next[camera.id] = Boolean(camera.attendance);
+      }
+      return next;
+    });
+  }, [cams]);
+
   const startCamera = async (cam: Camera) => {
     try {
       setActionCamId(cam.id);
@@ -93,6 +105,30 @@ export default function CamerasPage() {
       setErr(normalizeApiError(error, "Failed to stop camera"));
     } finally {
       setActionCamId(null);
+    }
+  };
+
+  const handleEnableAttendance = async (cam: Camera) => {
+    try {
+      setAttendanceActionCamId(cam.id);
+      const ok = await enableAttendance(cam);
+      if (ok) {
+        setAttendanceEnabledByCamId((prev) => ({ ...prev, [cam.id]: true }));
+      }
+    } finally {
+      setAttendanceActionCamId(null);
+    }
+  };
+
+  const handleDisableAttendance = async (cam: Camera) => {
+    try {
+      setAttendanceActionCamId(cam.id);
+      const ok = await disableAttendance(cam);
+      if (ok) {
+        setAttendanceEnabledByCamId((prev) => ({ ...prev, [cam.id]: false }));
+      }
+    } finally {
+      setAttendanceActionCamId(null);
     }
   };
 
@@ -153,10 +189,12 @@ export default function CamerasPage() {
               camera.id,
             )}/${encodeURIComponent(camera.name)}${streamQuery}`}
             busy={actionCamId === camera.id}
+            attendanceEnabled={attendanceEnabledByCamId[camera.id]}
+            attendanceBusy={attendanceActionCamId === camera.id}
             onStart={startCamera}
             onStop={stopCamera}
-            onEnableAttendance={enableAttendance}
-            onDisableAttendance={disableAttendance}
+            onEnableAttendance={handleEnableAttendance}
+            onDisableAttendance={handleDisableAttendance}
           />
         ))}
       </section>

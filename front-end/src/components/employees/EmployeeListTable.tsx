@@ -39,6 +39,7 @@ const EmployeeListTable = () => {
   const handleUpdateEmployee = async (payload: {
     name?: string;
     empId?: string | null;
+    unit?: string | null;
     section?: string | null;
     department?: string | null;
     line?: string | null;
@@ -154,7 +155,7 @@ const EmployeeListTable = () => {
       ),
       accessorKey: "empId",
       cell: ({ row }: any) => (
-        <div className="text-center px-1 py-2">{row.original.empId}</div>
+        <div className="text-center px-1 py-2">{row.original.empId || "-"}</div>
       ),
       size: 200,
     },
@@ -166,7 +167,49 @@ const EmployeeListTable = () => {
       cell: ({ row }: any) => (
         <div className="text-left px-1 py-2">{row.original.name}</div>
       ),
-      size: 800,
+      size: 260,
+    },
+    {
+      header: () => (
+        <div className="text-left font-bold w-full px-1 py-2">Unit</div>
+      ),
+      accessorKey: "unit",
+      cell: ({ row }: any) => (
+        <div className="text-left px-1 py-2">{row.original.unit || "-"}</div>
+      ),
+      size: 180,
+    },
+    {
+      header: () => (
+        <div className="text-left font-bold w-full px-1 py-2">Department</div>
+      ),
+      accessorKey: "department",
+      cell: ({ row }: any) => (
+        <div className="text-left px-1 py-2">
+          {row.original.department || "-"}
+        </div>
+      ),
+      size: 220,
+    },
+    {
+      header: () => (
+        <div className="text-left font-bold w-full px-1 py-2">Section</div>
+      ),
+      accessorKey: "section",
+      cell: ({ row }: any) => (
+        <div className="text-left px-1 py-2">{row.original.section || "-"}</div>
+      ),
+      size: 220,
+    },
+    {
+      header: () => (
+        <div className="text-left font-bold w-full px-1 py-2">Line</div>
+      ),
+      accessorKey: "line",
+      cell: ({ row }: any) => (
+        <div className="text-left px-1 py-2">{row.original.line || "-"}</div>
+      ),
+      size: 180,
     },
     {
       id: "actions",
@@ -210,8 +253,12 @@ const EmployeeListTable = () => {
   return (
     <>
       <div className="w-full">
-        <div className="rounded-md border">
-          <TanstackDataTable data={employees} columns={employee_columns} />
+        <div className="rounded-md border border-gray-300">
+          <TanstackDataTable
+            data={employees}
+            columns={employee_columns}
+            className="[&_th]:border-gray-300 [&_td]:border-gray-300"
+          />
         </div>
       </div>
 

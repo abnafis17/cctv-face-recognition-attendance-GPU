@@ -28,6 +28,27 @@ function toISOStringOrNull(value?: Date | null) {
   return value ? value.toISOString() : null;
 }
 
+function normalizeHierarchyValue(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  const text = String(value).trim();
+  if (!text) return null;
+
+  const normalized = text.toLowerCase();
+  if (
+    normalized === "all" ||
+    normalized === "__all__" ||
+    normalized === "n/a" ||
+    normalized === "na" ||
+    normalized === "none" ||
+    normalized === "null" ||
+    normalized === "-"
+  ) {
+    return null;
+  }
+
+  return text;
+}
+
 type HeadcountStatus = "MATCH" | "UNMATCH" | "ABSENT";
 
 function parseFirstSeenFromNotes(notes?: string | null): Date | null {
@@ -91,7 +112,8 @@ export async function listHeadcountCameras(req: Request, res: Response) {
  * GET /headcount?date=YYYY-MM-DD&q=...
  * Optional:
  * - &view=headcount|ot
- * - &groupBy=section|department|line&groupValue=...
+ * - hierarchy filters: &unit=...&department=...&section=...&line=...
+ * - legacy fallback: &groupBy=unit|section|department|line&groupValue=...
  *
  * Important: camera selection on the headcount page is ONLY for capture/streaming.
  * The table is computed for the selected date (no camera filtering).
@@ -136,6 +158,19 @@ export async function listHeadcount(req: Request, res: Response) {
         ? "ot"
         : "headcount";
 
+    const unitRaw = normalizeHierarchyValue(
+      req.query?.unit ?? req.query?.unit_name ?? ""
+    );
+    const departmentRaw = normalizeHierarchyValue(
+      req.query?.department ?? req.query?.department_name ?? ""
+    );
+    const sectionRaw = normalizeHierarchyValue(
+      req.query?.section ?? req.query?.section_name ?? ""
+    );
+    const lineRaw = normalizeHierarchyValue(
+      req.query?.line ?? req.query?.line_name ?? ""
+    );
+
     const groupByRaw = String(
       req.query?.groupBy ?? req.query?.group_by ?? req.query?.by ?? ""
     )
@@ -145,7 +180,7 @@ export async function listHeadcount(req: Request, res: Response) {
       req.query?.groupValue ?? req.query?.group_value ?? req.query?.value ?? ""
     ).trim();
 
-    const allowedGroupBys = new Set(["section", "department", "line"]);
+    const allowedGroupBys = new Set(["unit", "section", "department", "line"]);
 
     if (groupByRaw && !allowedGroupBys.has(groupByRaw)) {
       return res.status(400).json({
@@ -155,18 +190,28 @@ export async function listHeadcount(req: Request, res: Response) {
       });
     }
 
-    const groupBy = groupByRaw as "" | "section" | "department" | "line";
-    const groupValue = groupValueRaw;
+    const groupBy = groupByRaw as "" | "unit" | "section" | "department" | "line";
+    const groupValue = normalizeHierarchyValue(groupValueRaw);
 
-    if (groupBy && !groupValue) {
+    if (groupBy && !groupValue && !unitRaw && !departmentRaw && !sectionRaw && !lineRaw) {
       return res.status(400).json({
         error: "groupValue is required when groupBy is provided",
       });
     }
 
+    const unitFilter = unitRaw ?? (groupBy === "unit" ? groupValue : null);
+    const departmentFilter =
+      departmentRaw ?? (groupBy === "department" ? groupValue : null);
+    const sectionFilter =
+      sectionRaw ?? (groupBy === "section" ? groupValue : null);
+    const lineFilter = lineRaw ?? (groupBy === "line" ? groupValue : null);
+
     const employeeWhere: any = {
       companyId,
-      ...(groupBy ? { [groupBy]: groupValue } : {}),
+      ...(unitFilter ? { unit: unitFilter } : {}),
+      ...(departmentFilter ? { department: departmentFilter } : {}),
+      ...(sectionFilter ? { section: sectionFilter } : {}),
+      ...(lineFilter ? { line: lineFilter } : {}),
       ...(q.length
         ? {
             OR: [
@@ -203,7 +248,15 @@ export async function listHeadcount(req: Request, res: Response) {
 
       const employees = await prisma.employee.findMany({
         where: { ...employeeWhere, id: { in: headIds } },
-        select: { id: true, name: true, empId: true },
+        select: {
+          id: true,
+          name: true,
+          empId: true,
+          unit: true,
+          department: true,
+          section: true,
+          line: true,
+        },
         take: 50000,
       });
 
@@ -242,6 +295,10 @@ export async function listHeadcount(req: Request, res: Response) {
 
         name: string;
         employeeId: string;
+        unit: string | null;
+        department: string | null;
+        section: string | null;
+        line: string | null;
 
         headcountCameraId: string | null;
         headcountCameraName: string | null;
@@ -268,6 +325,10 @@ export async function listHeadcount(req: Request, res: Response) {
 
             name: emp?.name ?? "Unknown",
             employeeId: publicEmployeeId,
+            unit: emp?.unit ?? null,
+            department: emp?.department ?? null,
+            section: emp?.section ?? null,
+            line: emp?.line ?? null,
 
             headcountCameraId: head?.cameraId ?? null,
             headcountCameraName:
@@ -370,7 +431,15 @@ export async function listHeadcount(req: Request, res: Response) {
 
     const employees = await prisma.employee.findMany({
       where: { companyId, id: { in: employeeIds } },
-      select: { id: true, name: true, empId: true },
+      select: {
+        id: true,
+        name: true,
+        empId: true,
+        unit: true,
+        department: true,
+        section: true,
+        line: true,
+      },
       take: 50000,
     });
 
@@ -401,6 +470,10 @@ export async function listHeadcount(req: Request, res: Response) {
 
       name: string;
       employeeId: string;
+      unit: string | null;
+      department: string | null;
+      section: string | null;
+      line: string | null;
 
       headcountCameraId: string | null;
       headcountCameraName: string | null;
@@ -444,6 +517,10 @@ export async function listHeadcount(req: Request, res: Response) {
 
         name: emp?.name ?? "Unknown",
         employeeId: publicEmployeeId,
+        unit: emp?.unit ?? null,
+        department: emp?.department ?? null,
+        section: emp?.section ?? null,
+        line: emp?.line ?? null,
 
         headcountCameraId: hasHead ? (head?.cameraId ?? null) : null,
         headcountCameraName:

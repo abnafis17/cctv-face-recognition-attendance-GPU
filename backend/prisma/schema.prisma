@@ -54,14 +54,15 @@ model User {
 }
 
 model Employee {
-  id        String  @id @default(cuid())
-  empId     String? @map("emp_id")
-  name      String
-  section   String?
+  id         String  @id @default(cuid())
+  empId      String? @map("emp_id")
+  name       String
+  unit       String?
+  section    String?
   department String?
-  line      String?
-  companyId String?
-  company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  line       String?
+  companyId  String?
+  company    Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -75,6 +76,7 @@ model Employee {
   @@unique([companyId, empId])
   @@index([empId])
   @@index([companyId])
+  @@index([companyId, unit])
   @@index([companyId, section])
   @@index([companyId, department])
   @@index([companyId, line])
@@ -124,7 +126,8 @@ model Camera {
   camId    String? @map("cam_id")
   name     String
   rtspUrl  String? // ✅ keep optional (relay cameras won't store plaintext RTSP)
-  isActive Boolean @default(false)
+  isActive   Boolean  @default(false)
+  attendance Boolean? @default(false)
 
   companyId String?
   company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)

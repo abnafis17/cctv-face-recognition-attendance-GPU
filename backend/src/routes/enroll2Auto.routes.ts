@@ -19,17 +19,71 @@ function toBoolean(value: unknown): boolean {
   return false;
 }
 
+function normalizeOptionalHierarchy(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  const text = String(value).trim();
+  if (!text) return null;
+
+  const normalized = text.toLowerCase();
+  if (
+    normalized === "n/a" ||
+    normalized === "na" ||
+    normalized === "none" ||
+    normalized === "null" ||
+    normalized === "-"
+  ) {
+    return null;
+  }
+
+  return text;
+}
+
 // POST /api/v1/enroll2-auto/session/start
 r.post("/session/start", async (req, res) => {
   try {
     const companyId = String((req as any).companyId ?? "");
-    const { employeeId, name, cameraId, reEnroll } = req.body || {};
+    const { employeeId, name, cameraId, reEnroll, unit, department, section, line } =
+      req.body || {};
     const isReEnroll = toBoolean(reEnroll);
 
     const identifier = String(employeeId ?? "").trim();
+    const employeeName = String(name ?? "").trim();
+    const body = req.body || {};
+    const hasUnit = Object.prototype.hasOwnProperty.call(body, "unit");
+    const hasDepartment = Object.prototype.hasOwnProperty.call(
+      body,
+      "department",
+    );
+    const hasSection = Object.prototype.hasOwnProperty.call(body, "section");
+    const hasLine = Object.prototype.hasOwnProperty.call(body, "line");
+
+    let employee = null as Awaited<ReturnType<typeof findEmployeeByAnyId>> | null;
     if (identifier) {
-      const employee = await findEmployeeByAnyId(identifier, companyId);
+      employee = await findEmployeeByAnyId(identifier, companyId);
+
+      const hierarchyData: {
+        unit?: string | null;
+        department?: string | null;
+        section?: string | null;
+        line?: string | null;
+      } = {};
+
+      if (hasUnit) hierarchyData.unit = normalizeOptionalHierarchy(unit);
+      if (hasDepartment)
+        hierarchyData.department = normalizeOptionalHierarchy(department);
+      if (hasSection) hierarchyData.section = normalizeOptionalHierarchy(section);
+      if (hasLine) hierarchyData.line = normalizeOptionalHierarchy(line);
+
       if (employee) {
+        employee = await prisma.employee.update({
+          where: { id: employee.id },
+          data: {
+            ...(employeeName ? { name: employeeName } : {}),
+            ...(employee.empId ? {} : { empId: identifier }),
+            ...hierarchyData,
+          },
+        });
+
         const hasTemplate = await prisma.faceTemplate.findFirst({
           where: { employeeId: employee.id, companyId },
           select: { id: true },
@@ -47,6 +101,20 @@ r.post("/session/start", async (req, res) => {
             where: { employeeId: employee.id },
           });
         }
+      } else {
+        employee = await prisma.employee.create({
+          data: {
+            companyId,
+            empId: identifier,
+            name: employeeName || "Unknown",
+            ...(hasUnit ? { unit: normalizeOptionalHierarchy(unit) } : {}),
+            ...(hasDepartment
+              ? { department: normalizeOptionalHierarchy(department) }
+              : {}),
+            ...(hasSection ? { section: normalizeOptionalHierarchy(section) } : {}),
+            ...(hasLine ? { line: normalizeOptionalHierarchy(line) } : {}),
+          },
+        });
       }
     }
 
@@ -54,7 +122,7 @@ r.post("/session/start", async (req, res) => {
       `${AI_BASE}/enroll2/auto/session/start`,
       {
         employeeId,
-        name,
+        name: employeeName || name,
         cameraId,
       },
       {

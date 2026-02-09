@@ -10,29 +10,33 @@ type UseAttendanceToggleArgs = {
 
 export function useAttendanceToggle({ setErr }: UseAttendanceToggleArgs) {
   // ---------- Attendance toggle ----------
-  async function enableAttendance(cam: Camera) {
+  async function enableAttendance(cam: Camera): Promise<boolean> {
     try {
       await axiosInstance.post("/attendance-control/enable", {
         cameraId: cam.id,
       });
+      return true;
     } catch (e: unknown) {
       const msg =
         (e as any)?.response?.data?.message ||
         (e instanceof Error ? e.message : "Failed to enable attendance");
       setErr(msg);
+      return false;
     }
   }
 
-  async function disableAttendance(cam: Camera) {
+  async function disableAttendance(cam: Camera): Promise<boolean> {
     try {
       await axiosInstance.post("/attendance-control/disable", {
         cameraId: cam.id,
       });
+      return true;
     } catch (e: unknown) {
       const msg =
         (e as any)?.response?.data?.message ||
         (e instanceof Error ? e.message : "Failed to disable attendance");
       setErr(msg);
+      return false;
     }
   }
 

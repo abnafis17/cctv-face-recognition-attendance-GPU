@@ -5,10 +5,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import { erpAxios } from "@/config/axiosInstance";
 import { ERP_HOST } from "@/constant";
+import { normalizeHierarchyValue } from "@/lib/employeeHierarchy";
 
 export type ErpEmployee = {
   employeeId: string; // e.g. "2024052410"
   employeeName: string; // e.g. "John Doe"
+  unit: string; // e.g. "PSL"
+  department: string; // e.g. "Business Innovation"
+  section: string; // e.g. "WEB-Team"
+  line: string; // e.g. "Production Line A"
 };
 
 type ErpEmployeeApiItem = any;
@@ -36,16 +41,52 @@ function mapEmployee(item: ErpEmployeeApiItem): ErpEmployee | null {
     item?.fullName ??
     item?.FullName;
 
+  const departmentName =
+    item?.department ??
+    item?.Department ??
+    item?.departmentName ??
+    item?.DepartmentName ??
+    item?.deptName ??
+    item?.DeptName ??
+    item?.dept ??
+    item?.Dept;
+
+  const unitName =
+    item?.unit ??
+    item?.Unit ??
+    item?.unitName ??
+    item?.UnitName;
+
+  const sectionName =
+    item?.section ??
+    item?.Section ??
+    item?.sectionName ??
+    item?.SectionName;
+
+  const lineName =
+    item?.line ??
+    item?.Line ??
+    item?.lineName ??
+    item?.LineName;
+
   if (employeeId == null || employeeName == null) return null;
 
   const idStr = String(employeeId).trim();
   const nameStr = String(employeeName).trim();
+  const unitStr = normalizeHierarchyValue(unitName);
+  const departmentStr = normalizeHierarchyValue(departmentName);
+  const sectionStr = normalizeHierarchyValue(sectionName);
+  const lineStr = normalizeHierarchyValue(lineName);
 
   if (!idStr || !nameStr) return null;
 
   return {
     employeeId: idStr,
     employeeName: nameStr,
+    unit: unitStr,
+    department: departmentStr,
+    section: sectionStr,
+    line: lineStr,
   };
 }
 

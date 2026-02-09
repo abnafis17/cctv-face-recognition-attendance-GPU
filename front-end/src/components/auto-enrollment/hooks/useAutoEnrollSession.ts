@@ -10,6 +10,10 @@ type UseAutoEnrollSessionArgs = {
   cameraId: string;
   employeeId: string;
   name: string;
+  unit: string;
+  department: string;
+  section: string;
+  line: string;
   reEnroll: boolean;
   ensureCameraOn: (camId: string) => Promise<boolean>;
   stopCamera: (camId: string) => Promise<void>;
@@ -20,6 +24,10 @@ export function useAutoEnrollSession({
   cameraId,
   employeeId,
   name,
+  unit,
+  department,
+  section,
+  line,
   reEnroll,
   ensureCameraOn,
   stopCamera,
@@ -69,6 +77,10 @@ export function useAutoEnrollSession({
         {
           employeeId: employeeId.trim(),
           name: name.trim(),
+          ...(unit.trim() ? { unit: unit.trim() } : {}),
+          ...(department.trim() ? { department: department.trim() } : {}),
+          ...(section.trim() ? { section: section.trim() } : {}),
+          ...(line.trim() ? { line: line.trim() } : {}),
           cameraId,
           ...(reEnroll ? { reEnroll: true } : {}),
         }
@@ -90,7 +102,18 @@ export function useAutoEnrollSession({
     } finally {
       setBusy(false);
     }
-  }, [cameraId, employeeId, ensureCameraOn, name, reEnroll, stopCamera]);
+  }, [
+    cameraId,
+    department,
+    employeeId,
+    ensureCameraOn,
+    line,
+    name,
+    reEnroll,
+    section,
+    stopCamera,
+    unit,
+  ]);
 
   const stop = useCallback(async () => {
     setBusy(true);

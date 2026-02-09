@@ -46,6 +46,7 @@ export async function createCompanyCamera(
       rtspUrl: payload.rtspUrl,
       companyId,
       isActive: false,
+      attendance: false,
       ...(payload.camId ? { camId: payload.camId } : {}),
       ...(payload.relayAgentId !== undefined
         ? { relayAgentId: payload.relayAgentId }

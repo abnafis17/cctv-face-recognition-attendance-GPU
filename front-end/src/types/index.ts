@@ -2,6 +2,7 @@ export type Employee = {
   id: string;
   empId?: string | null;
   name: string;
+  unit?: string | null;
   section?: string | null;
   department?: string | null;
   line?: string | null;
@@ -23,6 +24,7 @@ export type Camera = {
   name: string;
   rtspUrl?: string | null;
   isActive: boolean;
+  attendance?: boolean | null;
   relayAgentId?: string | null;
   rtspUrlEnc?: string | null;
   sendFps?: number;

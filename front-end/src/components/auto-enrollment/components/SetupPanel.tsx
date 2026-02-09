@@ -17,6 +17,16 @@ export const SetupPanel = React.memo(function SetupPanel({
   // ERP employee selection
   selectedErpEmployeeId,
   setSelectedErpEmployeeId,
+  hierarchyAvailability,
+  hierarchyOptions,
+  unit,
+  setUnit,
+  department,
+  setDepartment,
+  section,
+  setSection,
+  line,
+  setLine,
   erpItems,
   erpLoading,
   erpError,
@@ -45,6 +55,26 @@ export const SetupPanel = React.memo(function SetupPanel({
 
   selectedErpEmployeeId: string;
   setSelectedErpEmployeeId: (v: string) => void;
+  hierarchyAvailability: {
+    hasUnit: boolean;
+    hasDepartment: boolean;
+    hasSection: boolean;
+    hasLine: boolean;
+  };
+  hierarchyOptions: {
+    units: string[];
+    departments: string[];
+    sections: string[];
+    lines: string[];
+  };
+  unit: string;
+  setUnit: (v: string) => void;
+  department: string;
+  setDepartment: (v: string) => void;
+  section: string;
+  setSection: (v: string) => void;
+  line: string;
+  setLine: (v: string) => void;
   erpItems: Array<{ value: string; label: string; keywords?: string }>;
   erpLoading: boolean;
   erpError: string | null;
@@ -65,6 +95,8 @@ export const SetupPanel = React.memo(function SetupPanel({
   tts: boolean;
   setTts: (v: boolean) => void;
 }) {
+  const hierarchyLocked = busy || lockEmployeeIdentity;
+
   return (
     <div className="space-y-4">
       <div className="rounded-2xl border bg-white p-5">
@@ -112,6 +144,112 @@ export const SetupPanel = React.memo(function SetupPanel({
             templates for this employee.
           </div>
         )}
+
+        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <div className="text-sm font-semibold text-slate-900">
+            Hierarchy
+          </div>
+          <div className="mt-1 text-xs text-slate-600">
+            Select in order: Unit, Department, Section, then Line. Levels are
+            shown only when available for this company.
+          </div>
+
+          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {hierarchyAvailability.hasUnit ? (
+              <div>
+                <Label>Unit</Label>
+                <select
+                  className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm"
+                  value={unit}
+                  onChange={(e) => {
+                    setUnit(e.target.value);
+                    setDepartment("");
+                    setSection("");
+                    setLine("");
+                    setSelectedErpEmployeeId("");
+                  }}
+                  disabled={hierarchyLocked}
+                >
+                  <option value="">All units</option>
+                  {hierarchyOptions.units.map((v) => (
+                    <option key={v} value={v}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
+
+            {hierarchyAvailability.hasDepartment ? (
+              <div>
+                <Label>Department</Label>
+                <select
+                  className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm"
+                  value={department}
+                  onChange={(e) => {
+                    setDepartment(e.target.value);
+                    setSection("");
+                    setLine("");
+                    setSelectedErpEmployeeId("");
+                  }}
+                  disabled={hierarchyLocked}
+                >
+                  <option value="">All departments</option>
+                  {hierarchyOptions.departments.map((v) => (
+                    <option key={v} value={v}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
+
+            {hierarchyAvailability.hasSection ? (
+              <div>
+                <Label>Section</Label>
+                <select
+                  className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm"
+                  value={section}
+                  onChange={(e) => {
+                    setSection(e.target.value);
+                    setLine("");
+                    setSelectedErpEmployeeId("");
+                  }}
+                  disabled={hierarchyLocked}
+                >
+                  <option value="">All sections</option>
+                  {hierarchyOptions.sections.map((v) => (
+                    <option key={v} value={v}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
+
+            {hierarchyAvailability.hasLine ? (
+              <div>
+                <Label>Line</Label>
+                <select
+                  className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm"
+                  value={line}
+                  onChange={(e) => {
+                    setLine(e.target.value);
+                    setSelectedErpEmployeeId("");
+                  }}
+                  disabled={hierarchyLocked}
+                >
+                  <option value="">All lines</option>
+                  {hierarchyOptions.lines.map((v) => (
+                    <option key={v} value={v}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
+          </div>
+        </div>
 
         <div className="mt-4">
           <Label>Select from ERP (search by Name or ID)</Label>

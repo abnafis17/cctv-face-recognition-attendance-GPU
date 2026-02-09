@@ -52,6 +52,7 @@ export async function registerUser(input: {
       name: "Laptop Camera",
       companyId: company.id,
       isActive: false,
+      attendance: false,
     },
     update: {},
   });

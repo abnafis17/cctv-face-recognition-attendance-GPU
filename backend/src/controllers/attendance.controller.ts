@@ -79,6 +79,7 @@ export async function createAttendance(req: Request, res: Response) {
           companyId,
           // This is a virtual/browser camera; do not mark it as an active RTSP camera.
           isActive: false,
+          attendance: false,
         },
         update: {},
       });
