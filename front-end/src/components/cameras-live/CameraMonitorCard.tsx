@@ -1,18 +1,13 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { MoreHorizontal } from "lucide-react";
 import type { Camera } from "@/types";
-
-function maskRtspUrl(url?: string | null): string {
-  const raw = String(url ?? "").trim();
-  if (!raw) return "-";
-  const protocolEnd = raw.indexOf("://");
-  const atIndex = raw.indexOf("@");
-  if (protocolEnd < 0 || atIndex < 0 || atIndex < protocolEnd) return raw;
-  const protocol = raw.slice(0, protocolEnd + 3);
-  const host = raw.slice(atIndex + 1);
-  return `${protocol}***:***@${host}`;
-}
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 type Props = {
   camera: Camera;
@@ -45,6 +40,7 @@ const CameraMonitorCard: React.FC<Props> = ({
         ? "disabled"
         : "unknown";
   const [streamHasFrame, setStreamHasFrame] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
 
   // Reset loading state when camera state/url changes.
   useEffect(() => {
@@ -52,31 +48,77 @@ const CameraMonitorCard: React.FC<Props> = ({
   }, [active, streamUrl]);
 
   return (
-    <article className="rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
+    <article className="self-start overflow-hidden rounded-sm border border-zinc-200 bg-white pt-2 shadow-sm">
+      <div className="flex items-center justify-between gap-2 px-2.5 pb-2">
         <div className="min-w-0">
-          <div className="truncate text-sm font-semibold text-zinc-900">{camera.name}</div>
-          <div className="mt-1 truncate font-mono text-[11px] text-zinc-500" title={camera.rtspUrl ?? ""}>
-            {maskRtspUrl(camera.rtspUrl)}
+          <div className="truncate text-sm font-semibold text-zinc-900">
+            {camera.name}
           </div>
         </div>
 
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => (active ? onStop(camera) : onStart(camera))}
-          className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition disabled:opacity-60 ${
-            active
-              ? "border-red-300 bg-red-50 text-red-700 hover:bg-red-100"
-              : "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-          }`}
-        >
-          {busy ? "Working..." : active ? "Stop" : "Start"}
-        </button>
+        <Popover open={actionsOpen} onOpenChange={setActionsOpen}>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-zinc-200 text-zinc-600 transition hover:bg-zinc-100"
+              aria-label={`Actions for ${camera.name}`}
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-48 p-1">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setActionsOpen(false);
+                if (active) onStop(camera);
+                else onStart(camera);
+              }}
+              className={`flex w-full items-center rounded-md px-2.5 py-2 text-left text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                active
+                  ? "text-red-700 hover:bg-red-50"
+                  : "text-emerald-700 hover:bg-emerald-50"
+              }`}
+            >
+              {busy ? "Working..." : active ? "Stop" : "Start"}
+            </button>
+            <button
+              type="button"
+              disabled={attendanceBusy || attendanceMode === "enabled"}
+              onClick={() => {
+                setActionsOpen(false);
+                onEnableAttendance(camera);
+              }}
+              className={`mt-0.5 flex w-full items-center rounded-md px-2.5 py-2 text-left text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                attendanceMode === "enabled"
+                  ? "text-sky-700"
+                  : "text-sky-700 hover:bg-sky-50"
+              }`}
+            >
+              {attendanceBusy ? "Updating..." : "Enable Attendance"}
+            </button>
+            <button
+              type="button"
+              disabled={attendanceBusy || attendanceMode === "disabled"}
+              onClick={() => {
+                setActionsOpen(false);
+                onDisableAttendance(camera);
+              }}
+              className={`mt-0.5 flex w-full items-center rounded-md px-2.5 py-2 text-left text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                attendanceMode === "disabled"
+                  ? "text-zinc-600"
+                  : "text-zinc-700 hover:bg-zinc-100"
+              }`}
+            >
+              {attendanceBusy ? "Updating..." : "Disable Attendance"}
+            </button>
+          </PopoverContent>
+        </Popover>
       </div>
 
       <div
-        className={`relative mt-3 overflow-hidden rounded-xl border border-zinc-200 ${
+        className={`relative w-full overflow-hidden ${
           streamHasFrame ? "bg-zinc-950" : "bg-zinc-100"
         }`}
       >
@@ -87,7 +129,7 @@ const CameraMonitorCard: React.FC<Props> = ({
               <img
                 src={streamUrl}
                 alt={`Camera ${camera.name} Stream`}
-                className={`h-full w-full object-cover transition-opacity duration-200 ${
+                className={`h-full w-full object-cover object-left-top transition-opacity duration-200 ${
                   streamHasFrame ? "opacity-100" : "opacity-0"
                 }`}
                 width={1280}
@@ -114,33 +156,6 @@ const CameraMonitorCard: React.FC<Props> = ({
         {streamHasFrame ? (
           <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(transparent_0,rgba(255,255,255,0.05)_50%,transparent_100%)] bg-[length:100%_6px] opacity-20" />
         ) : null}
-      </div>
-
-      <div className="mt-3 flex flex-wrap gap-2">
-        <button
-          type="button"
-          disabled={attendanceBusy || attendanceMode === "enabled"}
-          className={`rounded-lg border px-3 py-1 text-xs font-medium transition disabled:opacity-60 ${
-            attendanceMode === "enabled"
-              ? "border-sky-600 bg-sky-600 text-white"
-              : "border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100"
-          }`}
-          onClick={() => onEnableAttendance(camera)}
-        >
-          {attendanceBusy ? "Updating..." : "Enable Attendance"}
-        </button>
-        <button
-          type="button"
-          disabled={attendanceBusy || attendanceMode === "disabled"}
-          className={`rounded-lg border px-3 py-1 text-xs font-medium transition disabled:opacity-60 ${
-            attendanceMode === "disabled"
-              ? "border-zinc-700 bg-zinc-900 text-white"
-              : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50"
-          }`}
-          onClick={() => onDisableAttendance(camera)}
-        >
-          {attendanceBusy ? "Updating..." : "Disable Attendance"}
-        </button>
       </div>
     </article>
   );

@@ -26,8 +26,12 @@ export default function CamerasPage() {
   const [cams, setCams] = useState<Camera[]>([]);
   const [err, setErr] = useState<string>("");
   const [actionCamId, setActionCamId] = useState<string | null>(null);
-  const [attendanceActionCamId, setAttendanceActionCamId] = useState<string | null>(null);
-  const [attendanceEnabledByCamId, setAttendanceEnabledByCamId] = useState<Record<string, boolean>>({});
+  const [attendanceActionCamId, setAttendanceActionCamId] = useState<
+    string | null
+  >(null);
+  const [attendanceEnabledByCamId, setAttendanceEnabledByCamId] = useState<
+    Record<string, boolean>
+  >({});
   const [laptopActive, setLaptopActive] = useState(false);
 
   const companyId = getCompanyIdFromToken();
@@ -41,7 +45,9 @@ export default function CamerasPage() {
   }, [companyId]);
 
   const { load } = useCamerasLoader({ setCams, setErr });
-  const { enableAttendance, disableAttendance } = useAttendanceToggle({ setErr });
+  const { enableAttendance, disableAttendance } = useAttendanceToggle({
+    setErr,
+  });
 
   const totalScreens = cams.length + 1; // +1 for laptop camera card
   const activeScreens =
@@ -134,26 +140,35 @@ export default function CamerasPage() {
 
   return (
     <div className="space-y-4">
-      <header className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+      <header className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-zinc-900">Camera Control Panel</h1>
-          <p className="mt-1 text-sm text-zinc-500">
+          <h1 className="text-2xl font-bold text-zinc-900">Camera View</h1>
+          {/* <p className="mt-1 text-sm text-zinc-500">
             Live camera view with recognition overlay (AI: {AI_HOST})
-          </p>
+          </p> */}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <div className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-medium text-zinc-600">
             <span>
-              Total: <span className="font-semibold text-zinc-900">{totalScreens}</span>
+              Total:{" "}
+              <span className="font-semibold text-zinc-900">
+                {totalScreens}
+              </span>
             </span>
             <span className="h-3 w-px bg-zinc-200" />
             <span>
-              Active: <span className="font-semibold text-emerald-700">{activeScreens}</span>
+              Active:{" "}
+              <span className="font-semibold text-emerald-700">
+                {activeScreens}
+              </span>
             </span>
             <span className="h-3 w-px bg-zinc-200" />
             <span>
-              Offline: <span className="font-semibold text-zinc-700">{offlineScreens}</span>
+              Offline:{" "}
+              <span className="font-semibold text-zinc-700">
+                {offlineScreens}
+              </span>
             </span>
           </div>
 
@@ -173,7 +188,7 @@ export default function CamerasPage() {
         </div>
       ) : null}
 
-      <section className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+      <section className="grid grid-cols-1 items-start gap-2 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
         <LocalCamera
           userId={laptopCameraId}
           companyId={companyId || ""}
@@ -191,18 +206,18 @@ export default function CamerasPage() {
             : `${AI_HOST}/camera/stream/${encodeURIComponent(camera.id)}`;
 
           return (
-          <CameraMonitorCard
-            key={camera.id}
-            camera={camera}
-            streamUrl={streamUrl}
-            busy={actionCamId === camera.id}
-            attendanceEnabled={attendanceEnabled}
-            attendanceBusy={attendanceActionCamId === camera.id}
-            onStart={startCamera}
-            onStop={stopCamera}
-            onEnableAttendance={handleEnableAttendance}
-            onDisableAttendance={handleDisableAttendance}
-          />
+            <CameraMonitorCard
+              key={camera.id}
+              camera={camera}
+              streamUrl={streamUrl}
+              busy={actionCamId === camera.id}
+              attendanceEnabled={attendanceEnabled}
+              attendanceBusy={attendanceActionCamId === camera.id}
+              onStart={startCamera}
+              onStop={stopCamera}
+              onEnableAttendance={handleEnableAttendance}
+              onDisableAttendance={handleDisableAttendance}
+            />
           );
         })}
       </section>

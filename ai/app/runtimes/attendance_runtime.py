@@ -1081,7 +1081,7 @@ class AttendanceRuntime:
         state.rec_calls_total += int(rec_stats.get("recognition_calls", 0) or 0)
 
         # HUD / overlay
-        _put_text_white(annotated, f"frame={state.frame_idx}", 12, 36, scale=1.05)
+        # _put_text_white(annotated, f"frame={state.frame_idx}", 12, 36, scale=1.05)
         # _put_text_white(
         #     annotated,
         #     f"mode={state.scheduler.mode_label()} motion={motion_score:.3f}",
