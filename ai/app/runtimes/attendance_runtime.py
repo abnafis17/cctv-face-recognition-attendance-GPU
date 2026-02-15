@@ -966,11 +966,11 @@ class AttendanceRuntime:
             gpu_util = None
 
         gpu_part = "" if gpu_util is None else f" gpu={gpu_util}%"
-        print(
-            f"[PIPE] cam={camera_id} fps={fps:.1f} det_fps={det_fps:.2f} rec/s={rec_s:.2f} "
-            f"tracks={tracks_total} unk={unknown_total} q={q_len} drop={q_drop} mode={mode} "
-            f"reasons={reasons} motion={motion_score:.3f}{gpu_part}"
-        )
+        # print(
+        #     f"[PIPE] cam={camera_id} fps={fps:.1f} det_fps={det_fps:.2f} rec/s={rec_s:.2f} "
+        #     f"tracks={tracks_total} unk={unknown_total} q={q_len} drop={q_drop} mode={mode} "
+        #     f"reasons={reasons} motion={motion_score:.3f}{gpu_part}"
+        # )
 
         state.last_log_ts = now
         state.last_log_frames_total = int(state.frames_total)
@@ -1177,19 +1177,19 @@ class AttendanceRuntime:
                 fas_ok = True
                 fas_dbg = {**fas_dbg, "fas": "pose_bypassed"}
 
-            print(
-                "[FAS DEBUG]",
-                "cam=",
-                str(cid),
-                "emp=",
-                str(decision.job.employee_id),
-                "ok=",
-                fas_ok,
-                "dbg=",
-                fas_dbg,
-                "kps_none=",
-                tr.kps is None,
-            )
+            # print(
+            #     "[FAS DEBUG]",
+            #     "cam=",
+            #     str(cid),
+            #     "emp=",
+            #     str(decision.job.employee_id),
+            #     "ok=",
+            #     fas_ok,
+            #     "dbg=",
+            #     fas_dbg,
+            #     "kps_none=",
+            #     tr.kps is None,
+            # )
 
             if not fas_ok:
                 continue
