@@ -8,7 +8,7 @@ import {
   useState,
   type CSSProperties,
 } from "react";
-import { ListVideo } from "lucide-react";
+import { ArrowUpDown, ListVideo } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { AI_HOST } from "@/config/axiosInstance";
 import type { Camera } from "@/types";
@@ -35,6 +35,7 @@ type CameraGridConfig = {
   rows: number;
   shouldScroll: boolean;
 };
+type CameraSortOrder = "asc" | "desc";
 
 function getCameraGridConfig(total: number, mode: ViewportMode): CameraGridConfig {
   if (mode === "mobile") {
@@ -96,6 +97,7 @@ export default function CamerasPage() {
   const [laptopActive, setLaptopActive] = useState(false);
   const [fullscreenCardId, setFullscreenCardId] = useState<string | null>(null);
   const [viewportMode, setViewportMode] = useState<ViewportMode>("mobile");
+  const [cameraSortOrder, setCameraSortOrder] = useState<CameraSortOrder>("asc");
   const [cameraWallHeight, setCameraWallHeight] = useState<number>(
     MIN_WALL_HEIGHT_PX,
   );
@@ -131,6 +133,23 @@ export default function CamerasPage() {
     ? `laptop-${companyId}`
     : "cmkdpsq300000j7284bwluxh2";
   const laptopCardId = `laptop:${laptopCameraId}`;
+  const sortedCams = useMemo(() => {
+    const next = [...cams];
+    next.sort((a, b) => {
+      const byName = a.name.localeCompare(b.name, undefined, {
+        numeric: true,
+        sensitivity: "base",
+      });
+      if (byName !== 0) return byName;
+      const byId = a.id.localeCompare(b.id, undefined, {
+        numeric: true,
+        sensitivity: "base",
+      });
+      return byId;
+    });
+    if (cameraSortOrder === "desc") next.reverse();
+    return next;
+  }, [cams, cameraSortOrder]);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -318,6 +337,19 @@ export default function CamerasPage() {
             </span>
           </div>
 
+          <button
+            type="button"
+            onClick={() =>
+              setCameraSortOrder((prev) => (prev === "asc" ? "desc" : "asc"))
+            }
+            className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-medium text-zinc-700 hover:bg-zinc-100"
+            title="Toggle camera order"
+            aria-label="Toggle camera sort order"
+          >
+            <ArrowUpDown className="h-3.5 w-3.5" />
+            {cameraSortOrder === "asc" ? "Ascending" : "Descending"}
+          </button>
+
           <Link
             href="/camera-list"
             className="inline-flex items-center rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-800"
@@ -366,25 +398,27 @@ export default function CamerasPage() {
             : {}),
         }}
       >
-        <div className={cn("camera-wall-item", shouldFillViewportGrid && "h-full")}>
-          <LocalCamera
-            userId={laptopCameraId}
-            companyId={companyId || ""}
-            cameraName="Laptop Camera"
-            isFullscreen={fullscreenCardId === laptopCardId}
-            fillContainer={shouldFillViewportGrid}
-            onScreenDoubleClick={() => toggleFullscreen(laptopCardId)}
-            onActiveChange={setLaptopActive}
-            className={cn(
-              shouldFillViewportGrid && "h-full",
-              "transition-all duration-300 ease-out",
-              fullscreenCardId === laptopCardId &&
-                "fixed inset-4 z-[70] rounded-md shadow-2xl ring-1 ring-white/10",
-            )}
-          />
-        </div>
+        {cameraSortOrder === "desc" ? (
+          <div className={cn("camera-wall-item", shouldFillViewportGrid && "h-full")}>
+            <LocalCamera
+              userId={laptopCameraId}
+              companyId={companyId || ""}
+              cameraName="Laptop Camera"
+              isFullscreen={fullscreenCardId === laptopCardId}
+              fillContainer={shouldFillViewportGrid}
+              onScreenDoubleClick={() => toggleFullscreen(laptopCardId)}
+              onActiveChange={setLaptopActive}
+              className={cn(
+                shouldFillViewportGrid && "h-full",
+                "transition-all duration-300 ease-out",
+                fullscreenCardId === laptopCardId &&
+                  "fixed inset-4 z-[70] rounded-md shadow-2xl ring-1 ring-white/10",
+              )}
+            />
+          </div>
+        ) : null}
 
-        {cams.map((camera) => {
+        {sortedCams.map((camera) => {
           const cardId = `camera:${camera.id}`;
           const isFullscreen = fullscreenCardId === cardId;
           const attendanceEnabled =
@@ -423,6 +457,26 @@ export default function CamerasPage() {
             </div>
           );
         })}
+
+        {cameraSortOrder === "asc" ? (
+          <div className={cn("camera-wall-item", shouldFillViewportGrid && "h-full")}>
+            <LocalCamera
+              userId={laptopCameraId}
+              companyId={companyId || ""}
+              cameraName="Laptop Camera"
+              isFullscreen={fullscreenCardId === laptopCardId}
+              fillContainer={shouldFillViewportGrid}
+              onScreenDoubleClick={() => toggleFullscreen(laptopCardId)}
+              onActiveChange={setLaptopActive}
+              className={cn(
+                shouldFillViewportGrid && "h-full",
+                "transition-all duration-300 ease-out",
+                fullscreenCardId === laptopCardId &&
+                  "fixed inset-4 z-[70] rounded-md shadow-2xl ring-1 ring-white/10",
+              )}
+            />
+          </div>
+        ) : null}
       </section>
     </div>
   );
