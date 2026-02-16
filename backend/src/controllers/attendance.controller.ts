@@ -175,16 +175,12 @@ export async function createAttendance(req: Request, res: Response) {
     }
 
     // Headcount mode: DO NOT write to Attendance table.
-    // Instead, upsert a per-employee/day Headcount row so the headcount page can
-    // compare "attendance (today)" vs "headcount (now)".
+    // Persist each scan so the headcount page can build per-run history.
     if (eventType === "headcount") {
       const ts = parsedTimestamp;
 
-      // Dhaka-day id so the headcount page can query by date without camera filtering.
       const dateStr = ts.toLocaleDateString("en-CA", { timeZone: "Asia/Dhaka" });
-      const dayStart = new Date(`${dateStr}T00:00:00+06:00`);
-      const dayEnd = new Date(dayStart);
-      dayEnd.setDate(dayEnd.getDate() + 1);
+      const { start: dayStart, end: dayEnd } = dhakaDayRange(dateStr);
 
       const hadAttendanceToday = await prisma.attendance.findFirst({
         where: {
@@ -196,37 +192,13 @@ export async function createAttendance(req: Request, res: Response) {
       });
 
       const status = hadAttendanceToday ? "MATCH" : "UNMATCH";
-      const headcountId = `${employee.id}:${dateStr}`;
+      const notes = JSON.stringify({ firstSeen: ts.toISOString() });
 
-      // Preserve firstSeen across updates (stored in notes JSON)
-      let firstSeenIso = ts.toISOString();
-      try {
-        const existing = await prisma.headcount.findUnique({
-          where: { id: headcountId },
-          select: { notes: true },
-        });
-        const existingFirst = parseFirstSeenIsoFromNotes(existing?.notes ?? null);
-        if (existingFirst) firstSeenIso = existingFirst;
-      } catch {
-        // ignore malformed notes
-      }
-
-      const notes = JSON.stringify({ firstSeen: firstSeenIso });
-
-      const row = await prisma.headcount.upsert({
-        where: { id: headcountId },
-        create: {
-          id: headcountId,
+      const row = await prisma.headcount.create({
+        data: {
           companyId,
           cameraId: cam ? cam.id : null,
           employeeId: employee.id,
-          timestamp: ts,
-          status,
-          confidence: confidence ?? null,
-          notes,
-        },
-        update: {
-          cameraId: cam ? cam.id : null,
           timestamp: ts,
           status,
           confidence: confidence ?? null,
