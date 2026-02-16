@@ -121,7 +121,46 @@
   }
   body {
     @apply bg-background text-foreground;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
   }
+
+  .ui-readable {
+    color: rgb(24 24 27);
+    font-size: 15px;
+    line-height: 1.55;
+  }
+
+  .ui-readable :is(h1, h2, h3, h4, h5, h6) {
+    color: rgb(9 9 11);
+    letter-spacing: -0.012em;
+  }
+
+  .ui-readable :is(.text-gray-500, .text-zinc-500, .text-muted-foreground) {
+    color: rgb(82 82 91);
+  }
+
+  .ui-readable :is(.text-gray-600, .text-zinc-600) {
+    color: rgb(63 63 70);
+  }
+
+  .ui-readable .text-xs {
+    font-size: 0.79rem;
+    line-height: 1.2rem;
+  }
+
+  .ui-readable .text-sm {
+    font-size: 0.91rem;
+    line-height: 1.35rem;
+  }
+
+  @media (min-width: 1024px) {
+    .ui-readable {
+      font-size: 16px;
+    }
+  }
+
   button:not(:disabled),
   input[type="button"]:not(:disabled),
   input[type="submit"]:not(:disabled),

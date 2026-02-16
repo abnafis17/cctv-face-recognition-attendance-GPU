@@ -22,7 +22,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-gray-50`}
+        className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-slate-200 text-zinc-900 antialiased`}
       >
         <ToasterProvider />
         {children}

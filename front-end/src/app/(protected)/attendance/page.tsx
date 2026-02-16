@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowUpDown } from "lucide-react";
 import axiosInstance, { API } from "@/config/axiosInstance";
 import { useAttendanceEvents } from "@/hooks/useAttendanceEvents";
 
@@ -14,9 +15,12 @@ type AttendanceRow = {
   confidence?: number | null;
 };
 
+type AttendanceSortOrder = "asc" | "desc";
+
 export default function AttendancePage() {
   const [rows, setRows] = useState<AttendanceRow[]>([]);
   const [err, setErr] = useState("");
+  const [sortOrder, setSortOrder] = useState<AttendanceSortOrder>("desc");
 
   const inFlightRef = useRef(false);
 
@@ -51,12 +55,50 @@ export default function AttendancePage() {
   // Refresh attendance only when new attendance is created (no interval polling)
   useAttendanceEvents({ onEvents: fetchAttendance });
 
+  const sortedRows = useMemo(() => {
+    const next = [...rows];
+    next.sort((a, b) => {
+      const aTime = Date.parse(a.timestamp || "");
+      const bTime = Date.parse(b.timestamp || "");
+
+      const aValid = Number.isFinite(aTime);
+      const bValid = Number.isFinite(bTime);
+
+      if (!aValid && !bValid) return a.id.localeCompare(b.id);
+      if (!aValid) return 1;
+      if (!bValid) return -1;
+
+      const diff = aTime - bTime;
+      if (diff !== 0) return sortOrder === "asc" ? diff : -diff;
+
+      return a.id.localeCompare(b.id);
+    });
+    return next;
+  }, [rows, sortOrder]);
+
   return (
     <div>
-      <h1 className="text-2xl font-bold">Attendance History</h1>
-      <p className="mt-1 text-sm text-gray-500">
-        Live attendance records from database
-      </p>
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Attendance History</h1>
+          <p className="mt-1 text-sm text-gray-500">
+            Live attendance records from database
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() =>
+            setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"))
+          }
+          className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-medium text-zinc-700 hover:bg-zinc-100"
+          title="Toggle attendance time order"
+          aria-label="Toggle attendance time sort order"
+        >
+          <ArrowUpDown className="h-3.5 w-3.5" />
+          {sortOrder === "asc" ? "Ascending" : "Descending"}
+        </button>
+      </div>
 
       {err ? (
         <div className="mt-4 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-700">
@@ -76,7 +118,7 @@ export default function AttendancePage() {
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
+            {sortedRows.map((r) => (
               <tr key={r.id} className="border-t">
                 <td className="px-4 py-2 font-medium">{r.name}</td>
                 <td className="px-4 py-2 text-gray-600">{r.employeeId}</td>
@@ -92,7 +134,7 @@ export default function AttendancePage() {
               </tr>
             ))}
 
-            {rows.length === 0 ? (
+            {sortedRows.length === 0 ? (
               <tr>
                 <td colSpan={5} className="px-4 py-6 text-center text-gray-500">
                   No attendance records found

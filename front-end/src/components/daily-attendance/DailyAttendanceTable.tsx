@@ -8,7 +8,7 @@ import { Card } from "@/components/ui/Card";
 import { cn } from "@/lib/utils";
 import { TanstackDataTable } from "../reusable/TanstackDataTable";
 import { Input } from "@/components/ui/input";
-import { RefreshCcw, Search, X } from "lucide-react";
+import { ArrowUpDown, RefreshCcw, Search, X } from "lucide-react";
 
 type DailyAttendanceRow = {
   id: string;
@@ -71,6 +71,7 @@ const DailyAttendanceTable = () => {
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState<DailyAttendanceRow[]>([]);
   const [dateStr, setDateStr] = useState<string>(dhakaTodayYYYYMMDD());
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
 
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -109,6 +110,50 @@ const DailyAttendanceTable = () => {
     fetchDaily();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dateStr, debouncedSearch]);
+
+  const sortedRows = useMemo(() => {
+    const parseSortableTime = (row: DailyAttendanceRow): number => {
+      const firstEntry = row.firstEntryTime?.trim();
+      if (firstEntry) {
+        const direct = Date.parse(firstEntry);
+        if (Number.isFinite(direct)) return direct;
+
+        const dateCombined = Date.parse(`${row.date}T${firstEntry}`);
+        if (Number.isFinite(dateCombined)) return dateCombined;
+      }
+
+      const fallback = Date.parse(row.timestamp || "");
+      return Number.isFinite(fallback) ? fallback : Number.NaN;
+    };
+
+    const next = [...rows];
+    next.sort((a, b) => {
+      const aTime = parseSortableTime(a);
+      const bTime = parseSortableTime(b);
+
+      const aValid = Number.isFinite(aTime);
+      const bValid = Number.isFinite(bTime);
+
+      if (!aValid && !bValid) {
+        return a.employeeId.localeCompare(b.employeeId, undefined, {
+          numeric: true,
+          sensitivity: "base",
+        });
+      }
+      if (!aValid) return 1;
+      if (!bValid) return -1;
+
+      const diff = aTime - bTime;
+      if (diff !== 0) return sortOrder === "asc" ? diff : -diff;
+
+      return a.employeeId.localeCompare(b.employeeId, undefined, {
+        numeric: true,
+        sensitivity: "base",
+      });
+    });
+
+    return next;
+  }, [rows, sortOrder]);
 
   const columns: ColumnDef<DailyAttendanceRow>[] = useMemo(
     () => [
@@ -267,6 +312,19 @@ const DailyAttendanceTable = () => {
             ) : null}
           </div>
 
+          <button
+            type="button"
+            onClick={() =>
+              setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"))
+            }
+            className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-medium text-zinc-700 hover:bg-zinc-100"
+            title="Toggle first entry time order"
+            aria-label="Toggle first entry time sort order"
+          >
+            <ArrowUpDown className="h-3.5 w-3.5" />
+            {sortOrder === "asc" ? "Ascending" : "Descending"}
+          </button>
+
           {/* Date filter (native, bug-free) */}
           <div className="flex items-center gap-2 rounded-xl border bg-white px-3 py-2">
             <label className="text-xs font-medium text-gray-600">Date</label>
@@ -307,12 +365,12 @@ const DailyAttendanceTable = () => {
         {loading ? (
           <TableLoading />
         ) : (
-          <TanstackDataTable data={rows} columns={columns} />
+          <TanstackDataTable data={sortedRows} columns={columns} />
         )}
       </div>
 
       {/* Empty state */}
-      {!loading && rows.length === 0 ? (
+      {!loading && sortedRows.length === 0 ? (
         <div className="mt-4 rounded-xl border border-dashed border-gray-200 bg-gray-50 p-6 text-center">
           <p className="text-sm font-medium text-gray-700">
             No daily attendance for {dateStr}
