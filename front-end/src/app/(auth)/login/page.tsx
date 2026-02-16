@@ -50,7 +50,7 @@ export default function LoginPage() {
     if (!accessToken) return;
     const next = safeNextUrl(
       new URLSearchParams(window.location.search).get("next"),
-      "/dashboard"
+      "/cameras",
     );
     router.replace(next);
   }, [accessToken, router]);
@@ -66,7 +66,7 @@ export default function LoginPage() {
 
       const next = safeNextUrl(
         new URLSearchParams(window.location.search).get("next"),
-        "/dashboard"
+        "/cameras",
       );
       router.replace(next);
     } catch (e: unknown) {
@@ -74,8 +74,8 @@ export default function LoginPage() {
         e instanceof Error
           ? e.message
           : typeof e === "string"
-          ? e
-          : "Login failed";
+            ? e
+            : "Login failed";
 
       toast.error(message, { id: "login-error" });
     } finally {

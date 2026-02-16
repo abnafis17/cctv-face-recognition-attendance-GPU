@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { MoreHorizontal } from "lucide-react";
 import type { Camera } from "@/types";
+import { cn } from "@/lib/utils";
 import {
   Popover,
   PopoverContent,
@@ -15,6 +16,10 @@ type Props = {
   busy?: boolean;
   attendanceEnabled?: boolean;
   attendanceBusy?: boolean;
+  className?: string;
+  isFullscreen?: boolean;
+  fillContainer?: boolean;
+  onScreenDoubleClick?: () => void;
   onStart: (camera: Camera) => void;
   onStop: (camera: Camera) => void;
   onEnableAttendance: (camera: Camera) => Promise<void> | void;
@@ -27,6 +32,10 @@ const CameraMonitorCard: React.FC<Props> = ({
   busy = false,
   attendanceEnabled,
   attendanceBusy = false,
+  className,
+  isFullscreen = false,
+  fillContainer = false,
+  onScreenDoubleClick,
   onStart,
   onStop,
   onEnableAttendance,
@@ -47,82 +56,33 @@ const CameraMonitorCard: React.FC<Props> = ({
     setStreamHasFrame(false);
   }, [active, streamUrl]);
 
+  const shouldFillFrame = isFullscreen || fillContainer;
+
   return (
-    <article className="self-start overflow-hidden rounded-sm border border-zinc-200 bg-white pt-2 shadow-sm">
-      <div className="flex items-center justify-between gap-2 px-2.5 pb-2">
-        <div className="min-w-0">
-          <div className="truncate text-sm font-semibold text-zinc-900">
-            {camera.name}
-          </div>
-        </div>
-
-        <Popover open={actionsOpen} onOpenChange={setActionsOpen}>
-          <PopoverTrigger asChild>
-            <button
-              type="button"
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-zinc-200 text-zinc-600 transition hover:bg-zinc-100"
-              aria-label={`Actions for ${camera.name}`}
-            >
-              <MoreHorizontal className="h-4 w-4" />
-            </button>
-          </PopoverTrigger>
-          <PopoverContent align="end" className="w-48 p-1">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => {
-                setActionsOpen(false);
-                if (active) onStop(camera);
-                else onStart(camera);
-              }}
-              className={`flex w-full items-center rounded-md px-2.5 py-2 text-left text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                active
-                  ? "text-red-700 hover:bg-red-50"
-                  : "text-emerald-700 hover:bg-emerald-50"
-              }`}
-            >
-              {busy ? "Working..." : active ? "Stop" : "Start"}
-            </button>
-            <button
-              type="button"
-              disabled={attendanceBusy || attendanceMode === "enabled"}
-              onClick={() => {
-                setActionsOpen(false);
-                onEnableAttendance(camera);
-              }}
-              className={`mt-0.5 flex w-full items-center rounded-md px-2.5 py-2 text-left text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                attendanceMode === "enabled"
-                  ? "text-sky-700"
-                  : "text-sky-700 hover:bg-sky-50"
-              }`}
-            >
-              {attendanceBusy ? "Updating..." : "Enable Attendance"}
-            </button>
-            <button
-              type="button"
-              disabled={attendanceBusy || attendanceMode === "disabled"}
-              onClick={() => {
-                setActionsOpen(false);
-                onDisableAttendance(camera);
-              }}
-              className={`mt-0.5 flex w-full items-center rounded-md px-2.5 py-2 text-left text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                attendanceMode === "disabled"
-                  ? "text-zinc-600"
-                  : "text-zinc-700 hover:bg-zinc-100"
-              }`}
-            >
-              {attendanceBusy ? "Updating..." : "Disable Attendance"}
-            </button>
-          </PopoverContent>
-        </Popover>
-      </div>
-
+    <article
+      className={cn(
+        "self-start overflow-hidden rounded-sm border border-zinc-200 bg-white shadow-sm",
+        shouldFillFrame && "flex h-full flex-col",
+        className,
+      )}
+    >
       <div
-        className={`relative w-full overflow-hidden ${
-          streamHasFrame ? "bg-zinc-950" : "bg-zinc-100"
-        }`}
+        onDoubleClick={onScreenDoubleClick}
+        title={
+          onScreenDoubleClick
+            ? isFullscreen
+              ? "Double-click to exit full screen"
+              : "Double-click to view full screen"
+            : undefined
+        }
+        className={cn(
+          "relative w-full overflow-hidden",
+          shouldFillFrame && "flex-1",
+          isFullscreen ? "cursor-zoom-out" : "cursor-zoom-in",
+          streamHasFrame ? "bg-zinc-950" : "bg-zinc-100",
+        )}
       >
-        <div className="aspect-video w-full">
+        <div className={cn("w-full", shouldFillFrame ? "h-full" : "aspect-video")}>
           {active ? (
             <>
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -150,13 +110,88 @@ const CameraMonitorCard: React.FC<Props> = ({
           )}
         </div>
 
-        <div className="pointer-events-none absolute right-2 top-2 rounded-md bg-black/70 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-white">
+        <div
+          className={cn(
+            "pointer-events-none absolute right-2 top-2 rounded-md px-2 py-0.5 text-[10px] font-semibold tracking-wide text-white",
+            active ? "bg-red-600/90" : "bg-black/70",
+          )}
+        >
           {active ? "LIVE" : "OFFLINE"}
         </div>
         {streamHasFrame ? (
-          <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(transparent_0,rgba(255,255,255,0.05)_50%,transparent_100%)] bg-[length:100%_6px] opacity-20" />
+          <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(transparent_0,rgba(255,255,255,0.05)_50%,transparent_100%)] bg-size-[100%_6px] opacity-20" />
         ) : null}
       </div>
+
+      {!isFullscreen ? (
+        <div className="flex items-center justify-between gap-2 px-2.5 py-2">
+          <div className="min-w-0">
+            <div className="truncate text-sm font-semibold text-zinc-900">
+              {camera.name}
+            </div>
+          </div>
+
+          <Popover open={actionsOpen} onOpenChange={setActionsOpen}>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-zinc-200 text-zinc-600 transition hover:bg-zinc-100"
+                aria-label={`Actions for ${camera.name}`}
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-48 p-1">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  setActionsOpen(false);
+                  if (active) onStop(camera);
+                  else onStart(camera);
+                }}
+                className={`flex w-full items-center rounded-md px-2.5 py-1 text-left text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                  active
+                    ? "text-red-700 hover:bg-red-50"
+                    : "text-emerald-700 hover:bg-emerald-50"
+                }`}
+              >
+                {busy ? "Working..." : active ? "Stop" : "Start"}
+              </button>
+              <button
+                type="button"
+                disabled={attendanceBusy || attendanceMode === "enabled"}
+                onClick={() => {
+                  setActionsOpen(false);
+                  onEnableAttendance(camera);
+                }}
+                className={`mt-0.5 flex w-full items-center rounded-md px-2.5 py-2 text-left text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                  attendanceMode === "enabled"
+                    ? "text-sky-700"
+                    : "text-sky-700 hover:bg-sky-50"
+                }`}
+              >
+                {attendanceBusy ? "Updating..." : "Enable Attendance"}
+              </button>
+              <button
+                type="button"
+                disabled={attendanceBusy || attendanceMode === "disabled"}
+                onClick={() => {
+                  setActionsOpen(false);
+                  onDisableAttendance(camera);
+                }}
+                className={`mt-0.5 flex w-full items-center rounded-md px-2.5 py-2 text-left text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                  attendanceMode === "disabled"
+                    ? "text-zinc-600"
+                    : "text-zinc-700 hover:bg-zinc-100"
+                }`}
+              >
+                {attendanceBusy ? "Updating..." : "Disable Attendance"}
+              </button>
+            </PopoverContent>
+          </Popover>
+        </div>
+      ) : null}
     </article>
   );
 };

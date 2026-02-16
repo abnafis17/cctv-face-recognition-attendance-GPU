@@ -49,7 +49,8 @@ function safeNextUrl(next: string | null, fallback: string) {
   if (!next) return fallback;
   if (!next.startsWith("/")) return fallback;
   if (next.startsWith("//")) return fallback;
-  if (next.startsWith("/login") || next.startsWith("/register")) return fallback;
+  if (next.startsWith("/login") || next.startsWith("/register"))
+    return fallback;
   return next;
 }
 
@@ -69,7 +70,7 @@ export default function RegisterPage() {
     if (!accessToken) return;
     const next = safeNextUrl(
       new URLSearchParams(window.location.search).get("next"),
-      "/dashboard"
+      "/cameras",
     );
     router.replace(next);
   }, [accessToken, router]);
@@ -85,7 +86,7 @@ export default function RegisterPage() {
 
       const next = safeNextUrl(
         new URLSearchParams(window.location.search).get("next"),
-        "/dashboard"
+        "/cameras",
       );
       router.replace(next);
     } catch (e: unknown) {
@@ -93,8 +94,8 @@ export default function RegisterPage() {
         e instanceof Error
           ? e.message
           : typeof e === "string"
-          ? e
-          : "Register failed";
+            ? e
+            : "Register failed";
 
       toast.error(message, { id: "register-error" });
     } finally {

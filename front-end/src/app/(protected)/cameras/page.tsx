@@ -1,8 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { ListVideo } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
 import { AI_HOST } from "@/config/axiosInstance";
 import type { Camera } from "@/types";
 import { getCompanyIdFromToken } from "@/lib/authStorage";
@@ -11,6 +18,45 @@ import { useCamerasLoader } from "@/hooks/useCamerasLoader";
 import axiosInstance from "@/config/axiosInstance";
 import LocalCamera from "@/components/CameraComponent";
 import CameraMonitorCard from "@/components/cameras-live/CameraMonitorCard";
+import { cn } from "@/lib/utils";
+
+const MAX_CAMERAS_PER_ROW = 4;
+const MAX_VIEWPORT_CAMERA_COUNT = 16;
+const VIEWPORT_BOTTOM_PADDING_PX = 12;
+const MIN_WALL_HEIGHT_PX = 220;
+
+type CameraGridConfig = {
+  columns: number;
+  rows: number;
+  shouldScroll: boolean;
+};
+
+function getCameraGridConfig(total: number): CameraGridConfig {
+  if (total === 1) return { columns: 1, rows: 1, shouldScroll: false };
+  if (total <= 4) return { columns: 2, rows: 2, shouldScroll: false };
+  if (total <= 9) return { columns: 3, rows: 3, shouldScroll: false };
+  if (total <= MAX_VIEWPORT_CAMERA_COUNT) {
+    return { columns: 4, rows: 4, shouldScroll: false };
+  }
+  return {
+    columns: MAX_CAMERAS_PER_ROW,
+    rows: Math.ceil(total / MAX_CAMERAS_PER_ROW),
+    shouldScroll: true,
+  };
+}
+
+function wallGridStyle(
+  columns: number,
+  rows: number,
+  wallHeight: number,
+): CSSProperties &
+  Record<"--camera-columns" | "--camera-rows" | "--camera-wall-height", string> {
+  return {
+    "--camera-columns": String(columns),
+    "--camera-rows": String(rows),
+    "--camera-wall-height": `${wallHeight}px`,
+  };
+}
 
 function normalizeApiError(error: unknown, fallback: string): string {
   const anyError = error as any;
@@ -23,6 +69,7 @@ function normalizeApiError(error: unknown, fallback: string): string {
 }
 
 export default function CamerasPage() {
+  const cameraWallRef = useRef<HTMLElement | null>(null);
   const [cams, setCams] = useState<Camera[]>([]);
   const [err, setErr] = useState<string>("");
   const [actionCamId, setActionCamId] = useState<string | null>(null);
@@ -33,6 +80,10 @@ export default function CamerasPage() {
     Record<string, boolean>
   >({});
   const [laptopActive, setLaptopActive] = useState(false);
+  const [fullscreenCardId, setFullscreenCardId] = useState<string | null>(null);
+  const [cameraWallHeight, setCameraWallHeight] = useState<number>(
+    MIN_WALL_HEIGHT_PX,
+  );
 
   const companyId = getCompanyIdFromToken();
 
@@ -50,6 +101,12 @@ export default function CamerasPage() {
   });
 
   const totalScreens = cams.length + 1; // +1 for laptop camera card
+  const gridConfig = useMemo(
+    () => getCameraGridConfig(totalScreens),
+    [totalScreens],
+  );
+  const shouldEnableGridScroll = gridConfig.shouldScroll;
+  const shouldFillViewportGrid = !shouldEnableGridScroll;
   const activeScreens =
     cams.filter((c) => c.isActive).length + (laptopActive ? 1 : 0);
   const offlineScreens = Math.max(totalScreens - activeScreens, 0);
@@ -57,6 +114,7 @@ export default function CamerasPage() {
   const laptopCameraId = companyId
     ? `laptop-${companyId}`
     : "cmkdpsq300000j7284bwluxh2";
+  const laptopCardId = `laptop:${laptopCameraId}`;
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -138,6 +196,61 @@ export default function CamerasPage() {
     }
   };
 
+  const toggleFullscreen = (cardId: string) => {
+    setFullscreenCardId((prev) => (prev === cardId ? null : cardId));
+  };
+
+  const closeFullscreen = () => {
+    setFullscreenCardId(null);
+  };
+
+  useEffect(() => {
+    if (!fullscreenCardId) return;
+
+    const prevOverflow = document.body.style.overflow;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setFullscreenCardId(null);
+      }
+    };
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [fullscreenCardId]);
+
+  useEffect(() => {
+    const updateWallHeight = () => {
+      const wallNode = cameraWallRef.current;
+      if (!wallNode) return;
+
+      const rect = wallNode.getBoundingClientRect();
+      const nextHeight = Math.max(
+        window.innerHeight - rect.top - VIEWPORT_BOTTOM_PADDING_PX,
+        MIN_WALL_HEIGHT_PX,
+      );
+
+      setCameraWallHeight((prev) =>
+        Math.abs(prev - nextHeight) < 1 ? prev : nextHeight,
+      );
+    };
+
+    updateWallHeight();
+
+    const observer = new ResizeObserver(() => updateWallHeight());
+    if (cameraWallRef.current) observer.observe(cameraWallRef.current);
+    window.addEventListener("resize", updateWallHeight);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updateWallHeight);
+    };
+  }, [totalScreens, err]);
+
   return (
     <div className="space-y-4">
       <header className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
@@ -188,15 +301,55 @@ export default function CamerasPage() {
         </div>
       ) : null}
 
-      <section className="grid grid-cols-1 items-start gap-2 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-        <LocalCamera
-          userId={laptopCameraId}
-          companyId={companyId || ""}
-          cameraName="Laptop Camera"
-          onActiveChange={setLaptopActive}
-        />
+      <AnimatePresence>
+        {fullscreenCardId ? (
+          <motion.button
+            type="button"
+            aria-label="Exit full screen camera"
+            className="fixed inset-0 z-[60] bg-black/65 backdrop-blur-[1.5px]"
+            onClick={closeFullscreen}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.22, ease: "easeOut" }}
+          />
+        ) : null}
+      </AnimatePresence>
+
+      <section
+        ref={cameraWallRef}
+        className={cn(
+          "camera-wall",
+          shouldFillViewportGrid && "camera-wall-fit",
+          shouldEnableGridScroll && "md:overflow-y-auto md:pr-1",
+        )}
+        style={{
+          ...wallGridStyle(gridConfig.columns, gridConfig.rows, cameraWallHeight),
+          ...(shouldFillViewportGrid ? { height: `${cameraWallHeight}px` } : {}),
+          ...(shouldEnableGridScroll ? { maxHeight: `${cameraWallHeight}px` } : {}),
+        }}
+      >
+        <div className={cn("camera-wall-item", shouldFillViewportGrid && "h-full")}>
+          <LocalCamera
+            userId={laptopCameraId}
+            companyId={companyId || ""}
+            cameraName="Laptop Camera"
+            isFullscreen={fullscreenCardId === laptopCardId}
+            fillContainer={shouldFillViewportGrid}
+            onScreenDoubleClick={() => toggleFullscreen(laptopCardId)}
+            onActiveChange={setLaptopActive}
+            className={cn(
+              shouldFillViewportGrid && "h-full",
+              "transition-all duration-300 ease-out",
+              fullscreenCardId === laptopCardId &&
+                "fixed inset-4 z-[70] rounded-md shadow-2xl ring-1 ring-white/10",
+            )}
+          />
+        </div>
 
         {cams.map((camera) => {
+          const cardId = `camera:${camera.id}`;
+          const isFullscreen = fullscreenCardId === cardId;
           const attendanceEnabled =
             attendanceEnabledByCamId[camera.id] ?? Boolean(camera.attendance);
           const streamUrl = attendanceEnabled
@@ -206,18 +359,31 @@ export default function CamerasPage() {
             : `${AI_HOST}/camera/stream/${encodeURIComponent(camera.id)}`;
 
           return (
-            <CameraMonitorCard
+            <div
               key={camera.id}
-              camera={camera}
-              streamUrl={streamUrl}
-              busy={actionCamId === camera.id}
-              attendanceEnabled={attendanceEnabled}
-              attendanceBusy={attendanceActionCamId === camera.id}
-              onStart={startCamera}
-              onStop={stopCamera}
-              onEnableAttendance={handleEnableAttendance}
-              onDisableAttendance={handleDisableAttendance}
-            />
+              className={cn("camera-wall-item", shouldFillViewportGrid && "h-full")}
+            >
+              <CameraMonitorCard
+                camera={camera}
+                streamUrl={streamUrl}
+                busy={actionCamId === camera.id}
+                attendanceEnabled={attendanceEnabled}
+                attendanceBusy={attendanceActionCamId === camera.id}
+                isFullscreen={isFullscreen}
+                fillContainer={shouldFillViewportGrid}
+                onScreenDoubleClick={() => toggleFullscreen(cardId)}
+                className={cn(
+                  shouldFillViewportGrid && "h-full",
+                  "transition-all duration-300 ease-out",
+                  isFullscreen &&
+                    "fixed inset-4 z-[70] rounded-md shadow-2xl ring-1 ring-white/10",
+                )}
+                onStart={startCamera}
+                onStop={stopCamera}
+                onEnableAttendance={handleEnableAttendance}
+                onDisableAttendance={handleDisableAttendance}
+              />
+            </div>
           );
         })}
       </section>
