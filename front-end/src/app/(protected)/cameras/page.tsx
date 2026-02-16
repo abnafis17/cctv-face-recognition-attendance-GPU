@@ -24,6 +24,7 @@ const MAX_CAMERAS_PER_ROW = 4;
 const MAX_VIEWPORT_CAMERA_COUNT = 16;
 const VIEWPORT_BOTTOM_PADDING_PX = 12;
 const MIN_WALL_HEIGHT_PX = 220;
+const DESKTOP_MEDIA_QUERY = "(min-width: 768px)";
 
 type CameraGridConfig = {
   columns: number;
@@ -81,6 +82,7 @@ export default function CamerasPage() {
   >({});
   const [laptopActive, setLaptopActive] = useState(false);
   const [fullscreenCardId, setFullscreenCardId] = useState<string | null>(null);
+  const [isDesktop, setIsDesktop] = useState(false);
   const [cameraWallHeight, setCameraWallHeight] = useState<number>(
     MIN_WALL_HEIGHT_PX,
   );
@@ -105,8 +107,8 @@ export default function CamerasPage() {
     () => getCameraGridConfig(totalScreens),
     [totalScreens],
   );
-  const shouldEnableGridScroll = gridConfig.shouldScroll;
-  const shouldFillViewportGrid = !shouldEnableGridScroll;
+  const shouldEnableGridScroll = isDesktop && gridConfig.shouldScroll;
+  const shouldFillViewportGrid = isDesktop && !gridConfig.shouldScroll;
   const activeScreens =
     cams.filter((c) => c.isActive).length + (laptopActive ? 1 : 0);
   const offlineScreens = Math.max(totalScreens - activeScreens, 0);
@@ -224,6 +226,23 @@ export default function CamerasPage() {
   }, [fullscreenCardId]);
 
   useEffect(() => {
+    const mediaQuery = window.matchMedia(DESKTOP_MEDIA_QUERY);
+    const updateIsDesktop = (event: MediaQueryList | MediaQueryListEvent) => {
+      setIsDesktop(event.matches);
+    };
+
+    updateIsDesktop(mediaQuery);
+
+    if ("addEventListener" in mediaQuery) {
+      mediaQuery.addEventListener("change", updateIsDesktop);
+      return () => mediaQuery.removeEventListener("change", updateIsDesktop);
+    }
+
+    mediaQuery.addListener(updateIsDesktop);
+    return () => mediaQuery.removeListener(updateIsDesktop);
+  }, []);
+
+  useEffect(() => {
     const updateWallHeight = () => {
       const wallNode = cameraWallRef.current;
       if (!wallNode) return;
@@ -249,7 +268,7 @@ export default function CamerasPage() {
       observer.disconnect();
       window.removeEventListener("resize", updateWallHeight);
     };
-  }, [totalScreens, err]);
+  }, [totalScreens, err, isDesktop]);
 
   return (
     <div className="space-y-4">
@@ -325,8 +344,12 @@ export default function CamerasPage() {
         )}
         style={{
           ...wallGridStyle(gridConfig.columns, gridConfig.rows, cameraWallHeight),
-          ...(shouldFillViewportGrid ? { height: `${cameraWallHeight}px` } : {}),
-          ...(shouldEnableGridScroll ? { maxHeight: `${cameraWallHeight}px` } : {}),
+          ...(shouldFillViewportGrid && isDesktop
+            ? { height: `${cameraWallHeight}px` }
+            : {}),
+          ...(shouldEnableGridScroll && isDesktop
+            ? { maxHeight: `${cameraWallHeight}px` }
+            : {}),
         }}
       >
         <div className={cn("camera-wall-item", shouldFillViewportGrid && "h-full")}>
