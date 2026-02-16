@@ -4,9 +4,9 @@ import React from "react";
 const page = () => {
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-bold text-zinc-900">Employee List</h1>
-        <p className="text-sm text-zinc-500">
+      <div className="page-header">
+        <h1 className="page-title">Employee List</h1>
+        <p className="page-subtitle">
           Manage employee records, hierarchy attributes, and profile updates.
         </p>
       </div>

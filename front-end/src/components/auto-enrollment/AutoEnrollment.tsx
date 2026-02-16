@@ -312,14 +312,16 @@ export default function AutoEnrollment({
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
-      <div className="text-sm text-gray-500">Auto enrollment stream (AI: {AI_HOST})</div>
+      <div className="page-subtitle">Auto enrollment stream (AI: {AI_HOST})</div>
 
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <div className="text-sm text-gray-500">Face enrollment</div>
-              <div className="text-xl font-semibold truncate">Quick Setup (Face ID style)</div>
+              <div className="page-meta">Face enrollment</div>
+              <div className="truncate text-xl font-semibold text-zinc-950">
+                Quick Setup (Face ID style)
+              </div>
             </div>
 
             <Badge

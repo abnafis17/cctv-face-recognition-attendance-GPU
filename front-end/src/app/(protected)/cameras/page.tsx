@@ -306,8 +306,8 @@ export default function CamerasPage() {
   return (
     <div className="space-y-4">
       <header className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-zinc-900">Camera View</h1>
+        <div className="page-header">
+          <h1 className="page-title">Camera View</h1>
           {/* <p className="mt-1 text-sm text-zinc-500">
             Live camera view with recognition overlay (AI: {AI_HOST})
           </p> */}

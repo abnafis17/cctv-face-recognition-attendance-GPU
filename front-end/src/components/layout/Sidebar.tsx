@@ -397,7 +397,7 @@ export default function Sidebar() {
         <aside
           id="mobile-sidebar"
           className={cn(
-            "absolute inset-y-0 left-0 flex w-[85vw] max-w-[330px] flex-col bg-zinc-950 pt-[env(safe-area-inset-top)] text-zinc-100 shadow-2xl transition-transform duration-300 ease-out",
+            "ui-readable-dark absolute inset-y-0 left-0 flex w-[85vw] max-w-[330px] flex-col bg-zinc-950 pt-[env(safe-area-inset-top)] text-zinc-100 shadow-2xl transition-transform duration-300 ease-out",
             mobileOpen ? "translate-x-0" : "-translate-x-full"
           )}
         >
@@ -406,11 +406,11 @@ export default function Sidebar() {
         </aside>
       </div>
 
-      <aside className="hidden h-dvh w-20 flex-col border-r border-zinc-200 bg-zinc-950 text-zinc-100 md:flex lg:hidden">
+      <aside className="ui-readable-dark hidden h-dvh w-20 flex-col border-r border-zinc-200 bg-zinc-950 text-zinc-100 md:flex lg:hidden">
         <SidebarContent compact />
       </aside>
 
-      <aside className="hidden h-dvh w-72 flex-col border-r border-zinc-200 bg-zinc-950 text-zinc-100 lg:flex">
+      <aside className="ui-readable-dark hidden h-dvh w-72 flex-col border-r border-zinc-200 bg-zinc-950 text-zinc-100 lg:flex">
         <SidebarContent />
       </aside>
     </>

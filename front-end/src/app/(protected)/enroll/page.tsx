@@ -47,13 +47,13 @@ export default function Page() {
   return (
     <div className="p-4">
       <div className="mb-3 flex items-center justify-between">
-        <div>
-          <div className="text-lg font-semibold">
+        <div className="page-header">
+          <h1 className="page-title">
             {reEnroll ? "Employee Face Re-enrollment" : "Employee Auto Enrollment"}
-          </div>
-          <div className="text-xs text-gray-500">
-            Auto-capture: front / right / left / up / down / blink → auto-save.
-          </div>
+          </h1>
+          <p className="page-subtitle">
+            Auto-capture: front / right / left / up / down / blink -&gt; auto-save.
+          </p>
         </div>
         <button
           className="rounded-md border bg-white px-3 py-1 text-sm"

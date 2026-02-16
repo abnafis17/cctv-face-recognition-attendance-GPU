@@ -79,9 +79,9 @@ export default function AttendancePage() {
   return (
     <div>
       <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Attendance History</h1>
-          <p className="mt-1 text-sm text-gray-500">
+        <div className="page-header">
+          <h1 className="page-title">Attendance History</h1>
+          <p className="page-subtitle">
             Live attendance records from database
           </p>
         </div>

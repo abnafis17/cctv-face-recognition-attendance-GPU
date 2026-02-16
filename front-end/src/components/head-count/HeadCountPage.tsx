@@ -934,11 +934,11 @@ export default function HeadcountPage() {
   return (
     <div className="space-y-4">
       <header className="rounded-2xl border border-zinc-200 bg-white/90 p-4 shadow-sm backdrop-blur">
-        <h1 className="text-2xl font-bold text-zinc-900">Headcount Operations</h1>
-        <p className="mt-1 text-sm text-zinc-500">
+        <h1 className="page-title">Headcount Operations</h1>
+        <p className="page-subtitle">
           Live headcount capture, camera monitoring, and cross-check reporting.
         </p>
-        <p className="mt-1 text-xs text-zinc-500">AI Host: {AI_HOST}</p>
+        <p className="page-meta">AI Host: {AI_HOST}</p>
       </header>
 
       <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
