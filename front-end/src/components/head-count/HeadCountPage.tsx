@@ -90,6 +90,7 @@ type HeadcountRemoteCameraPreviewProps = {
   onStop: (cameraId: string) => void;
   className?: string;
   viewportClassName?: string;
+  fillHeight?: boolean;
 };
 
 const DEFAULT_LAPTOP_CAMERA_ID = "cmkdpsql0000112nsd5gcesq4";
@@ -158,6 +159,7 @@ function HeadcountRemoteCameraPreview({
   onStop,
   className,
   viewportClassName,
+  fillHeight = false,
 }: HeadcountRemoteCameraPreviewProps) {
   const active = Boolean(camera.isActive);
   const [streamHasFrame, setStreamHasFrame] = useState(false);
@@ -170,6 +172,7 @@ function HeadcountRemoteCameraPreview({
     <article
       className={cn(
         "rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm transition",
+        fillHeight && "flex flex-col xl:h-full",
         className,
       )}
     >
@@ -204,10 +207,19 @@ function HeadcountRemoteCameraPreview({
       <div
         className={cn(
           "relative mt-3 overflow-hidden rounded-xl border border-zinc-200",
+          fillHeight && "xl:flex-1",
           streamHasFrame ? "bg-zinc-950" : "bg-zinc-100",
         )}
       >
-        <div className={cn("w-full", viewportClassName || "aspect-video")}>
+        <div
+          className={cn(
+            "w-full",
+            viewportClassName ||
+              (fillHeight
+                ? "aspect-video xl:h-full xl:min-h-[340px] xl:aspect-auto"
+                : "aspect-video"),
+          )}
+        >
           {active ? (
             <>
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1154,8 +1166,8 @@ export default function HeadcountPage() {
         <p className="page-meta">AI Host: {AI_HOST}</p>
       </header>
 
-      <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
-        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <section className="rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm">
+        <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-base font-semibold text-zinc-900">Live Camera + Controls</h2>
             <p className="text-xs text-zinc-500">
@@ -1167,8 +1179,8 @@ export default function HeadcountPage() {
           </span>
         </div>
 
-        <div className="grid grid-cols-1 gap-5 xl:min-h-[360px] xl:grid-cols-[500px_minmax(0,1fr)]">
-          <div className="min-w-0 xl:max-w-[500px]">
+        <div className="grid grid-cols-1 gap-4 xl:min-h-[360px] xl:grid-cols-[500px_minmax(0,1fr)] xl:items-stretch">
+          <div className="min-w-0 xl:flex xl:h-full xl:max-w-[500px]">
             {usingLaptopCamera ? (
               <HeadCountCameraComponent
                 userId={companyId ? `laptop-${companyId}` : DEFAULT_LAPTOP_CAMERA_ID}
@@ -1176,8 +1188,8 @@ export default function HeadcountPage() {
                 cameraName="Laptop Camera"
                 streamType={streamType}
                 onActiveChange={setLaptopActive}
-                className="mx-auto w-full max-w-[500px]"
-                viewportClassName="aspect-video"
+                className="mx-auto w-full max-w-[500px] xl:h-full"
+                fillHeight
               />
             ) : selectedCam ? (
               <HeadcountRemoteCameraPreview
@@ -1186,15 +1198,15 @@ export default function HeadcountPage() {
                 busy={selectedCameraBusy}
                 onStart={startCamera}
                 onStop={stopCamera}
-                className="mx-auto w-full max-w-[500px]"
-                viewportClassName="aspect-video"
+                className="mx-auto w-full max-w-[500px] xl:h-full"
+                fillHeight
               />
             ) : null}
           </div>
 
-          <aside className="min-w-0 h-full rounded-2xl border border-zinc-200 bg-zinc-50/60 p-4 flex flex-col">
-            <div className="min-h-[96px] rounded-xl border border-zinc-200 bg-white p-4">
-              <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:flex-nowrap xl:overflow-x-auto xl:pb-1">
+          <aside className="flex h-full min-w-0 flex-col rounded-2xl bg-zinc-50/40 p-3">
+            <div className="rounded-xl bg-white/90 p-2.5 shadow-sm">
+              <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:flex-nowrap xl:overflow-x-auto xl:pb-0.5">
                 <div className="shrink-0 text-sm font-semibold text-zinc-900">
                   Camera Source
                 </div>
@@ -1248,7 +1260,7 @@ export default function HeadcountPage() {
               </div>
 
               {selectedCam ? (
-                <div className="mt-3 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2">
+                <div className="mt-2 rounded-lg bg-zinc-50 px-3 py-1.5">
                   <span className="text-[11px] font-medium text-zinc-500">RTSP: </span>
                   <span
                     className="font-mono text-[11px] text-zinc-700"
@@ -1260,14 +1272,14 @@ export default function HeadcountPage() {
               ) : null}
             </div>
 
-            <div className="mt-4 flex min-h-[220px] flex-1 flex-col rounded-xl border border-zinc-200 bg-white p-4">
+            <div className="mt-2.5 flex min-h-[220px] flex-1 flex-col rounded-xl bg-white p-3 shadow-sm">
               <div className="text-sm font-semibold text-zinc-900">Headcount Filters</div>
-              <div className="mt-3 space-y-3">
-                <div className="rounded-xl border border-zinc-200 bg-zinc-50/70 p-3">
+              <div className="mt-2.5 space-y-2.5">
+                <div className="rounded-lg bg-zinc-50/80 px-3 py-2.5">
                   <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
                     Primary Filters
                   </div>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
                     <div>
                       <label className="mb-1 block text-[11px] font-medium text-zinc-600">
                         Type
@@ -1334,11 +1346,11 @@ export default function HeadcountPage() {
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-zinc-200 bg-zinc-50/70 p-3">
+                <div className="rounded-lg bg-zinc-50/80 px-3 py-2.5">
                   <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
                     Hierarchy Filters
                   </div>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
                     {hierarchy.availability.hasUnit ? (
                       <div>
                         <label className="mb-1 block text-[11px] font-medium text-zinc-600">
@@ -1446,11 +1458,11 @@ export default function HeadcountPage() {
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-zinc-200 bg-zinc-50/70 p-3">
+                <div className="rounded-lg bg-zinc-50/80 px-3 py-2.5">
                   <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
                     Search & Actions
                   </div>
-                  <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_auto_auto] xl:items-end">
+                  <div className="grid grid-cols-1 gap-2.5 xl:grid-cols-[minmax(0,1fr)_auto_auto] xl:items-end">
                     <div>
                       <label className="mb-1 block text-[11px] font-medium text-zinc-600">
                         Search
@@ -1506,7 +1518,7 @@ export default function HeadcountPage() {
                 </div>
               </div>
 
-              <div className="mt-3 flex flex-wrap items-center gap-2.5">
+              <div className="mt-2 flex flex-wrap items-center gap-2">
                 <span className="inline-flex items-center rounded-full bg-gray-100 px-3 py-1.5 text-xs font-semibold text-gray-700">
                   Date: {dateStr}
                 </span>
