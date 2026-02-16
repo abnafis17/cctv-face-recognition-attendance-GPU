@@ -21,10 +21,14 @@ import CameraMonitorCard from "@/components/cameras-live/CameraMonitorCard";
 import { cn } from "@/lib/utils";
 
 const MAX_CAMERAS_PER_ROW = 4;
-const MAX_VIEWPORT_CAMERA_COUNT = 16;
+const MAX_VIEWPORT_CAMERA_COUNT_MEDIUM = 9;
+const MAX_VIEWPORT_CAMERA_COUNT_LARGE = 16;
 const VIEWPORT_BOTTOM_PADDING_PX = 12;
 const MIN_WALL_HEIGHT_PX = 220;
-const DESKTOP_MEDIA_QUERY = "(min-width: 768px)";
+const MOBILE_MAX_WIDTH = 767.98;
+const MEDIUM_MAX_WIDTH = 1023.98;
+
+type ViewportMode = "mobile" | "medium" | "large";
 
 type CameraGridConfig = {
   columns: number;
@@ -32,16 +36,25 @@ type CameraGridConfig = {
   shouldScroll: boolean;
 };
 
-function getCameraGridConfig(total: number): CameraGridConfig {
+function getCameraGridConfig(total: number, mode: ViewportMode): CameraGridConfig {
+  if (mode === "mobile") {
+    return { columns: 1, rows: Math.max(total, 1), shouldScroll: false };
+  }
+
   if (total === 1) return { columns: 1, rows: 1, shouldScroll: false };
   if (total <= 4) return { columns: 2, rows: 2, shouldScroll: false };
-  if (total <= 9) return { columns: 3, rows: 3, shouldScroll: false };
-  if (total <= MAX_VIEWPORT_CAMERA_COUNT) {
+  if (total <= MAX_VIEWPORT_CAMERA_COUNT_MEDIUM) {
+    return { columns: 3, rows: 3, shouldScroll: false };
+  }
+
+  if (mode === "large" && total <= MAX_VIEWPORT_CAMERA_COUNT_LARGE) {
     return { columns: 4, rows: 4, shouldScroll: false };
   }
+
+  const columns = mode === "medium" ? 3 : MAX_CAMERAS_PER_ROW;
   return {
-    columns: MAX_CAMERAS_PER_ROW,
-    rows: Math.ceil(total / MAX_CAMERAS_PER_ROW),
+    columns,
+    rows: Math.ceil(total / columns),
     shouldScroll: true,
   };
 }
@@ -82,7 +95,7 @@ export default function CamerasPage() {
   >({});
   const [laptopActive, setLaptopActive] = useState(false);
   const [fullscreenCardId, setFullscreenCardId] = useState<string | null>(null);
-  const [isDesktop, setIsDesktop] = useState(false);
+  const [viewportMode, setViewportMode] = useState<ViewportMode>("mobile");
   const [cameraWallHeight, setCameraWallHeight] = useState<number>(
     MIN_WALL_HEIGHT_PX,
   );
@@ -104,9 +117,10 @@ export default function CamerasPage() {
 
   const totalScreens = cams.length + 1; // +1 for laptop camera card
   const gridConfig = useMemo(
-    () => getCameraGridConfig(totalScreens),
-    [totalScreens],
+    () => getCameraGridConfig(totalScreens, viewportMode),
+    [totalScreens, viewportMode],
   );
+  const isDesktop = viewportMode !== "mobile";
   const shouldEnableGridScroll = isDesktop && gridConfig.shouldScroll;
   const shouldFillViewportGrid = isDesktop && !gridConfig.shouldScroll;
   const activeScreens =
@@ -226,20 +240,20 @@ export default function CamerasPage() {
   }, [fullscreenCardId]);
 
   useEffect(() => {
-    const mediaQuery = window.matchMedia(DESKTOP_MEDIA_QUERY);
-    const updateIsDesktop = (event: MediaQueryList | MediaQueryListEvent) => {
-      setIsDesktop(event.matches);
+    const updateViewportMode = () => {
+      const width = window.innerWidth;
+      if (width <= MOBILE_MAX_WIDTH) {
+        setViewportMode("mobile");
+      } else if (width <= MEDIUM_MAX_WIDTH) {
+        setViewportMode("medium");
+      } else {
+        setViewportMode("large");
+      }
     };
 
-    updateIsDesktop(mediaQuery);
-
-    if ("addEventListener" in mediaQuery) {
-      mediaQuery.addEventListener("change", updateIsDesktop);
-      return () => mediaQuery.removeEventListener("change", updateIsDesktop);
-    }
-
-    mediaQuery.addListener(updateIsDesktop);
-    return () => mediaQuery.removeListener(updateIsDesktop);
+    updateViewportMode();
+    window.addEventListener("resize", updateViewportMode);
+    return () => window.removeEventListener("resize", updateViewportMode);
   }, []);
 
   useEffect(() => {
@@ -268,7 +282,7 @@ export default function CamerasPage() {
       observer.disconnect();
       window.removeEventListener("resize", updateWallHeight);
     };
-  }, [totalScreens, err, isDesktop]);
+  }, [totalScreens, err, viewportMode]);
 
   return (
     <div className="space-y-4">
