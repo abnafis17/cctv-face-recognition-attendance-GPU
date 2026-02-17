@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { MoreHorizontal } from "lucide-react";
 import type { Camera } from "@/types";
 import { cn } from "@/lib/utils";
+import { useMjpegStream } from "@/hooks/useMjpegStream";
 import {
   Popover,
   PopoverContent,
@@ -48,13 +49,27 @@ const CameraMonitorCard: React.FC<Props> = ({
       : attendanceEnabled === false
         ? "disabled"
         : "unknown";
-  const [streamHasFrame, setStreamHasFrame] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
 
-  // Reset loading state when camera state/url changes.
+  const {
+    streamSrc,
+    streamHasFrame,
+    streamRetries,
+    onFrame,
+    onError,
+    resetStream,
+  } = useMjpegStream({
+    streamUrl,
+    enabled: active,
+    // Recovers from browsers that silently stall MJPEG after network hiccups/server restarts.
+    refreshIntervalMs: 180_000,
+  });
+
+  // Force a fresh MJPEG connection when camera state/url changes.
   useEffect(() => {
-    setStreamHasFrame(false);
-  }, [active, streamUrl]);
+    if (!active) return;
+    resetStream();
+  }, [active, resetStream, streamUrl]);
 
   const shouldFillFrame = isFullscreen || fillContainer;
 
@@ -87,19 +102,19 @@ const CameraMonitorCard: React.FC<Props> = ({
             <>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={streamUrl}
+                src={streamSrc}
                 alt={`Camera ${camera.name} Stream`}
                 className={`h-full w-full object-cover object-left-top transition-opacity duration-200 ${
                   streamHasFrame ? "opacity-100" : "opacity-0"
                 }`}
                 width={1280}
                 height={720}
-                onLoad={() => setStreamHasFrame(true)}
-                onError={() => setStreamHasFrame(false)}
+                onLoad={onFrame}
+                onError={onError}
               />
               {!streamHasFrame ? (
                 <div className="absolute inset-0 flex items-center justify-center text-sm text-zinc-500">
-                  Loading stream...
+                  {streamRetries > 0 ? "Reconnecting stream..." : "Loading stream..."}
                 </div>
               ) : null}
             </>

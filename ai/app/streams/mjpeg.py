@@ -103,7 +103,8 @@ def mjpeg_generator_recognition(
 
     finally:
         left = stream_clients.dec(camera_id, st)
-        if left == 0:
+        # Keep background recognition alive for server-managed cameras.
+        if left == 0 and not camera_rt.is_running(camera_id):
             rec_worker.stop(camera_id)
 
 
