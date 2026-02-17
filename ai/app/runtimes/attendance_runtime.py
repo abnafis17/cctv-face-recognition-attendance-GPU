@@ -273,7 +273,7 @@ class AttendanceRuntime:
         self,
         use_gpu: bool = False,
         model_name: str = "buffalo_l",
-        min_face_size: int = 30,
+        min_face_size: int = 20,
         similarity_threshold: float = 0.35,
         gallery_refresh_s: float = 5.0,
         cooldown_s: int = 10,
@@ -309,7 +309,12 @@ class AttendanceRuntime:
         self._detector = FaceDetector(
             model_name=model_name,
             use_gpu=use_gpu,
+            # Slightly larger detector input improves small/far-face recall.
+            # If AI_DET_SIZE is set, FaceDetector will still honor the env override.
+            det_size=(768, 768),
             min_face_size=min_face_size,
+            # Slightly lower score gate helps keep weak/far detections.
+            min_det_score=0.30,
         )
         self._embedder = FaceEmbedder(model_name=model_name, use_gpu=use_gpu)
 
