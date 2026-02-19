@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 
 type UseMjpegStreamArgs = {
   /** Fully qualified MJPEG base url (without cache-busting param). */
@@ -20,6 +20,10 @@ export function useMjpegStream({
   refreshIntervalMs,
 }: UseMjpegStreamArgs) {
   // MJPEG stream reliability: cache-bust + retry (some browsers keep stale connections)
+  // Note: Next.js can preserve client component state across navigations. We therefore
+  // include a per-hook-instance nonce in the cache-buster to guarantee a fresh request
+  // whenever the component is (re)mounted.
+  const mountNonce = useId();
   const [streamAttempt, setStreamAttempt] = useState(0);
   const [streamHasFrame, setStreamHasFrame] = useState(false);
   const [streamRetries, setStreamRetries] = useState(0);
@@ -36,8 +40,8 @@ export function useMjpegStream({
     if (!enabled) return "";
     if (!streamUrl) return "";
     const sep = streamUrl.includes("?") ? "&" : "?";
-    return `${streamUrl}${sep}t=${streamAttempt}`;
-  }, [enabled, streamAttempt, streamUrl]);
+    return `${streamUrl}${sep}t=${encodeURIComponent(mountNonce)}-${streamAttempt}`;
+  }, [enabled, mountNonce, streamAttempt, streamUrl]);
 
   const resetStream = useCallback(() => {
     if (streamRetryTimerRef.current) window.clearTimeout(streamRetryTimerRef.current);
@@ -84,6 +88,16 @@ export function useMjpegStream({
     setStreamAttempt((a) => a + 1);
   }, []);
 
+  // When disabled, clear any pending retries to avoid background timers updating state.
+  useEffect(() => {
+    if (enabled) return;
+    if (streamRetryTimerRef.current) window.clearTimeout(streamRetryTimerRef.current);
+    streamRetryTimerRef.current = null;
+    streamRetryCountRef.current = 0;
+    setStreamRetries(0);
+    setStreamHasFrame(false);
+  }, [enabled]);
+
   useEffect(() => {
     return () => {
       if (streamRetryTimerRef.current) window.clearTimeout(streamRetryTimerRef.current);
@@ -127,8 +141,8 @@ export function useMjpegStream({
   }, []);
 
   const imgKey = useMemo(
-    () => `${streamUrl}:${streamAttempt}`,
-    [streamAttempt, streamUrl],
+    () => `${streamUrl}:${mountNonce}:${streamAttempt}`,
+    [mountNonce, streamAttempt, streamUrl],
   );
 
   return {
@@ -140,6 +154,7 @@ export function useMjpegStream({
     onFrame,
     onError: scheduleStreamRetry,
     resetStream,
+    refreshStream,
   };
 }
 
