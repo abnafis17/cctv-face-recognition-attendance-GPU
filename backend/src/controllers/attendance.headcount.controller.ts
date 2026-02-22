@@ -113,6 +113,7 @@ export async function listHeadcountCameras(req: Request, res: Response) {
  * Optional:
  * - &view=headcount|ot
  * - hierarchy filters: &unit=...&department=...&section=...&line=...
+ * - &runGapMinutes=15 (headcount run window in minutes; default 15)
  * - legacy fallback: &groupBy=unit|section|department|line&groupValue=...
  *
  * Important: camera selection on the headcount page is ONLY for capture/streaming.
@@ -394,16 +395,29 @@ export async function listHeadcount(req: Request, res: Response) {
       select: { employeeId: true, timestamp: true, cameraId: true },
     });
 
-    // 3) Headcount events today (already persisted by createAttendance when type=headcount)
-    const headLastByEmployee = await prisma.headcount.findMany({
+    const runWindowMinutesRaw = Number(
+      req.query?.runGapMinutes ??
+        req.query?.runWindowMinutes ??
+        req.query?.headcountRunGapMinutes ??
+        process.env.HEADCOUNT_RUN_GAP_MINUTES ??
+        15,
+    );
+    const runWindowMinutes =
+      Number.isFinite(runWindowMinutesRaw) && runWindowMinutesRaw > 0
+        ? Math.min(Math.max(Math.floor(runWindowMinutesRaw), 1), 240)
+        : 15;
+    const runWindowMs = runWindowMinutes * 60 * 1000;
+
+    // 3) Headcount events today (all rows, not distinct)
+    const headEventsRaw = await prisma.headcount.findMany({
       where: {
         companyId,
         timestamp: { gte: start, lt: end },
         employeeId: { in: candidateIds },
       },
-      distinct: ["employeeId"],
-      orderBy: [{ employeeId: "asc" }, { updatedAt: "desc" }],
+      orderBy: [{ timestamp: "asc" }, { createdAt: "asc" }],
       select: {
+        id: true,
         employeeId: true,
         timestamp: true,
         cameraId: true,
@@ -413,13 +427,78 @@ export async function listHeadcount(req: Request, res: Response) {
       },
     });
 
+    type HeadEvent = {
+      id: string;
+      employeeId: string;
+      timestamp: Date;
+      cameraId: string | null;
+      confidence: number | null;
+      status: string;
+      notes: string | null;
+    };
+
+    const headEvents: HeadEvent[] = headEventsRaw
+      .filter((x): x is typeof x & { employeeId: string } => Boolean(x.employeeId))
+      .map((x) => ({
+        id: String(x.id),
+        employeeId: String(x.employeeId),
+        timestamp: x.timestamp,
+        cameraId: x.cameraId ?? null,
+        confidence: typeof x.confidence === "number" ? x.confidence : null,
+        status: String(x.status ?? "").trim().toUpperCase(),
+        notes: x.notes ?? null,
+      }));
+
+    type HeadcountRun = {
+      runKey: string;
+      runIndex: number;
+      start: Date;
+      end: Date;
+      latestByEmployee: Map<string, HeadEvent>;
+    };
+
+    const runs: HeadcountRun[] = [];
+    for (const ev of headEvents) {
+      const eventTime = ev.timestamp.getTime();
+      const current = runs[runs.length - 1];
+      const shouldStartNewRun =
+        !current || eventTime - current.start.getTime() >= runWindowMs;
+
+      if (shouldStartNewRun) {
+        const runIndex = runs.length + 1;
+        runs.push({
+          runKey: `run-${runIndex}-${eventTime}`,
+          runIndex,
+          start: ev.timestamp,
+          end: ev.timestamp,
+          latestByEmployee: new Map([[ev.employeeId, ev]]),
+        });
+        continue;
+      }
+
+      if (eventTime > current.end.getTime()) current.end = ev.timestamp;
+      const previous = current.latestByEmployee.get(ev.employeeId);
+      if (!previous || ev.timestamp.getTime() >= previous.timestamp.getTime()) {
+        current.latestByEmployee.set(ev.employeeId, ev);
+      }
+    }
+
+    const headFirstMap = new Map<string, HeadEvent>();
+    const headLastMap = new Map<string, HeadEvent>();
+    for (const ev of headEvents) {
+      const first = headFirstMap.get(ev.employeeId);
+      if (!first || ev.timestamp.getTime() < first.timestamp.getTime()) {
+        headFirstMap.set(ev.employeeId, ev);
+      }
+
+      const last = headLastMap.get(ev.employeeId);
+      if (!last || ev.timestamp.getTime() >= last.timestamp.getTime()) {
+        headLastMap.set(ev.employeeId, ev);
+      }
+    }
+
     const attLastMap = new Map(attLastByEmployee.map((x) => [x.employeeId, x]));
     const attFirstMap = new Map(attFirstByEmployee.map((x) => [x.employeeId, x]));
-    const headLastMap = new Map(
-      headLastByEmployee
-        .filter((x): x is typeof x & { employeeId: string } => Boolean(x.employeeId))
-        .map((x) => [String(x.employeeId), x]),
-    );
 
     const attendanceIds = new Set(attLastByEmployee.map((x) => x.employeeId));
     const headIds = new Set(Array.from(headLastMap.keys()));
@@ -446,17 +525,18 @@ export async function listHeadcount(req: Request, res: Response) {
     const employeeMap = new Map(employees.map((e) => [e.id, e]));
 
     // 5) Camera names (previous attendance + headcount camera)
-    const allCamIds: string[] = [];
+    const allCamIds = new Set<string>();
     for (const employeeId of employeeIds) {
       const prevCamId = attLastMap.get(employeeId)?.cameraId;
-      const headCamId = headLastMap.get(employeeId)?.cameraId;
-      if (prevCamId) allCamIds.push(String(prevCamId));
-      if (headCamId) allCamIds.push(String(headCamId));
+      if (prevCamId) allCamIds.add(String(prevCamId));
+    }
+    for (const ev of headEvents) {
+      if (ev.cameraId) allCamIds.add(String(ev.cameraId));
     }
 
-    const cams = allCamIds.length
+    const cams = allCamIds.size
       ? await prisma.camera.findMany({
-          where: { id: { in: allCamIds } },
+          where: { id: { in: Array.from(allCamIds) } },
           select: { id: true, name: true },
         })
       : [];
@@ -481,6 +561,17 @@ export async function listHeadcount(req: Request, res: Response) {
       headcountLastEntryTime: string | null;
       headcountTime: string | null;
       headcountConfidence: number | null;
+      headcountRuns: {
+        runKey: string;
+        runIndex: number;
+        runStartTime: string | null;
+        runEndTime: string | null;
+        headcountTime: string | null;
+        headcountCameraId: string | null;
+        headcountCameraName: string | null;
+        headcountConfidence: number | null;
+        status: HeadcountStatus;
+      }[];
 
       previousCameraName: string | null;
       previousFirstEntryTime: string | null;
@@ -495,11 +586,12 @@ export async function listHeadcount(req: Request, res: Response) {
       const emp = employeeMap.get(employeePkId);
       const publicEmployeeId = emp?.empId ?? employeePkId;
 
-      const head = headLastMap.get(employeePkId);
+      const headFirstEvent = headFirstMap.get(employeePkId);
+      const headLastEvent = headLastMap.get(employeePkId);
       const attLast = attLastMap.get(employeePkId);
       const attFirst = attFirstMap.get(employeePkId);
 
-      const hasHead = Boolean(head);
+      const hasHead = Boolean(headLastEvent);
       const hasAttendance = Boolean(attLast);
 
       let status: Row["status"];
@@ -507,9 +599,39 @@ export async function listHeadcount(req: Request, res: Response) {
       else if (hasHead && !hasAttendance) status = "UNMATCH";
       else status = "ABSENT";
 
-      const headFirst = parseFirstSeenFromNotes(head?.notes ?? null);
-      const headLast = head?.timestamp ?? null;
+      const headFirst =
+        parseFirstSeenFromNotes(headFirstEvent?.notes ?? null) ??
+        headFirstEvent?.timestamp ??
+        null;
+      const headLast = headLastEvent?.timestamp ?? null;
       const timestamp = headLast ?? attLast?.timestamp ?? null;
+
+      const headcountRuns = runs.map((run) => {
+        const runEvent = run.latestByEmployee.get(employeePkId);
+        const runHasHead = Boolean(runEvent);
+        const runStatus: HeadcountStatus = runHasHead
+          ? hasAttendance
+            ? "MATCH"
+            : "UNMATCH"
+          : "ABSENT";
+
+        return {
+          runKey: run.runKey,
+          runIndex: run.runIndex,
+          runStartTime: toISOStringOrNull(run.start),
+          runEndTime: toISOStringOrNull(run.end),
+          headcountTime: toISOStringOrNull(runEvent?.timestamp ?? null),
+          headcountCameraId: runEvent?.cameraId ?? null,
+          headcountCameraName: runEvent?.cameraId
+            ? camName.get(String(runEvent.cameraId)) ?? null
+            : null,
+          headcountConfidence:
+            runEvent && typeof runEvent.confidence === "number"
+              ? runEvent.confidence
+              : null,
+          status: runStatus,
+        };
+      });
 
       return {
         id: `${employeePkId}:${dateStr}`,
@@ -522,16 +644,19 @@ export async function listHeadcount(req: Request, res: Response) {
         section: emp?.section ?? null,
         line: emp?.line ?? null,
 
-        headcountCameraId: hasHead ? (head?.cameraId ?? null) : null,
+        headcountCameraId: hasHead ? (headLastEvent?.cameraId ?? null) : null,
         headcountCameraName:
-          hasHead && head?.cameraId
-            ? camName.get(String(head.cameraId)) ?? null
+          hasHead && headLastEvent?.cameraId
+            ? camName.get(String(headLastEvent.cameraId)) ?? null
             : null,
         headcountFirstEntryTime: hasHead ? toISOStringOrNull(headFirst) : null,
         headcountLastEntryTime: hasHead ? toISOStringOrNull(headLast) : null,
         headcountTime: hasHead ? toISOStringOrNull(headLast) : null,
         headcountConfidence:
-          hasHead && typeof head?.confidence === "number" ? head.confidence : null,
+          hasHead && typeof headLastEvent?.confidence === "number"
+            ? headLastEvent.confidence
+            : null,
+        headcountRuns,
 
         previousCameraName: attLast?.cameraId
           ? camName.get(String(attLast.cameraId)) ?? null

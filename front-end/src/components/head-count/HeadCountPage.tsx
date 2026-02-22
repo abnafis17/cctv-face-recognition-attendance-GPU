@@ -46,6 +46,18 @@ type HierarchyFilters = {
   line: string;
 };
 
+type HeadcountRunResult = {
+  runKey: string;
+  runIndex: number;
+  runStartTime?: string | null;
+  runEndTime?: string | null;
+  headcountTime?: string | null;
+  headcountCameraId?: string | null;
+  headcountCameraName?: string | null;
+  headcountConfidence?: number | null;
+  status: HeadcountStatus;
+};
+
 type CrosscheckRow = {
   id: string;
   employeeId: string;
@@ -55,6 +67,7 @@ type CrosscheckRow = {
   section?: string | null;
   line?: string | null;
   status: HeadcountStatus;
+  headcountRuns: HeadcountRunResult[];
 };
 
 type OtRow = {
@@ -77,9 +90,19 @@ type HeadcountRemoteCameraPreviewProps = {
   onStop: (cameraId: string) => void;
   className?: string;
   viewportClassName?: string;
+  fillHeight?: boolean;
 };
 
 const DEFAULT_LAPTOP_CAMERA_ID = "cmkdpsql0000112nsd5gcesq4";
+const HEADCOUNT_RUN_WINDOW_OPTIONS = [
+  { value: 5, label: "5 min" },
+  { value: 10, label: "10 min" },
+  { value: 15, label: "15 min" },
+  { value: 20, label: "20 min" },
+  { value: 30, label: "30 min" },
+  { value: 45, label: "45 min" },
+  { value: 60, label: "1 hour" },
+] as const;
 
 function dhakaTodayYYYYMMDD() {
   return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Dhaka" });
@@ -95,6 +118,13 @@ function safeTimeOnly(ts?: string | number | Date | null) {
   } catch {
     return "-";
   }
+}
+
+function safeTimeRange(start?: string | null, end?: string | null) {
+  const from = safeTimeOnly(start);
+  const to = safeTimeOnly(end);
+  if (from === "-" && to === "-") return "-";
+  return `${from} - ${to}`;
 }
 
 function maskRtspUrl(url?: string | null): string {
@@ -129,6 +159,7 @@ function HeadcountRemoteCameraPreview({
   onStop,
   className,
   viewportClassName,
+  fillHeight = false,
 }: HeadcountRemoteCameraPreviewProps) {
   const active = Boolean(camera.isActive);
   const [streamHasFrame, setStreamHasFrame] = useState(false);
@@ -141,6 +172,7 @@ function HeadcountRemoteCameraPreview({
     <article
       className={cn(
         "rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm transition",
+        fillHeight && "flex flex-col xl:h-full",
         className,
       )}
     >
@@ -175,10 +207,19 @@ function HeadcountRemoteCameraPreview({
       <div
         className={cn(
           "relative mt-3 overflow-hidden rounded-xl border border-zinc-200",
+          fillHeight && "xl:flex-1",
           streamHasFrame ? "bg-zinc-950" : "bg-zinc-100",
         )}
       >
-        <div className={cn("w-full", viewportClassName || "aspect-video")}>
+        <div
+          className={cn(
+            "w-full",
+            viewportClassName ||
+              (fillHeight
+                ? "aspect-video xl:h-full xl:min-h-[340px] xl:aspect-auto"
+                : "aspect-video"),
+          )}
+        >
           {active ? (
             <>
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -252,6 +293,7 @@ export default function HeadcountPage() {
 
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [runWindowMinutes, setRunWindowMinutes] = useState<number>(15);
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
 
@@ -463,6 +505,9 @@ export default function HeadcountPage() {
           q: debouncedSearch || undefined,
           view: headcountType === "ot" ? "ot" : "headcount",
         };
+        if (headcountType === "headcount") {
+          params.runGapMinutes = runWindowMinutes;
+        }
         if (hierarchyFilters.unit) params.unit = hierarchyFilters.unit;
         if (hierarchyFilters.department)
           params.department = hierarchyFilters.department;
@@ -487,6 +532,61 @@ export default function HeadcountPage() {
                   ? "UNMATCH"
                   : "ABSENT";
 
+            const normalizedRuns: HeadcountRunResult[] = Array.isArray(
+              r.headcountRuns,
+            )
+              ? r.headcountRuns.map((run: any, idx: number) => {
+                  const runRawStatus = String(run?.status ?? "ABSENT")
+                    .trim()
+                    .toUpperCase();
+                  const runStatus: HeadcountStatus =
+                    runRawStatus === "MATCH"
+                      ? "MATCH"
+                      : runRawStatus === "UNMATCH"
+                        ? "UNMATCH"
+                        : "ABSENT";
+
+                  const parsedRunIndex = Number(run?.runIndex);
+                  const runIndex =
+                    Number.isFinite(parsedRunIndex) && parsedRunIndex > 0
+                      ? Math.floor(parsedRunIndex)
+                      : idx + 1;
+
+                  const runStartTime =
+                    run?.runStartTime != null ? String(run.runStartTime) : null;
+                  const runEndTime =
+                    run?.runEndTime != null ? String(run.runEndTime) : null;
+                  const runKey = String(
+                    run?.runKey ??
+                      `run-${runIndex}-${runStartTime ?? runEndTime ?? idx}`,
+                  );
+
+                  return {
+                    runKey,
+                    runIndex,
+                    runStartTime,
+                    runEndTime,
+                    headcountTime:
+                      run?.headcountTime != null
+                        ? String(run.headcountTime)
+                        : null,
+                    headcountCameraId:
+                      run?.headcountCameraId != null
+                        ? String(run.headcountCameraId)
+                        : null,
+                    headcountCameraName:
+                      run?.headcountCameraName != null
+                        ? String(run.headcountCameraName)
+                        : null,
+                    headcountConfidence:
+                      typeof run?.headcountConfidence === "number"
+                        ? run.headcountConfidence
+                        : null,
+                    status: runStatus,
+                  };
+                })
+              : [];
+
             return {
               id: String(r.id ?? `${r.employeeId}-${dateStr}`),
               employeeId: String(r.employeeId ?? ""),
@@ -500,6 +600,7 @@ export default function HeadcountPage() {
               section: r.section ?? r.employeeSection ?? null,
               line: r.line ?? r.employeeLine ?? null,
               status,
+              headcountRuns: normalizedRuns,
             };
           });
 
@@ -547,6 +648,7 @@ export default function HeadcountPage() {
       hierarchyFilters.line,
       hierarchyFilters.section,
       hierarchyFilters.unit,
+      runWindowMinutes,
     ],
   );
 
@@ -599,6 +701,67 @@ export default function HeadcountPage() {
     return hcRows.filter((r) => r.status === statusFilter);
   }, [hcRows, statusFilter]);
 
+  const dynamicHeadcountRuns = useMemo(() => {
+    const byKey = new Map<
+      string,
+      {
+        runKey: string;
+        runIndex: number;
+        runStartTime: string | null;
+        runEndTime: string | null;
+      }
+    >();
+
+    const parseEpoch = (value?: string | null) => {
+      if (!value) return Number.POSITIVE_INFINITY;
+      const epoch = Date.parse(value);
+      return Number.isNaN(epoch) ? Number.POSITIVE_INFINITY : epoch;
+    };
+
+    for (const row of hcRows) {
+      for (const run of row.headcountRuns || []) {
+        const runKey = String(run.runKey);
+        const current = byKey.get(runKey);
+        if (!current) {
+          byKey.set(runKey, {
+            runKey,
+            runIndex: run.runIndex,
+            runStartTime: run.runStartTime ?? null,
+            runEndTime: run.runEndTime ?? null,
+          });
+          continue;
+        }
+
+        if (run.runIndex < current.runIndex) current.runIndex = run.runIndex;
+
+        const nextStart = run.runStartTime ?? null;
+        if (
+          nextStart &&
+          (!current.runStartTime ||
+            parseEpoch(nextStart) < parseEpoch(current.runStartTime))
+        ) {
+          current.runStartTime = nextStart;
+        }
+
+        const nextEnd = run.runEndTime ?? null;
+        if (
+          nextEnd &&
+          (!current.runEndTime || parseEpoch(nextEnd) > parseEpoch(current.runEndTime))
+        ) {
+          current.runEndTime = nextEnd;
+        }
+      }
+    }
+
+    return Array.from(byKey.values()).sort((a, b) => {
+      if (a.runIndex !== b.runIndex) return a.runIndex - b.runIndex;
+      const ta = parseEpoch(a.runStartTime);
+      const tb = parseEpoch(b.runStartTime);
+      if (ta !== tb) return ta - tb;
+      return a.runKey.localeCompare(b.runKey);
+    });
+  }, [hcRows]);
+
   const canExport = useMemo(() => {
     if (loading) return false;
     if (headcountType === "headcount") return filteredHcRows.length > 0;
@@ -625,17 +788,42 @@ export default function HeadcountPage() {
           .join("_")
           .replace(/\s+/g, "-");
 
-        const exportRows = filteredHcRows.map((r, idx) => ({
-          SL: idx + 1,
-          "Employee ID": r.employeeId,
-          Name: r.name,
-          Unit: r.unit ?? "",
-          Department: r.department ?? "",
-          Section: r.section ?? "",
-          Line: r.line ?? "",
-          Status: r.status,
-          Date: dateStr,
-        }));
+        const exportRows = filteredHcRows.map((r, idx) => {
+          const runExportColumns = dynamicHeadcountRuns.reduce(
+            (acc, run) => {
+              const runResult = r.headcountRuns.find(
+                (x) => x.runKey === run.runKey,
+              );
+              const runStatus = runResult?.status ?? "ABSENT";
+              const runLabel = `Headcount ${run.runIndex} (${safeTimeRange(
+                run.runStartTime,
+                run.runEndTime,
+              )})`;
+              const runTime = safeTimeOnly(runResult?.headcountTime);
+              acc[runLabel] =
+                runStatus === "ABSENT"
+                  ? "ABSENT"
+                  : runTime === "-"
+                    ? runStatus
+                    : `${runStatus} @ ${runTime}`;
+              return acc;
+            },
+            {} as Record<string, string>,
+          );
+
+          return {
+            SL: idx + 1,
+            "Employee ID": r.employeeId,
+            Name: r.name,
+            Unit: r.unit ?? "",
+            Department: r.department ?? "",
+            Section: r.section ?? "",
+            Line: r.line ?? "",
+            Status: r.status,
+            ...runExportColumns,
+            Date: dateStr,
+          };
+        });
 
         await exportJsonToXlsx({
           data: exportRows,
@@ -670,6 +858,7 @@ export default function HeadcountPage() {
     canExport,
     dateStr,
     filteredHcRows,
+    dynamicHeadcountRuns,
     headcountType,
     hierarchyFilters.department,
     hierarchyFilters.line,
@@ -685,8 +874,8 @@ export default function HeadcountPage() {
     return "bg-yellow-50";
   };
 
-  const headcountColumns: ColumnDef<CrosscheckRow>[] = useMemo(
-    () => [
+  const headcountColumns: ColumnDef<CrosscheckRow>[] = useMemo(() => {
+    const baseColumns: ColumnDef<CrosscheckRow>[] = [
       {
         id: "sl",
         header: () => (
@@ -789,9 +978,7 @@ export default function HeadcountPage() {
       {
         id: "crossCheckStatus",
         header: () => (
-          <div className="text-center font-bold w-full px-1 py-2">
-            Cross Check
-          </div>
+          <div className="text-center font-bold w-full px-1 py-2">Overall</div>
         ),
         cell: ({ row }) => (
           <div
@@ -811,9 +998,47 @@ export default function HeadcountPage() {
         ),
         size: 150,
       },
-    ],
-    [],
-  );
+    ];
+
+    const runColumns: ColumnDef<CrosscheckRow>[] = dynamicHeadcountRuns.map(
+      (run) => ({
+        id: `headcount-run-${run.runKey}`,
+        header: () => (
+          <div className="w-full px-1 py-2 text-center">
+            <div className="font-bold">Headcount {run.runIndex}</div>
+            <div className="text-[10px] font-medium text-zinc-500">
+              {safeTimeRange(run.runStartTime, run.runEndTime)}
+            </div>
+          </div>
+        ),
+        cell: ({ row }) => {
+          const runResult = row.original.headcountRuns.find(
+            (x) => x.runKey === run.runKey,
+          );
+          const runStatus: HeadcountStatus = runResult?.status ?? "ABSENT";
+          return (
+            <div className={cn("px-1 py-2", cellBg(runStatus))}>
+              <div className="flex items-center justify-center gap-1">
+                {runStatus === "MATCH" ? (
+                  <Check className="h-4 w-4 text-green-600" />
+                ) : runStatus === "UNMATCH" ? (
+                  <X className="h-4 w-4 text-red-600" />
+                ) : (
+                  <span className="text-xs font-medium text-gray-400">ABSENT</span>
+                )}
+              </div>
+              <div className="mt-0.5 text-center text-[10px] text-zinc-500">
+                {safeTimeOnly(runResult?.headcountTime)}
+              </div>
+            </div>
+          );
+        },
+        size: 190,
+      }),
+    );
+
+    return [...baseColumns, ...runColumns];
+  }, [dynamicHeadcountRuns]);
 
   const otColumns: ColumnDef<OtRow>[] = useMemo(
     () => [
@@ -941,8 +1166,8 @@ export default function HeadcountPage() {
         <p className="page-meta">AI Host: {AI_HOST}</p>
       </header>
 
-      <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
-        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <section className="rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm">
+        <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-base font-semibold text-zinc-900">Live Camera + Controls</h2>
             <p className="text-xs text-zinc-500">
@@ -954,8 +1179,8 @@ export default function HeadcountPage() {
           </span>
         </div>
 
-        <div className="grid grid-cols-1 gap-5 xl:min-h-[360px] xl:grid-cols-[500px_minmax(0,1fr)]">
-          <div className="min-w-0 xl:max-w-[500px]">
+        <div className="grid grid-cols-1 gap-4 xl:min-h-[360px] xl:grid-cols-[500px_minmax(0,1fr)] xl:items-stretch">
+          <div className="min-w-0 xl:flex xl:h-full xl:max-w-[500px]">
             {usingLaptopCamera ? (
               <HeadCountCameraComponent
                 userId={companyId ? `laptop-${companyId}` : DEFAULT_LAPTOP_CAMERA_ID}
@@ -963,8 +1188,8 @@ export default function HeadcountPage() {
                 cameraName="Laptop Camera"
                 streamType={streamType}
                 onActiveChange={setLaptopActive}
-                className="mx-auto w-full max-w-[500px]"
-                viewportClassName="aspect-video"
+                className="mx-auto w-full max-w-[500px] xl:h-full"
+                fillHeight
               />
             ) : selectedCam ? (
               <HeadcountRemoteCameraPreview
@@ -973,15 +1198,15 @@ export default function HeadcountPage() {
                 busy={selectedCameraBusy}
                 onStart={startCamera}
                 onStop={stopCamera}
-                className="mx-auto w-full max-w-[500px]"
-                viewportClassName="aspect-video"
+                className="mx-auto w-full max-w-[500px] xl:h-full"
+                fillHeight
               />
             ) : null}
           </div>
 
-          <aside className="min-w-0 h-full rounded-2xl border border-zinc-200 bg-zinc-50/60 p-4 flex flex-col">
-            <div className="min-h-[96px] rounded-xl border border-zinc-200 bg-white p-4">
-              <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:flex-nowrap xl:overflow-x-auto xl:pb-1">
+          <aside className="flex h-full min-w-0 flex-col rounded-2xl bg-zinc-50/40 p-3">
+            <div className="rounded-xl bg-white/90 p-2.5 shadow-sm">
+              <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:flex-nowrap xl:overflow-x-auto xl:pb-0.5">
                 <div className="shrink-0 text-sm font-semibold text-zinc-900">
                   Camera Source
                 </div>
@@ -1035,7 +1260,7 @@ export default function HeadcountPage() {
               </div>
 
               {selectedCam ? (
-                <div className="mt-3 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2">
+                <div className="mt-2 rounded-lg bg-zinc-50 px-3 py-1.5">
                   <span className="text-[11px] font-medium text-zinc-500">RTSP: </span>
                   <span
                     className="font-mono text-[11px] text-zinc-700"
@@ -1047,211 +1272,253 @@ export default function HeadcountPage() {
               ) : null}
             </div>
 
-            <div className="mt-4 flex min-h-[220px] flex-1 flex-col rounded-xl border border-zinc-200 bg-white p-4">
+            <div className="mt-2.5 flex min-h-[220px] flex-1 flex-col rounded-xl bg-white p-3 shadow-sm">
               <div className="text-sm font-semibold text-zinc-900">Headcount Filters</div>
-              <div className="mt-3 flex flex-col gap-3 xl:flex-row xl:items-end xl:flex-nowrap xl:overflow-x-auto xl:pb-1">
-                <div className="w-full xl:w-[170px] xl:flex-none">
-                  <label className="mb-1 block text-[11px] font-medium text-zinc-600">
-                    Type
-                  </label>
-                  <select
-                    value={headcountType}
-                    onChange={(e) => setHeadcountType(e.target.value as HeadcountType)}
-                    className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none ring-zinc-900/10 focus:ring-2"
-                  >
-                    <option value="">Select...</option>
-                    <option value="headcount">Head count</option>
-                    <option value="ot">OT requisition</option>
-                  </select>
-                </div>
-
-                <div className="w-full xl:w-[190px] xl:flex-none">
-                  <label className="mb-1 block text-[11px] font-medium text-zinc-600">
-                    Date
-                  </label>
-                  <input
-                    type="date"
-                    value={dateStr}
-                    onChange={(e) => setDateStr(e.target.value)}
-                    className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none ring-zinc-900/10 focus:ring-2"
-                  />
-                </div>
-
-                {hierarchy.availability.hasUnit ? (
-                  <div className="w-full xl:w-[190px] xl:flex-none">
-                    <label className="mb-1 block text-[11px] font-medium text-zinc-600">
-                      Unit
-                    </label>
-                    <select
-                      value={hierarchyFilters.unit}
-                      onChange={(e) =>
-                        setHierarchyFilters({
-                          unit: e.target.value,
-                          department: "",
-                          section: "",
-                          line: "",
-                        })
-                      }
-                      className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none ring-zinc-900/10 focus:ring-2"
-                    >
-                      <option value="">All units</option>
-                      {hierarchy.options.units.map((v) => (
-                        <option key={v} value={v}>
-                          {v}
-                        </option>
-                      ))}
-                    </select>
+              <div className="mt-2.5 space-y-2.5">
+                <div className="rounded-lg bg-zinc-50/80 px-3 py-2.5">
+                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+                    Primary Filters
                   </div>
-                ) : null}
-
-                {hierarchy.availability.hasDepartment ? (
-                  <div className="w-full xl:w-[220px] xl:flex-none">
-                    <label className="mb-1 block text-[11px] font-medium text-zinc-600">
-                      Department
-                    </label>
-                    <select
-                      value={hierarchyFilters.department}
-                      onChange={(e) =>
-                        setHierarchyFilters((prev) => ({
-                          ...prev,
-                          department: e.target.value,
-                          section: "",
-                          line: "",
-                        }))
-                      }
-                      className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none ring-zinc-900/10 focus:ring-2"
-                    >
-                      <option value="">All departments</option>
-                      {hierarchy.options.departments.map((v) => (
-                        <option key={v} value={v}>
-                          {v}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                ) : null}
-
-                {hierarchy.availability.hasSection ? (
-                  <div className="w-full xl:w-[220px] xl:flex-none">
-                    <label className="mb-1 block text-[11px] font-medium text-zinc-600">
-                      Section
-                    </label>
-                    <select
-                      value={hierarchyFilters.section}
-                      onChange={(e) =>
-                        setHierarchyFilters((prev) => ({
-                          ...prev,
-                          section: e.target.value,
-                          line: "",
-                        }))
-                      }
-                      className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none ring-zinc-900/10 focus:ring-2"
-                    >
-                      <option value="">All sections</option>
-                      {hierarchy.options.sections.map((v) => (
-                        <option key={v} value={v}>
-                          {v}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                ) : null}
-
-                {hierarchy.availability.hasLine ? (
-                  <div className="w-full xl:w-[190px] xl:flex-none">
-                    <label className="mb-1 block text-[11px] font-medium text-zinc-600">
-                      Line
-                    </label>
-                    <select
-                      value={hierarchyFilters.line}
-                      onChange={(e) =>
-                        setHierarchyFilters((prev) => ({
-                          ...prev,
-                          line: e.target.value,
-                        }))
-                      }
-                      className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none ring-zinc-900/10 focus:ring-2"
-                    >
-                      <option value="">All lines</option>
-                      {hierarchy.options.lines.map((v) => (
-                        <option key={v} value={v}>
-                          {v}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                ) : null}
-
-                {headcountType === "headcount" ? (
-                  <div className="w-full xl:w-[150px] xl:flex-none">
-                    <label className="mb-1 block text-[11px] font-medium text-zinc-600">
-                      Status
-                    </label>
-                    <select
-                      value={statusFilter}
-                      onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-                      className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none ring-zinc-900/10 focus:ring-2"
-                    >
-                      <option value="ALL">All</option>
-                      <option value="MATCH">MATCH</option>
-                      <option value="UNMATCH">UNMATCH</option>
-                      <option value="ABSENT">ABSENT</option>
-                    </select>
-                  </div>
-                ) : null}
-
-                <div className="w-full xl:min-w-[260px] xl:flex-1">
-                  <label className="mb-1 block text-[11px] font-medium text-zinc-600">
-                    Search
-                  </label>
-                  <div className="relative">
-                    <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      placeholder="Name or ID"
-                      className="h-10 pl-8 pr-8"
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") fetchHeadcount();
-                      }}
-                    />
-                    {search ? (
-                      <button
-                        type="button"
-                        onClick={() => setSearch("")}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                        title="Clear"
+                  <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
+                    <div>
+                      <label className="mb-1 block text-[11px] font-medium text-zinc-600">
+                        Type
+                      </label>
+                      <select
+                        value={headcountType}
+                        onChange={(e) => setHeadcountType(e.target.value as HeadcountType)}
+                        className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none ring-zinc-900/10 focus:ring-2"
                       >
-                        <X className="h-4 w-4" />
-                      </button>
+                        <option value="">Select...</option>
+                        <option value="headcount">Head count</option>
+                        <option value="ot">OT requisition</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-[11px] font-medium text-zinc-600">
+                        Date
+                      </label>
+                      <input
+                        type="date"
+                        value={dateStr}
+                        onChange={(e) => setDateStr(e.target.value)}
+                        className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none ring-zinc-900/10 focus:ring-2"
+                      />
+                    </div>
+
+                    {headcountType === "headcount" ? (
+                      <div>
+                        <label className="mb-1 block text-[11px] font-medium text-zinc-600">
+                          Status
+                        </label>
+                        <select
+                          value={statusFilter}
+                          onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+                          className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none ring-zinc-900/10 focus:ring-2"
+                        >
+                          <option value="ALL">All</option>
+                          <option value="MATCH">MATCH</option>
+                          <option value="UNMATCH">UNMATCH</option>
+                          <option value="ABSENT">ABSENT</option>
+                        </select>
+                      </div>
+                    ) : null}
+
+                    {headcountType === "headcount" ? (
+                      <div>
+                        <label className="mb-1 block text-[11px] font-medium text-zinc-600">
+                          New Column Every
+                        </label>
+                        <select
+                          value={runWindowMinutes}
+                          onChange={(e) => setRunWindowMinutes(Number(e.target.value))}
+                          className="h-10 w-full rounded-lg border border-zinc-200 bg-gradient-to-r from-white to-zinc-50 px-3 text-sm font-medium text-zinc-900 outline-none ring-zinc-900/10 focus:ring-2"
+                        >
+                          {HEADCOUNT_RUN_WINDOW_OPTIONS.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     ) : null}
                   </div>
                 </div>
 
-                <button
-                  className="h-10 rounded-lg bg-gray-900 px-4 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-60 inline-flex items-center xl:flex-none xl:justify-center"
-                  onClick={() => fetchHeadcount({ showSpinner: true })}
-                  disabled={loading || !headcountType}
-                  type="button"
-                  title="Refresh"
-                >
-                  <RefreshCcw className={cn("mr-2 h-4 w-4", loading && "animate-spin")} />
-                  Refresh
-                </button>
+                <div className="rounded-lg bg-zinc-50/80 px-3 py-2.5">
+                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+                    Hierarchy Filters
+                  </div>
+                  <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
+                    {hierarchy.availability.hasUnit ? (
+                      <div>
+                        <label className="mb-1 block text-[11px] font-medium text-zinc-600">
+                          Unit
+                        </label>
+                        <select
+                          value={hierarchyFilters.unit}
+                          onChange={(e) =>
+                            setHierarchyFilters({
+                              unit: e.target.value,
+                              department: "",
+                              section: "",
+                              line: "",
+                            })
+                          }
+                          className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none ring-zinc-900/10 focus:ring-2"
+                        >
+                          <option value="">All units</option>
+                          {hierarchy.options.units.map((v) => (
+                            <option key={v} value={v}>
+                              {v}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : null}
 
-                <button
-                  className="h-10 rounded-lg border border-gray-200 bg-white px-4 text-sm font-medium text-gray-900 hover:bg-gray-50 disabled:opacity-60 inline-flex items-center xl:flex-none xl:justify-center"
-                  onClick={handleExport}
-                  disabled={!canExport}
-                  type="button"
-                  title={canExport ? "Export to Excel" : "No data to export"}
-                >
-                  <Download className="mr-2 h-4 w-4" />
-                  Export
-                </button>
+                    {hierarchy.availability.hasDepartment ? (
+                      <div>
+                        <label className="mb-1 block text-[11px] font-medium text-zinc-600">
+                          Department
+                        </label>
+                        <select
+                          value={hierarchyFilters.department}
+                          onChange={(e) =>
+                            setHierarchyFilters((prev) => ({
+                              ...prev,
+                              department: e.target.value,
+                              section: "",
+                              line: "",
+                            }))
+                          }
+                          className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none ring-zinc-900/10 focus:ring-2"
+                        >
+                          <option value="">All departments</option>
+                          {hierarchy.options.departments.map((v) => (
+                            <option key={v} value={v}>
+                              {v}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : null}
+
+                    {hierarchy.availability.hasSection ? (
+                      <div>
+                        <label className="mb-1 block text-[11px] font-medium text-zinc-600">
+                          Section
+                        </label>
+                        <select
+                          value={hierarchyFilters.section}
+                          onChange={(e) =>
+                            setHierarchyFilters((prev) => ({
+                              ...prev,
+                              section: e.target.value,
+                              line: "",
+                            }))
+                          }
+                          className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none ring-zinc-900/10 focus:ring-2"
+                        >
+                          <option value="">All sections</option>
+                          {hierarchy.options.sections.map((v) => (
+                            <option key={v} value={v}>
+                              {v}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : null}
+
+                    {hierarchy.availability.hasLine ? (
+                      <div>
+                        <label className="mb-1 block text-[11px] font-medium text-zinc-600">
+                          Line
+                        </label>
+                        <select
+                          value={hierarchyFilters.line}
+                          onChange={(e) =>
+                            setHierarchyFilters((prev) => ({
+                              ...prev,
+                              line: e.target.value,
+                            }))
+                          }
+                          className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none ring-zinc-900/10 focus:ring-2"
+                        >
+                          <option value="">All lines</option>
+                          {hierarchy.options.lines.map((v) => (
+                            <option key={v} value={v}>
+                              {v}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="rounded-lg bg-zinc-50/80 px-3 py-2.5">
+                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+                    Search & Actions
+                  </div>
+                  <div className="grid grid-cols-1 gap-2.5 xl:grid-cols-[minmax(0,1fr)_auto_auto] xl:items-end">
+                    <div>
+                      <label className="mb-1 block text-[11px] font-medium text-zinc-600">
+                        Search
+                      </label>
+                      <div className="relative">
+                        <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                          value={search}
+                          onChange={(e) => setSearch(e.target.value)}
+                          placeholder="Name or ID"
+                          className="h-10 pl-8 pr-8"
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") fetchHeadcount();
+                          }}
+                        />
+                        {search ? (
+                          <button
+                            type="button"
+                            onClick={() => setSearch("")}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                            title="Clear"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    <button
+                      className="inline-flex h-10 min-w-[120px] items-center justify-center rounded-lg bg-gray-900 px-4 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-60"
+                      onClick={() => fetchHeadcount({ showSpinner: true })}
+                      disabled={loading || !headcountType}
+                      type="button"
+                      title="Refresh"
+                    >
+                      <RefreshCcw
+                        className={cn("mr-2 h-4 w-4", loading && "animate-spin")}
+                      />
+                      Refresh
+                    </button>
+
+                    <button
+                      className="inline-flex h-10 min-w-[120px] items-center justify-center rounded-lg border border-gray-200 bg-white px-4 text-sm font-medium text-gray-900 hover:bg-gray-50 disabled:opacity-60"
+                      onClick={handleExport}
+                      disabled={!canExport}
+                      type="button"
+                      title={canExport ? "Export to Excel" : "No data to export"}
+                    >
+                      <Download className="mr-2 h-4 w-4" />
+                      Export
+                    </button>
+                  </div>
+                </div>
               </div>
 
-              <div className="mt-3 flex flex-wrap items-center gap-2.5">
+              <div className="mt-2 flex flex-wrap items-center gap-2">
                 <span className="inline-flex items-center rounded-full bg-gray-100 px-3 py-1.5 text-xs font-semibold text-gray-700">
                   Date: {dateStr}
                 </span>
@@ -1279,6 +1546,12 @@ export default function HeadcountPage() {
                   <>
                     <span className="inline-flex items-center rounded-full bg-gray-100 px-3 py-1.5 text-xs font-semibold text-gray-700">
                       Total: {counts.total}
+                    </span>
+                    <span className="inline-flex items-center rounded-full bg-gray-100 px-3 py-1.5 text-xs font-semibold text-gray-700">
+                      Runs: {dynamicHeadcountRuns.length}
+                    </span>
+                    <span className="inline-flex items-center rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700">
+                      Column window: {runWindowMinutes} min
                     </span>
                     <span className="inline-flex items-center rounded-full bg-green-100 px-3 py-1.5 text-xs font-semibold text-green-800">
                       MATCH: {counts.match}

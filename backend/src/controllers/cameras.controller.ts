@@ -13,6 +13,7 @@ import {
   listCompanyCameras,
   updateCompanyCamera,
 } from "../services/camera.service";
+import { autoStartCameraById } from "../services/cameraAutostart.service";
 
 function companyIdFromReq(req: Request): string {
   return String((req as any).companyId ?? "").trim();
@@ -93,7 +94,33 @@ export async function createCamera(req: Request, res: Response) {
     });
 
     const camera = await createCompanyCamera(companyId, payload);
-    return res.status(201).json(camera);
+
+    let responseCamera: any = camera;
+    let warning: string | null = null;
+
+    if (camera.rtspUrl && String(camera.rtspUrl).trim()) {
+      const result = await autoStartCameraById({
+        id: camera.id,
+        camId: camera.camId,
+        name: camera.name,
+        companyId,
+        rtspUrl: camera.rtspUrl,
+      });
+
+      if (result.ok) {
+        responseCamera = {
+          ...camera,
+          isActive: true,
+          attendance: true,
+        };
+      } else if (result.reason !== "missing_camera_or_stream") {
+        warning = String(result.detail || "Auto-start failed");
+      }
+    }
+
+    return res.status(201).json(
+      warning ? { ...responseCamera, warning } : responseCamera
+    );
   } catch (error: unknown) {
     if (error instanceof ZodError) return respondValidationError(res, error);
     if (error instanceof Prisma.PrismaClientKnownRequestError) {

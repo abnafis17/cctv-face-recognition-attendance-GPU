@@ -56,6 +56,10 @@ class CameraRuntime:
             except Exception:
                 pass
 
+    def is_running(self, camera_id: str) -> bool:
+        with self._lock:
+            return str(camera_id) in self.cameras
+
     def inject_frame(self, camera_id: str, frame: np.ndarray):
         """Inject a frame from a laptop/WebRTC source."""
         if camera_id not in self.injected_locks:

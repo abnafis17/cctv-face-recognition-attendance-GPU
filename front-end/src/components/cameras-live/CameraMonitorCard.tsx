@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { MoreHorizontal } from "lucide-react";
 import type { Camera } from "@/types";
 import { cn } from "@/lib/utils";
+import { useMjpegStream } from "@/hooks/useMjpegStream";
 import {
   Popover,
   PopoverContent,
@@ -42,19 +43,74 @@ const CameraMonitorCard: React.FC<Props> = ({
   onDisableAttendance,
 }) => {
   const active = Boolean(camera.isActive);
+  const streamEnabled = active;
   const attendanceMode =
     attendanceEnabled === true
       ? "enabled"
       : attendanceEnabled === false
-        ? "disabled"
+         ? "disabled"
         : "unknown";
-  const [streamHasFrame, setStreamHasFrame] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
 
-  // Reset loading state when camera state/url changes.
+  const {
+    streamSrc,
+    streamHasFrame,
+    streamRetries,
+    imgKey,
+    onFrame,
+    onError,
+  } = useMjpegStream({
+    streamUrl,
+    enabled: streamEnabled,
+    // Recovers from browsers that silently stall MJPEG after network hiccups/server restarts.
+    refreshIntervalMs: 180_000,
+  });
+
+  const shouldRenderStream = streamEnabled && Boolean(streamSrc);
+
+  const imgRef = useRef<HTMLImageElement | null>(null);
+
+  // Abort in-flight MJPEG request when the stream is torn down or re-mounted.
+  // This prevents browsers from holding onto old streaming connections across SPA navigations,
+  // which can exhaust per-host connection limits and make the next visit "hang" until reload.
   useEffect(() => {
-    setStreamHasFrame(false);
-  }, [active, streamUrl]);
+    if (!shouldRenderStream) return;
+
+    const img = imgRef.current;
+    if (!img) return;
+
+    return () => {
+      try {
+        // Avoid `src=""` (can request current document in some browsers).
+        img.src = "about:blank";
+      } catch {
+        // ignore
+      }
+    };
+  }, [imgKey, shouldRenderStream]);
+
+  // Fallback: some browsers/streams won't reliably fire `onLoad` for long-lived MJPEG responses.
+  // Detect "first frame" by observing the rendered image dimensions.
+  useEffect(() => {
+    if (!shouldRenderStream) return;
+
+    let raf = 0;
+    let attempts = 0;
+    const maxAttempts = 120; // ~2 seconds at 60fps
+
+    const check = () => {
+      attempts += 1;
+      const img = imgRef.current;
+      if (img && img.naturalWidth > 0 && img.naturalHeight > 0) {
+        onFrame();
+        return;
+      }
+      if (attempts < maxAttempts) raf = window.requestAnimationFrame(check);
+    };
+
+    raf = window.requestAnimationFrame(check);
+    return () => window.cancelAnimationFrame(raf);
+  }, [imgKey, onFrame, shouldRenderStream]);
 
   const shouldFillFrame = isFullscreen || fillContainer;
 
@@ -83,23 +139,23 @@ const CameraMonitorCard: React.FC<Props> = ({
         )}
       >
         <div className={cn("w-full", shouldFillFrame ? "h-full" : "aspect-video")}>
-          {active ? (
+          {shouldRenderStream ? (
             <>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={streamUrl}
+                key={imgKey}
+                ref={imgRef}
+                src={streamSrc}
                 alt={`Camera ${camera.name} Stream`}
-                className={`h-full w-full object-cover object-left-top transition-opacity duration-200 ${
-                  streamHasFrame ? "opacity-100" : "opacity-0"
-                }`}
+                className="h-full w-full object-cover object-left-top"
                 width={1280}
                 height={720}
-                onLoad={() => setStreamHasFrame(true)}
-                onError={() => setStreamHasFrame(false)}
+                onLoad={onFrame}
+                onError={onError}
               />
               {!streamHasFrame ? (
                 <div className="absolute inset-0 flex items-center justify-center text-sm text-zinc-500">
-                  Loading stream...
+                  {streamRetries > 0 ? "Reconnecting stream..." : "Loading stream..."}
                 </div>
               ) : null}
             </>

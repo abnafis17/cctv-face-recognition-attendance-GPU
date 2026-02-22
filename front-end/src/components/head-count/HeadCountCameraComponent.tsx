@@ -9,6 +9,7 @@ interface LocalCameraProps {
   streamType?: string;
   className?: string;
   viewportClassName?: string;
+  fillHeight?: boolean;
   onActiveChange?: (active: boolean) => void;
 }
 
@@ -21,6 +22,7 @@ const HeadCountCameraComponent: React.FC<LocalCameraProps> = ({
   streamType: streamTypeProp,
   className,
   viewportClassName,
+  fillHeight = false,
   onActiveChange,
 }) => {
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -185,6 +187,7 @@ const HeadCountCameraComponent: React.FC<LocalCameraProps> = ({
     <article
       className={cn(
         "rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm",
+        fillHeight && "flex flex-col xl:h-full",
         className,
       )}
     >
@@ -211,8 +214,21 @@ const HeadCountCameraComponent: React.FC<LocalCameraProps> = ({
         </button>
       </div>
 
-      <div className="relative mt-3 overflow-hidden rounded-xl border border-zinc-200 bg-zinc-950">
-        <div className={cn("w-full", viewportClassName || "aspect-video")}>
+      <div
+        className={cn(
+          "relative mt-3 overflow-hidden rounded-xl border border-zinc-200 bg-zinc-950",
+          fillHeight && "xl:flex-1",
+        )}
+      >
+        <div
+          className={cn(
+            "w-full",
+            viewportClassName ||
+              (fillHeight
+                ? "aspect-video xl:h-full xl:min-h-[340px] xl:aspect-auto"
+                : "aspect-video"),
+          )}
+        >
           {localActive ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
