@@ -6,6 +6,8 @@ const AI_BASE = (process.env.AI_BASE_URL || "http://127.0.0.1:8000").replace(
   ""
 );
 
+let bootRetryTimer: ReturnType<typeof setTimeout> | null = null;
+
 function hasRtsp(url: string | null | undefined): url is string {
   return typeof url === "string" && url.trim().length > 0;
 }
@@ -32,7 +34,67 @@ function isNetworkStreamSource(url: string): boolean {
     return true;
   }
 
+  const withoutCreds = (value.split("@").pop() || value).trim();
+
+  // Accept RTSP-style host:port paths even if the scheme is missing (common misconfiguration).
+  if (/^\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?(?:[\\/]|$)/.test(withoutCreds)) {
+    return true;
+  }
+
+  // host:port[/...] (avoid Windows drive paths like "c:\...")
+  if (
+    !/^[a-z]:\\/.test(withoutCreds) &&
+    /^[^/\\\s]+:\d+(?:[\\/]|$)/.test(withoutCreds)
+  ) {
+    return true;
+  }
+
   return value.includes("://");
+}
+
+function readEnvMs(name: string, fallbackMs: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw === null || String(raw).trim() === "") return fallbackMs;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0) return fallbackMs;
+  return parsed;
+}
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function isAiHealthy() {
+  try {
+    const response = await axios.get(`${AI_BASE}/health`, {
+      timeout: readEnvMs("AI_HEALTH_TIMEOUT_MS", 2000),
+    });
+    return response.status >= 200 && response.status < 300;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForAiHealth() {
+  const maxWaitMs = readEnvMs("AI_HEALTH_WAIT_MAX_MS", 60000);
+  const retryDelayMs = readEnvMs("AI_HEALTH_RETRY_DELAY_MS", 1500);
+
+  const startedAt = Date.now();
+  let attempt = 0;
+
+  while (true) {
+    attempt += 1;
+    if (await isAiHealthy()) return { ok: true as const, attempt };
+
+    const elapsed = Date.now() - startedAt;
+    if (elapsed >= maxWaitMs) {
+      return { ok: false as const, attempt, waitedMs: elapsed };
+    }
+
+    await sleep(retryDelayMs);
+  }
 }
 
 async function startCameraOnAi(params: {
@@ -107,6 +169,33 @@ export async function autoStartRtspCamerasOnBoot() {
   const enabled = String(process.env.AUTO_START_RTSP_CAMERAS || "1").trim() !== "0";
   if (!enabled) {
     console.log("[CAMERA-AUTOSTART] disabled via AUTO_START_RTSP_CAMERAS=0");
+    return;
+  }
+
+  if (bootRetryTimer) {
+    clearTimeout(bootRetryTimer);
+    bootRetryTimer = null;
+  }
+
+  const health = await waitForAiHealth();
+  if (!health.ok) {
+    const retryMs = readEnvMs("CAMERA_AUTOSTART_RETRY_MS", 30000);
+    if (retryMs > 0) {
+      console.warn(
+        `[CAMERA-AUTOSTART] AI not ready after ${health.waitedMs}ms; retrying in ${retryMs}ms`
+      );
+      bootRetryTimer = setTimeout(() => {
+        bootRetryTimer = null;
+        void autoStartRtspCamerasOnBoot().catch((error) => {
+          console.error("[CAMERA-AUTOSTART] unexpected error:", error);
+        });
+      }, retryMs);
+    } else {
+      console.warn(
+        `[CAMERA-AUTOSTART] AI not ready after ${health.waitedMs}ms; giving up (CAMERA_AUTOSTART_RETRY_MS=0)`
+      );
+    }
+
     return;
   }
 
