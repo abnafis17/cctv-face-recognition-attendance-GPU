@@ -27,6 +27,7 @@ from ..fas.gate import FASGate, GateConfig
 from datetime import datetime
 from ..clients.erp_client import ERPClient, ERPClientConfig
 from ..services.erp_push_queue import ERPPushQueue, ERPPushJob
+import urllib.parse
 import urllib.request
 
 
@@ -731,7 +732,9 @@ class AttendanceRuntime:
         self._cam_state[cid] = st
         return st
 
-    def _relay_http(self, camera_id: str, turn_on: bool) -> None:
+    def _relay_http(
+        self, camera_id: str, turn_on: bool, employee_id: Optional[str] = None
+    ) -> None:
         # Lazy init so you don't have to touch __init__
         if not hasattr(self, "_relay_state_by_camera"):
             self._relay_state_by_camera = {}  # cid -> "on"/"off"
@@ -749,6 +752,10 @@ class AttendanceRuntime:
         url = os.getenv("RELAY_ON_URL", "http://10.81.100.72/on").strip()
         if not url:
             url = "http://10.81.100.72/on"
+        emp_id = str(employee_id or "").strip()
+        if emp_id:
+            sep = "&" if "?" in url else "?"
+            url = f"{url}{sep}employee_id={urllib.parse.quote(emp_id, safe='')}"
         now = time.time()
         last_state = self._relay_state_by_camera.get(cid)
         last_ts = self._relay_last_ts_by_camera.get(cid, 0.0)
@@ -802,7 +809,13 @@ class AttendanceRuntime:
 
         self._door_last_fire[key] = now
 
-        url = "http://10.81.100.72/silent"
+        url = os.getenv("RELAY_SILENT_URL", "http://10.81.100.72/silent").strip()
+        if not url:
+            url = "http://10.81.100.72/silent"
+        emp_id = str(employee_id or "").strip()
+        if emp_id:
+            sep = "&" if "?" in url else "?"
+            url = f"{url}{sep}employee_id={urllib.parse.quote(emp_id, safe='')}"
 
         def _do():
             try:
@@ -911,7 +924,7 @@ class AttendanceRuntime:
             )
 
             if ok:
-                self._relay_http(cid, True)
+                self._relay_http(cid, True, employee_id=str(job.employee_id))
                 self.push_voice_event(
                     employee_id=str(job.employee_id),
                     name=str(job.name),
@@ -1412,7 +1425,7 @@ class AttendanceRuntime:
                     if ok:
                         # --- ADD: relay ON when attendance ensured ---
                         # relay_on_this_frame = True
-                        self._relay_http(cid, True)
+                        self._relay_http(cid, True, employee_id=emp_id_str)
 
                         # Also push a voice event for this attendance
                         self.push_voice_event(
