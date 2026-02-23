@@ -62,8 +62,7 @@ const CameraMonitorCard: React.FC<Props> = ({
   } = useMjpegStream({
     streamUrl,
     enabled: streamEnabled,
-    // Recovers from browsers that silently stall MJPEG after network hiccups/server restarts.
-    refreshIntervalMs: 180_000,
+    // Keep stream stable for smooth UI; reconnect is still handled by onError + backend stream close.
   });
 
   const shouldRenderStream = streamEnabled && Boolean(streamSrc);

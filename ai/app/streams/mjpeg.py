@@ -11,19 +11,43 @@ from app.core.settings import normalize_stream_type
 from app.enroll2_auto.hud import draw_enroll2_auto_hud
 
 
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(str(os.getenv(name, str(default))).strip())
+    except Exception:
+        return float(default)
+
+
+def _stream_wait_settings() -> tuple[float, float]:
+    initial_wait_s = max(0.25, _env_float("MJPEG_INITIAL_WAIT_S", 3.0))
+    no_frame_timeout_s = max(
+        initial_wait_s + 0.5, _env_float("MJPEG_NO_FRAME_TIMEOUT_S", 12.0)
+    )
+    return initial_wait_s, no_frame_timeout_s
+
+
 def mjpeg_generator_raw(container: ServiceContainer, camera_id: str) -> Generator[bytes, None, None]:
     camera_rt = container.camera_rt
+    initial_wait_s, no_frame_timeout_s = _stream_wait_settings()
 
     # Wait for frames
-    for _ in range(60):
+    wait_deadline = time.monotonic() + initial_wait_s
+    while time.monotonic() < wait_deadline:
         if camera_rt.get_frame(camera_id) is not None:
             break
         time.sleep(0.05)
+
+    last_frame_at = time.monotonic()
 
     try:
         while True:
             frame = camera_rt.get_frame(camera_id)
             if frame is None:
+                if (time.monotonic() - last_frame_at) >= no_frame_timeout_s:
+                    print(
+                        f"[MJPEG] closing raw stream cam={camera_id} no-frame>{no_frame_timeout_s:.1f}s"
+                    )
+                    return
                 time.sleep(0.03)
                 continue
 
@@ -32,6 +56,7 @@ def mjpeg_generator_raw(container: ServiceContainer, camera_id: str) -> Generato
                 continue
 
             b = jpg.tobytes()
+            last_frame_at = time.monotonic()
             yield (
                 b"--frame\r\n"
                 b"Content-Type: image/jpeg\r\n"
@@ -53,6 +78,7 @@ def mjpeg_generator_recognition(
     camera_rt = container.camera_rt
     rec_worker = container.rec_worker
     stream_clients = container.stream_clients
+    initial_wait_s, no_frame_timeout_s = _stream_wait_settings()
 
     max_cached_jpeg_age_s = max(
         0.2, float(os.getenv("RECOGNITION_MAX_CACHED_JPEG_AGE_S", "1.5"))
@@ -63,10 +89,13 @@ def mjpeg_generator_recognition(
 
     rec_worker.start(camera_id, camera_name, ai_fps=float(ai_fps))
 
-    for _ in range(60):
+    wait_deadline = time.monotonic() + initial_wait_s
+    while time.monotonic() < wait_deadline:
         if camera_rt.get_frame(camera_id) is not None:
             break
         time.sleep(0.05)
+
+    last_frame_at = time.monotonic()
 
     try:
         while True:
@@ -80,6 +109,12 @@ def mjpeg_generator_recognition(
             if jpg_bytes is None:
                 raw = camera_rt.get_frame(camera_id)
                 if raw is None:
+                    if (time.monotonic() - last_frame_at) >= no_frame_timeout_s:
+                        print(
+                            "[MJPEG] closing recognition stream "
+                            f"cam={camera_id} no-frame>{no_frame_timeout_s:.1f}s"
+                        )
+                        return
                     time.sleep(0.02)
                     continue
                 ok, jpg = cv2.imencode(".jpg", raw, [int(cv2.IMWRITE_JPEG_QUALITY), 65])
@@ -87,6 +122,7 @@ def mjpeg_generator_recognition(
                     continue
                 jpg_bytes = jpg.tobytes()
 
+            last_frame_at = time.monotonic()
             yield (
                 b"--frame\r\n"
                 b"Content-Type: image/jpeg\r\n"
@@ -113,16 +149,25 @@ def mjpeg_generator_enroll2_auto(
 ) -> Generator[bytes, None, None]:
     camera_rt = container.camera_rt
     enroller2_auto = container.enroller2_auto
+    initial_wait_s, no_frame_timeout_s = _stream_wait_settings()
 
-    for _ in range(60):
+    wait_deadline = time.monotonic() + initial_wait_s
+    while time.monotonic() < wait_deadline:
         if camera_rt.get_frame(camera_id) is not None:
             break
         time.sleep(0.05)
+
+    last_frame_at = time.monotonic()
 
     try:
         while True:
             frame = camera_rt.get_frame(camera_id)
             if frame is None:
+                if (time.monotonic() - last_frame_at) >= no_frame_timeout_s:
+                    print(
+                        f"[MJPEG] closing enroll stream cam={camera_id} no-frame>{no_frame_timeout_s:.1f}s"
+                    )
+                    return
                 time.sleep(0.03)
                 continue
 
@@ -156,6 +201,7 @@ def mjpeg_generator_enroll2_auto(
                 continue
 
             b = jpg.tobytes()
+            last_frame_at = time.monotonic()
             yield (
                 b"--frame\r\n"
                 b"Content-Type: image/jpeg\r\n"
