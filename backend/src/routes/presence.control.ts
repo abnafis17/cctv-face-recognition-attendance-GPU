@@ -73,6 +73,18 @@ r.post("/start/:id", async (req, res) => {
           camera_name: cam.name,
           companyId,
           rtsp_url: rtspUrl,
+          ...(typeof (cam as any).sendFps === "number"
+            ? { send_fps: (cam as any).sendFps }
+            : {}),
+          ...(typeof (cam as any).sendWidth === "number"
+            ? { send_width: (cam as any).sendWidth }
+            : {}),
+          ...(typeof (cam as any).sendHeight === "number"
+            ? { send_height: (cam as any).sendHeight }
+            : {}),
+          ...(typeof (cam as any).jpegQuality === "number"
+            ? { jpeg_quality: (cam as any).jpegQuality }
+            : {}),
         },
         headers: companyId ? { "x-company-id": companyId } : undefined,
         timeout: Number(process.env.AI_START_TIMEOUT_MS || 30000),

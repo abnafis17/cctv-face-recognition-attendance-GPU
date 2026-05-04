@@ -15,6 +15,12 @@ import { cn } from "@/lib/utils";
 const FULLSCREEN_CARD_CLASS_NAME =
   "fixed inset-4 z-[70] rounded-md shadow-2xl ring-1 ring-white/10";
 
+function clampInt(value: unknown, min: number, max: number, fallback: number) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(n)));
+}
+
 export default function BoundingBoxPage() {
   const [setupCameraId, setSetupCameraId] = useState<string | null>(null);
   const [trackingCameraId, setTrackingCameraId] = useState<string | null>(null);
@@ -117,6 +123,45 @@ export default function BoundingBoxPage() {
             const isFullscreen = fullscreenCardId === cardId;
             const streamParams = new URLSearchParams({ type: "box" });
             if (companyId) streamParams.set("companyId", companyId);
+            if (isFullscreen) {
+              streamParams.set("profile", "focus");
+              streamParams.set("realtime", "1");
+              streamParams.set(
+                "send_fps",
+                String(clampInt(camera.sendFps, 10, 15, 12)),
+              );
+              streamParams.set(
+                "send_width",
+                String(clampInt(camera.sendWidth, 960, 1920, 1280)),
+              );
+              streamParams.set(
+                "send_height",
+                String(clampInt(camera.sendHeight, 540, 1080, 720)),
+              );
+              streamParams.set(
+                "jpeg_quality",
+                String(clampInt(camera.jpegQuality, 55, 80, 65)),
+              );
+            } else {
+              streamParams.set("profile", "grid");
+              streamParams.set("realtime", "1");
+              streamParams.set(
+                "send_fps",
+                String(clampInt(camera.sendFps, 8, 12, 10)),
+              );
+              streamParams.set(
+                "send_width",
+                String(clampInt(camera.sendWidth, 480, 960, 640)),
+              );
+              streamParams.set(
+                "send_height",
+                String(clampInt(camera.sendHeight, 270, 540, 360)),
+              );
+              streamParams.set(
+                "jpeg_quality",
+                String(clampInt(camera.jpegQuality, 38, 58, 45)),
+              );
+            }
             const streamUrl = `${AI_HOST}/camera/recognition/stream/${encodeURIComponent(
               camera.id,
             )}/${encodeURIComponent(camera.name)}?${streamParams.toString()}`;

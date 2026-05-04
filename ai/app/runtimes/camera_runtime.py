@@ -13,6 +13,37 @@ class CameraRuntime:
         self._lock = threading.Lock()
         self.injected_frames: Dict[str, np.ndarray] = {}
         self.injected_locks: Dict[str, threading.Lock] = {}
+        self.stream_profiles: Dict[str, Dict[str, int]] = {}
+
+    @staticmethod
+    def _clamp_int(value: int, min_value: int, max_value: int) -> int:
+        return max(min_value, min(max_value, int(value)))
+
+    def set_stream_profile(
+        self,
+        camera_id: str,
+        *,
+        send_fps: Optional[int] = None,
+        send_width: Optional[int] = None,
+        send_height: Optional[int] = None,
+        jpeg_quality: Optional[int] = None,
+    ) -> None:
+        with self._lock:
+            cur = dict(self.stream_profiles.get(str(camera_id), {}))
+            if send_fps is not None:
+                cur["send_fps"] = self._clamp_int(int(send_fps), 1, 30)
+            if send_width is not None:
+                cur["send_width"] = self._clamp_int(int(send_width), 160, 3840)
+            if send_height is not None:
+                cur["send_height"] = self._clamp_int(int(send_height), 120, 2160)
+            if jpeg_quality is not None:
+                cur["jpeg_quality"] = self._clamp_int(int(jpeg_quality), 1, 100)
+            if cur:
+                self.stream_profiles[str(camera_id)] = cur
+
+    def get_stream_profile(self, camera_id: str) -> Dict[str, int]:
+        with self._lock:
+            return dict(self.stream_profiles.get(str(camera_id), {}))
 
     def start(self, camera_id: str, rtsp_url: str, width: int = 1280, height: int = 720) -> bool:
         """
@@ -23,7 +54,12 @@ class CameraRuntime:
         """
         with self._lock:
             existing = self.cameras.get(camera_id)
-            if existing and getattr(existing, "rtsp_url", None) == rtsp_url:
+            if (
+                existing
+                and getattr(existing, "rtsp_url", None) == rtsp_url
+                and int(getattr(existing, "width", width)) == int(width)
+                and int(getattr(existing, "height", height)) == int(height)
+            ):
                 return False
 
             if existing:

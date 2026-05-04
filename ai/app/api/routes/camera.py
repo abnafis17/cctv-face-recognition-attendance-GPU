@@ -23,6 +23,32 @@ from app.streams.mjpeg import (
 router = APIRouter()
 
 
+def _normalize_optional_int(
+    value: Optional[int],
+    *,
+    min_value: int,
+    max_value: int,
+) -> Optional[int]:
+    if value is None:
+        return None
+    try:
+        parsed = int(float(str(value).strip()))
+    except Exception:
+        return None
+    return max(min_value, min(max_value, parsed))
+
+
+def _resolve_capture_size(
+    send_width: Optional[int],
+    send_height: Optional[int],
+) -> tuple[int, int]:
+    width = _normalize_optional_int(send_width, min_value=160, max_value=3840)
+    height = _normalize_optional_int(send_height, min_value=120, max_value=2160)
+    resolved_width = max(1280, int(width or 1280))
+    resolved_height = max(720, int(height or 720))
+    return min(resolved_width, 3840), min(resolved_height, 2160)
+
+
 def _camera_matches_identifier(camera: dict, identifier: str) -> bool:
     key = str(identifier or "").strip()
     if not key:
@@ -43,6 +69,10 @@ def _start_camera_runtime(
     company_id: Optional[str],
     stream_type: str,
     attendance_enabled: bool,
+    send_fps: Optional[int] = None,
+    send_width: Optional[int] = None,
+    send_height: Optional[int] = None,
+    jpeg_quality: Optional[int] = None,
 ) -> bool:
     camera_id = str(camera_id or "").strip()
     camera_name = str(camera_name or camera_id).strip() or camera_id
@@ -52,7 +82,29 @@ def _start_camera_runtime(
     if not camera_id or not rtsp_url:
         return False
 
-    started_now = bool(container.camera_rt.start(camera_id, rtsp_url))
+    normalized_send_fps = _normalize_optional_int(
+        send_fps, min_value=1, max_value=30
+    )
+    normalized_send_width = _normalize_optional_int(
+        send_width, min_value=160, max_value=3840
+    )
+    normalized_send_height = _normalize_optional_int(
+        send_height, min_value=120, max_value=2160
+    )
+    normalized_jpeg_quality = _normalize_optional_int(
+        jpeg_quality, min_value=1, max_value=100
+    )
+
+    container.camera_rt.set_stream_profile(
+        camera_id,
+        send_fps=normalized_send_fps,
+        send_width=normalized_send_width,
+        send_height=normalized_send_height,
+        jpeg_quality=normalized_jpeg_quality,
+    )
+
+    width, height = _resolve_capture_size(normalized_send_width, normalized_send_height)
+    started_now = bool(container.camera_rt.start(camera_id, rtsp_url, width=width, height=height))
     if company_id:
         container.attendance_rt.set_company_for_camera(camera_id, company_id)
     container.attendance_rt.set_stream_type(camera_id, stream_type)
@@ -114,6 +166,10 @@ def _prewarm_camera_runtimes(
             company_id=company_id,
             stream_type=stream_type,
             attendance_enabled=bool(camera.get("attendance", True)),
+            send_fps=camera.get("sendFps"),
+            send_width=camera.get("sendWidth"),
+            send_height=camera.get("sendHeight"),
+            jpeg_quality=camera.get("jpegQuality"),
         )
         if started_now:
             print(
@@ -165,6 +221,10 @@ def _ensure_camera_runtime(
             company_id=company_id,
             stream_type=stream_type,
             attendance_enabled=bool(camera.get("attendance", True)),
+            send_fps=camera.get("sendFps"),
+            send_width=camera.get("sendWidth"),
+            send_height=camera.get("sendHeight"),
+            jpeg_quality=camera.get("jpegQuality"),
         )
         if not started_now and not container.camera_rt.is_running(camera_id):
             return
@@ -213,7 +273,31 @@ def _recover_camera_runtime(
         if not rtsp_url:
             return
 
-        started_now = bool(container.camera_rt.start(camera_id, rtsp_url))
+        normalized_send_width = _normalize_optional_int(
+            camera.get("sendWidth"), min_value=160, max_value=3840
+        )
+        normalized_send_height = _normalize_optional_int(
+            camera.get("sendHeight"), min_value=120, max_value=2160
+        )
+        normalized_send_fps = _normalize_optional_int(
+            camera.get("sendFps"), min_value=1, max_value=30
+        )
+        normalized_jpeg_quality = _normalize_optional_int(
+            camera.get("jpegQuality"), min_value=1, max_value=100
+        )
+        container.camera_rt.set_stream_profile(
+            camera_id,
+            send_fps=normalized_send_fps,
+            send_width=normalized_send_width,
+            send_height=normalized_send_height,
+            jpeg_quality=normalized_jpeg_quality,
+        )
+        width, height = _resolve_capture_size(
+            normalized_send_width, normalized_send_height
+        )
+        started_now = bool(
+            container.camera_rt.start(camera_id, rtsp_url, width=width, height=height)
+        )
         if company_id:
             container.attendance_rt.set_company_for_camera(camera_id, company_id)
 
@@ -279,6 +363,10 @@ def start_camera(
     ai_fps: Optional[float] = None,
     company_id: Optional[str] = Query(default=None, alias="companyId"),
     stream_type: Optional[str] = Query(default=None, alias="stream_type"),
+    send_fps: Optional[int] = Query(default=None, alias="send_fps"),
+    send_width: Optional[int] = Query(default=None, alias="send_width"),
+    send_height: Optional[int] = Query(default=None, alias="send_height"),
+    jpeg_quality: Optional[int] = Query(default=None, alias="jpeg_quality"),
     attendance_enabled: Optional[bool] = Query(
         default=None, alias="attendance_enabled"
     ),
@@ -288,7 +376,28 @@ def start_camera(
     if ai_fps is None:
         ai_fps = env_float("AI_FPS", 10.0)
 
-    started_now = container.camera_rt.start(camera_id, rtsp_url)
+    normalized_send_fps = _normalize_optional_int(
+        send_fps, min_value=1, max_value=30
+    )
+    normalized_send_width = _normalize_optional_int(
+        send_width, min_value=160, max_value=3840
+    )
+    normalized_send_height = _normalize_optional_int(
+        send_height, min_value=120, max_value=2160
+    )
+    normalized_jpeg_quality = _normalize_optional_int(
+        jpeg_quality, min_value=1, max_value=100
+    )
+
+    container.camera_rt.set_stream_profile(
+        camera_id,
+        send_fps=normalized_send_fps,
+        send_width=normalized_send_width,
+        send_height=normalized_send_height,
+        jpeg_quality=normalized_jpeg_quality,
+    )
+    width, height = _resolve_capture_size(normalized_send_width, normalized_send_height)
+    started_now = container.camera_rt.start(camera_id, rtsp_url, width=width, height=height)
     cam_name = str(camera_name or camera_id)
 
     resolved_company_id = str(company_id or x_company_id or "").strip() or None
@@ -403,6 +512,12 @@ def camera_recognition_prewarm(
 def camera_stream(
     camera_id: str,
     company_id: Optional[str] = Query(default=None, alias="companyId"),
+    profile: Optional[str] = Query(default=None),
+    send_fps: Optional[int] = Query(default=None, alias="send_fps"),
+    send_width: Optional[int] = Query(default=None, alias="send_width"),
+    send_height: Optional[int] = Query(default=None, alias="send_height"),
+    jpeg_quality: Optional[int] = Query(default=None, alias="jpeg_quality"),
+    realtime: Optional[bool] = Query(default=None),
     x_company_id: Optional[str] = Header(default=None, alias="x-company-id"),
     container=Depends(get_container),
 ):
@@ -418,7 +533,16 @@ def camera_stream(
     )
 
     return StreamingResponse(
-        mjpeg_generator_raw(container, camera_id),
+        mjpeg_generator_raw(
+            container,
+            camera_id,
+            profile=profile,
+            send_fps=send_fps,
+            send_width=send_width,
+            send_height=send_height,
+            jpeg_quality=jpeg_quality,
+            realtime=bool(realtime),
+        ),
         media_type="multipart/x-mixed-replace; boundary=frame",
         headers={
             "Cache-Control": "no-cache, no-store, must-revalidate",
@@ -438,6 +562,12 @@ def camera_recognition_stream(
     company_id: Optional[str] = Query(default=None, alias="companyId"),
     x_company_id: Optional[str] = Header(default=None, alias="x-company-id"),
     stream_type: Optional[str] = Query(default=None, alias="type"),
+    profile: Optional[str] = Query(default=None),
+    send_fps: Optional[int] = Query(default=None, alias="send_fps"),
+    send_width: Optional[int] = Query(default=None, alias="send_width"),
+    send_height: Optional[int] = Query(default=None, alias="send_height"),
+    jpeg_quality: Optional[int] = Query(default=None, alias="jpeg_quality"),
+    realtime: Optional[bool] = Query(default=None),
     container=Depends(get_container),
 ):
     if ai_fps is None:
@@ -473,6 +603,12 @@ def camera_recognition_stream(
             camera_name=camera_name,
             ai_fps=float(ai_fps),
             stream_type=resolved_stream_type,
+            profile=profile,
+            send_fps=send_fps,
+            send_width=send_width,
+            send_height=send_height,
+            jpeg_quality=jpeg_quality,
+            realtime=bool(realtime),
         ),
         media_type="multipart/x-mixed-replace; boundary=frame",
         headers={

@@ -76,6 +76,10 @@ r.post("/start/:id", async (req, res) => {
       companyId,
       rtspUrl: cam.rtspUrl,
       streamType: task,
+      sendFps: (cam as any).sendFps,
+      sendWidth: (cam as any).sendWidth,
+      sendHeight: (cam as any).sendHeight,
+      jpegQuality: (cam as any).jpegQuality,
     });
 
     if (!started.ok) {
@@ -104,7 +108,7 @@ r.post("/start/:id", async (req, res) => {
       ...(started.warning ? { warning: String(started.warning) } : {}),
     });
   } catch (error) {
-    console.error("START CAMERA FAILED:", normalizeApiError(error));
+    console.error("START CAMERA FAILED:", normalizeAiError(error));
     return res.status(500).json({ error: "Failed to start camera" });
   }
 });
@@ -144,7 +148,7 @@ r.post("/stop/:id", async (req, res) => {
 
     return res.status(200).json(payload);
   } catch (error) {
-    console.error("STOP CAMERA FAILED:", normalizeApiError(error));
+    console.error("STOP CAMERA FAILED:", normalizeAiError(error));
     return res.status(500).json({ error: "Failed to stop camera" });
   }
 });

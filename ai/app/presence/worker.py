@@ -177,8 +177,11 @@ class PresenceWorker:
                 elif self._no_person_since.get(camera_id) is None:
                     self._no_person_since[camera_id] = time.time()
 
+            stream_profile = self.camera_rt.get_stream_profile(camera_id)
+            jpg_quality = int(stream_profile.get("jpeg_quality", 65) or 65)
+            jpg_quality = max(1, min(100, jpg_quality))
             ok, jpg = cv2.imencode(
-                ".jpg", annotated, [int(cv2.IMWRITE_JPEG_QUALITY), 65]
+                ".jpg", annotated, [int(cv2.IMWRITE_JPEG_QUALITY), jpg_quality]
             )
             if not ok:
                 continue

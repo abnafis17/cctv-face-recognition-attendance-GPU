@@ -115,7 +115,10 @@ export default function CameraViewPage() {
             <div key={camera.id} className={cameraWallItemClassName}>
               <CameraMonitorCard
                 camera={camera}
-                streamUrl={getStreamUrl(camera)}
+                streamUrl={getStreamUrl(
+                  camera,
+                  isFullscreen ? "focus" : "grid",
+                )}
                 busy={actionCamId === camera.id}
                 attendanceEnabled={attendanceEnabled}
                 attendanceBusy={attendanceActionCamId === camera.id}

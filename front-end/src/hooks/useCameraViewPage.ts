@@ -26,6 +26,7 @@ const DEFAULT_LAPTOP_CAMERA_ID = "cmkdpsq300000j7284bwluxh2";
 
 type ViewportMode = "mobile" | "medium" | "large";
 type CameraSortOrder = "asc" | "desc";
+type StreamProfileMode = "grid" | "focus";
 type CameraGridConfig = {
   columns: number;
   rows: number;
@@ -85,6 +86,12 @@ function normalizeApiError(error: unknown, fallback: string): string {
   );
 }
 
+function clampInt(value: unknown, min: number, max: number, fallback: number) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(n)));
+}
+
 export function useCameraViewPage() {
   const cameraWallRef = useRef<HTMLElement | null>(null);
   const prewarmKeyRef = useRef("");
@@ -107,15 +114,6 @@ export function useCameraViewPage() {
     useState<number>(MIN_WALL_HEIGHT_PX);
 
   const companyId = getCompanyIdFromToken();
-
-  const streamQuery = useMemo(() => {
-    const params = new URLSearchParams();
-    params.set("type", "attendance");
-    if (companyId) params.set("companyId", companyId);
-
-    const query = params.toString();
-    return query ? `?${query}` : "";
-  }, [companyId]);
 
   const { load } = useCamerasLoader({ setCams, setErr, task: "attendance" });
   const { enableAttendance, disableAttendance } = useAttendanceToggle({
@@ -407,17 +405,61 @@ export function useCameraViewPage() {
   );
 
   const getStreamUrl = useCallback(
-    (camera: Camera) => {
+    (camera: Camera, mode: StreamProfileMode = "grid") => {
       const attendanceEnabled =
         attendanceEnabledByCamId[camera.id] ?? Boolean(camera.attendance);
+      const params = new URLSearchParams();
+      params.set("type", "attendance");
+      params.set("realtime", "1");
+      if (companyId) params.set("companyId", companyId);
+
+      if (mode === "grid") {
+        params.set("profile", "grid");
+        params.set(
+          "send_fps",
+          String(clampInt(camera.sendFps, 8, 12, 10)),
+        );
+        params.set(
+          "send_width",
+          String(clampInt(camera.sendWidth, 480, 960, 640)),
+        );
+        params.set(
+          "send_height",
+          String(clampInt(camera.sendHeight, 270, 540, 360)),
+        );
+        params.set(
+          "jpeg_quality",
+          String(clampInt(camera.jpegQuality, 38, 58, 45)),
+        );
+      } else {
+        params.set("profile", "focus");
+        params.set(
+          "send_fps",
+          String(clampInt(camera.sendFps, 10, 15, 12)),
+        );
+        params.set(
+          "send_width",
+          String(clampInt(camera.sendWidth, 960, 1920, 1280)),
+        );
+        params.set(
+          "send_height",
+          String(clampInt(camera.sendHeight, 540, 1080, 720)),
+        );
+        params.set(
+          "jpeg_quality",
+          String(clampInt(camera.jpegQuality, 55, 80, 65)),
+        );
+      }
+
+      const query = params.toString();
 
       return attendanceEnabled
         ? `${AI_HOST}/camera/recognition/stream/${encodeURIComponent(
             camera.id,
-          )}/${encodeURIComponent(camera.name)}${streamQuery}`
-        : `${AI_HOST}/camera/stream/${encodeURIComponent(camera.id)}${streamQuery}`;
+          )}/${encodeURIComponent(camera.name)}?${query}`
+        : `${AI_HOST}/camera/stream/${encodeURIComponent(camera.id)}?${query}`;
     },
-    [attendanceEnabledByCamId, streamQuery],
+    [attendanceEnabledByCamId, companyId],
   );
 
   return {

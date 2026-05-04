@@ -451,6 +451,12 @@ export function useGatepassPage() {
   const streamQuery = useMemo(() => {
     const params = new URLSearchParams();
     params.set("type", "attendance");
+    params.set("profile", "focus");
+    params.set("realtime", "1");
+    params.set("send_fps", "12");
+    params.set("send_width", "1280");
+    params.set("send_height", "720");
+    params.set("jpeg_quality", "65");
     if (companyId) params.set("companyId", companyId);
     const query = params.toString();
     return query ? `?${query}` : "";
