@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, Query
@@ -12,12 +13,41 @@ from app.streams.mjpeg import mjpeg_generator_presence
 router = APIRouter()
 
 
+def _to_int(value: object, default: int) -> int:
+    try:
+        return int(float(str(value).strip()))
+    except Exception:
+        return int(default)
+
+
+def _resolve_ingest_profile(
+    ingest_width: Optional[int],
+    ingest_height: Optional[int],
+    ingest_fps: Optional[float],
+) -> tuple[int, int, int]:
+    width = max(16, _to_int(os.getenv("CAMERA_DEFAULT_WIDTH"), 1280))
+    height = max(16, _to_int(os.getenv("CAMERA_DEFAULT_HEIGHT"), 720))
+    fps = max(0, _to_int(os.getenv("CAMERA_DEFAULT_INGEST_FPS"), 0))
+
+    if ingest_width is not None and int(ingest_width) > 0:
+        width = int(ingest_width)
+    if ingest_height is not None and int(ingest_height) > 0:
+        height = int(ingest_height)
+    if ingest_fps is not None and float(ingest_fps) > 0:
+        fps = int(float(ingest_fps))
+
+    return width, height, fps
+
+
 @router.api_route("/presence/start", methods=["GET", "POST"])
 def presence_start(
     camera_id: str,
     rtsp_url: Optional[str] = None,
     camera_name: Optional[str] = None,
     ai_fps: Optional[float] = None,
+    ingest_width: Optional[int] = Query(default=None, alias="ingest_width"),
+    ingest_height: Optional[int] = Query(default=None, alias="ingest_height"),
+    ingest_fps: Optional[float] = Query(default=None, alias="ingest_fps"),
     company_id: Optional[str] = Query(default=None, alias="companyId"),
     x_company_id: Optional[str] = Header(default=None, alias="x-company-id"),
     container=Depends(get_container),
@@ -34,7 +64,20 @@ def presence_start(
     camera_started_now = False
     rtsp_url_value = str(rtsp_url or "").strip()
     if rtsp_url_value:
-        camera_started_now = bool(container.camera_rt.start(camera_id, rtsp_url_value))
+        width, height, profile_fps = _resolve_ingest_profile(
+            ingest_width=ingest_width,
+            ingest_height=ingest_height,
+            ingest_fps=ingest_fps,
+        )
+        camera_started_now = bool(
+            container.camera_rt.start(
+                camera_id,
+                rtsp_url_value,
+                width=width,
+                height=height,
+                target_fps=profile_fps,
+            )
+        )
 
     # Presence mode must not trigger recognition/attendance side effects.
     try:
@@ -54,6 +97,7 @@ def presence_start(
         "camera_id": camera_id,
         "camera_name": str(camera_name or ""),
         "ai_fps": float(ai_fps),
+        "capture_profile": container.camera_rt.get_profile(camera_id),
     }
 
 

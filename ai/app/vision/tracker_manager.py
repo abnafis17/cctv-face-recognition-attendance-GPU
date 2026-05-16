@@ -118,6 +118,10 @@ class Track:
     unknown_since_ts: float = 0.0
     last_identity_change_ts: float = 0.0
     force_recognition_until_ts: float = 0.0
+    body_track_id: Optional[int] = None
+    embedding_history: list[np.ndarray] = field(default_factory=list)
+    last_quality_score: float = 0.0
+    last_quality_reason: str = ""
 
     # anti-spoof support (5-point kps from detector)
     kps: Optional[np.ndarray] = None
@@ -125,6 +129,10 @@ class Track:
     last_det_ts: float = 0.0
     last_known_ts: float = 0.0
     last_known_bbox: Optional[Tuple[int, int, int, int]] = None
+    # Expanded area around last confirmed known bbox. While the tracked face
+    # center remains inside this zone we can keep identity without full re-match.
+    identity_hold_zone_bbox: Optional[Tuple[int, int, int, int]] = None
+    identity_hold_zone_ts: float = 0.0
 
     # --- PERSISTENT IDENTITY LOCK ---
     # Once a track is confirmed with enough stable_id_hits, we lock the identity here.
@@ -331,9 +339,14 @@ class TrackerManager:
                 tr.name = "Unknown"
                 tr.similarity = 0.0
                 tr.stable_id_hits = 0
+                tr.embedding_history = []
+                tr.last_quality_score = 0.0
+                tr.last_quality_reason = "reacquire_clear"
                 tr.unknown_since_ts = now
                 tr.last_known_ts = 0.0
                 tr.last_known_bbox = None
+                tr.identity_hold_zone_bbox = None
+                tr.identity_hold_zone_ts = 0.0
                 tr.last_identity_change_ts = now
                 tr.force_recognition_until_ts = max(tr.force_recognition_until_ts, now + 0.8)
 

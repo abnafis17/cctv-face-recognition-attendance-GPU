@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import time
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Tuple, Optional
 
 import cv2
@@ -19,10 +19,15 @@ from ..vision.gpu_arbiter import GPUArbiter, Detection
 from ..vision.recognizer_runtime import Recognizer, MatchResult
 from ..vision.attendance_debouncer import AttendanceDebouncer
 from ..vision.db_writer import DBWriter, AttendanceWriteJob
+from ..vision.frame_enhancer import AdaptiveFrameEnhancer
+from ..vision.identity_graph import IdentityGraphManager, IdentityNode
 from ..utils import now_iso, l2_normalize, quality_score
 from ..core.settings import resolve_ai_path
 
 from ..fas.gate import FASGate, GateConfig
+from ..presence.detector import PresenceDetector
+from ..presence.tracker import PresenceTracker, PresenceTrack
+from ..presence.botsort_tracker import BoTSORTPresenceTracker
 
 from datetime import datetime
 from ..clients.erp_client import ERPClient, ERPClientConfig
@@ -30,12 +35,28 @@ from ..services.erp_push_queue import ERPPushQueue, ERPPushJob
 import urllib.parse
 import urllib.request
 
+<<<<<<< HEAD
 
 LABEL_FONT = cv2.FONT_HERSHEY_DUPLEX
 # Modern "Cyber" Palette
 ACCENT_KNOWN = (235, 206, 0)     # Electric Cyan (BGR)
 ACCENT_UNKNOWN = (80, 0, 255)    # Hot Crimson/Pink (BGR)
 CARD_BG = (20, 20, 20)           # Deep Graphite
+=======
+LABEL_FONT = (
+    cv2.FONT_HERSHEY_TRIPLEX
+)  # clearer serif-like font (closest to Times New Roman)
+ACCENT_KNOWN = (80, 200, 80)  # green for known
+ACCENT_UNKNOWN = (40, 40, 220)  # red for unknown
+CARD_KNOWN = (26, 60, 32)  # dark green card
+CARD_UNKNOWN = (50, 30, 30)  # dark red card
+>>>>>>> b04451665d91d4d85a660894ec8c5e2bbeaa1012
+
+ID_STATE_VISIBLE = "VISIBLE"
+ID_STATE_PARTIAL_OCCLUDED = "PARTIAL_OCCLUDED"
+ID_STATE_FULL_OCCLUDED = "FULL_OCCLUDED"
+ID_STATE_LOST = "LOST"
+ID_STATE_REIDENTIFYING = "REIDENTIFYING"
 
 
 @dataclass
@@ -70,6 +91,29 @@ class BoundingBoxRuntimeBox:
     employee_ids: set[str]
 
 
+@dataclass
+class BodyIdentityState:
+    employee_id: str
+    name: str
+    similarity: float
+    last_seen_ts: float
+    last_face_seen_ts: float
+    first_seen_ts: float = 0.0
+    confidence: float = 0.72
+    locked_until_ts: float = 0.0
+    last_switch_ts: float = 0.0
+    visibility_state: str = ID_STATE_VISIBLE
+    last_confidence_ts: float = 0.0
+    last_body_bbox: Optional[Tuple[int, int, int, int]] = None
+    last_face_bbox: Optional[Tuple[int, int, int, int]] = None
+    face_rel_cx: float = 0.50
+    face_rel_cy: float = 0.18
+    face_rel_w: float = 0.22
+    face_rel_h: float = 0.24
+    last_draw_face_bbox: Optional[Tuple[int, int, int, int]] = None
+    body_embedding_bank: List[np.ndarray] = field(default_factory=list)
+
+
 def _draw_label_card(
     img: np.ndarray,
     text: str,
@@ -83,8 +127,21 @@ def _draw_label_card(
     font = LABEL_FONT
     thickness = 1
 
+<<<<<<< HEAD
     # Measure text
     (tw, th), baseline = cv2.getTextSize(text, font, scale, thickness)
+=======
+    frame_h, frame_w = img.shape[:2]
+    min_text_x = pad + accent_w
+    max_text_x = max(min_text_x, frame_w - tw - pad - 1)
+    x = int(max(min_text_x, min(int(x), max_text_x)))
+    y = int(max(th + pad, min(int(y), frame_h - pad - 1)))
+
+    x0 = max(0, x - pad - accent_w)
+    y0 = max(0, y - th - pad)
+    x1 = min(frame_w - 1, x + tw + pad)
+    y1 = min(frame_h - 1, y + pad)
+>>>>>>> b04451665d91d4d85a660894ec8c5e2bbeaa1012
 
     pad_x = 10
     pad_y = 8
@@ -151,6 +208,20 @@ def _format_duration(seconds: float) -> str:
     return f"{h:02d}:{m:02d}:{s:02d}"
 
 
+def _format_dwell_seconds(seconds: float) -> str:
+    total = max(0, int(seconds))
+    hours = total // 3600
+    minutes = (total % 3600) // 60
+    secs = total % 60
+    if hours > 0:
+        return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+    return f"{minutes:02d}:{secs:02d}"
+
+
+def _label_with_dwell(name: str, dwell_seconds: Optional[float]) -> str:
+    return str(name or "Unknown").strip() or "Unknown"
+
+
 class AttendanceRuntime:
     def __init__(
         self,
@@ -162,6 +233,7 @@ class AttendanceRuntime:
         cooldown_s: int = 10,
         stable_hits_required: int = 3,
     ):
+        self._use_gpu = bool(use_gpu)
         self._default_company_id = os.getenv("BACKEND_COMPANY_ID", "").strip() or None
         self._default_client = BackendClient(company_id=self._default_company_id)
         self._clients_by_company: Dict[str, BackendClient] = {}
@@ -250,6 +322,269 @@ class AttendanceRuntime:
         self._unknown_last_logged_by_track: Dict[str, float] = {}
 
         self._cam_state: Dict[str, CameraScanState] = {}
+        self._body_presence_tracker_backend = (
+            str(os.getenv("BODY_PERSIST_TRACKER_BACKEND", "classic")).strip().lower()
+        )
+        if self._body_presence_tracker_backend not in {"classic", "botsort"}:
+            self._body_presence_tracker_backend = "classic"
+
+        self._body_presence_tracker_by_camera: Dict[str, Any] = {}
+        self._body_presence_botsort_by_camera: Dict[str, BoTSORTPresenceTracker] = {}
+        self._body_presence_tracks_by_camera: Dict[str, Dict[int, PresenceTrack]] = {}
+        self._body_identity_state_by_camera: Dict[str, Dict[int, BodyIdentityState]] = (
+            {}
+        )
+        self._identity_graph_by_camera: Dict[str, IdentityGraphManager] = {}
+        self._body_presence_last_det_ts_by_camera: Dict[str, float] = {}
+        self._body_presence_last_track_ts_by_camera: Dict[str, float] = {}
+        self._body_presence_last_error_ts_by_camera: Dict[str, float] = {}
+        self._body_presence_detector: Optional[PresenceDetector] = None
+        self._body_presence_detector_failed = False
+        self._body_presence_botsort_failed = False
+        self._body_presence_error_log_interval_s = max(
+            1.0, float(os.getenv("BODY_PERSIST_ERROR_LOG_INTERVAL_S", "10.0"))
+        )
+        self._body_presence_enabled = (
+            str(os.getenv("BODY_PERSISTENCE_ENABLED", "1")).strip() != "0"
+        )
+        self._body_presence_allow_hog_fallback = str(
+            os.getenv(
+                "BODY_PERSIST_ALLOW_HOG_FALLBACK",
+                os.getenv("PRESENCE_ALLOW_HOG_FALLBACK", "0"),
+            )
+        ).strip().lower() in {"1", "true", "yes", "on"}
+        self._body_presence_det_fps = max(
+            0.2,
+            float(
+                os.getenv(
+                    "BODY_PERSIST_DET_FPS",
+                    os.getenv("PRESENCE_AI_FPS", "8"),
+                )
+            ),
+        )
+        self._body_presence_track_fps = max(
+            0.2,
+            float(
+                os.getenv(
+                    "BODY_PERSIST_TRACK_FPS",
+                    os.getenv(
+                        "BODY_PERSIST_DET_FPS", os.getenv("PRESENCE_AI_FPS", "8")
+                    ),
+                )
+            ),
+        )
+        self._body_presence_match_iou = float(
+            os.getenv("BODY_PERSIST_MATCH_IOU", os.getenv("PRESENCE_MATCH_IOU", "0.30"))
+        )
+        self._body_presence_max_lost_s = max(
+            0.5,
+            float(
+                os.getenv(
+                    "BODY_PERSIST_MAX_LOST_S", os.getenv("PRESENCE_MAX_LOST_S", "0.8")
+                )
+            ),
+        )
+        self._body_presence_min_hits = max(
+            1,
+            int(
+                float(
+                    os.getenv(
+                        "BODY_PERSIST_MIN_HITS", os.getenv("PRESENCE_MIN_HITS", "1")
+                    )
+                )
+            ),
+        )
+        self._body_presence_match_center_ratio = float(
+            os.getenv(
+                "BODY_PERSIST_MATCH_CENTER_RATIO",
+                os.getenv("PRESENCE_MATCH_CENTER_RATIO", "0.70"),
+            )
+        )
+        self._body_presence_reacquire_center_ratio = float(
+            os.getenv(
+                "BODY_PERSIST_REACQUIRE_CENTER_RATIO",
+                os.getenv("PRESENCE_REACQUIRE_CENTER_RATIO", "1.10"),
+            )
+        )
+        self._body_presence_bbox_smooth_alpha = float(
+            os.getenv(
+                "BODY_PERSIST_BBOX_SMOOTH_ALPHA",
+                os.getenv("PRESENCE_BBOX_SMOOTH_ALPHA", "0.75"),
+            )
+        )
+        self._body_presence_det_nms_iou = float(
+            os.getenv(
+                "BODY_PERSIST_DET_NMS_IOU",
+                os.getenv("PRESENCE_DET_NMS_IOU", "0.65"),
+            )
+        )
+        self._body_presence_max_misses = max(
+            1,
+            int(
+                float(
+                    os.getenv(
+                        "BODY_PERSIST_MAX_MISSES", os.getenv("PRESENCE_MAX_MISSES", "6")
+                    )
+                )
+            ),
+        )
+        self._body_presence_visible_hold_s = max(
+            0.05,
+            float(
+                os.getenv(
+                    "BODY_PERSIST_VISIBLE_HOLD_S",
+                    os.getenv("PRESENCE_ACTIVE_HOLD_S", "0.45"),
+                )
+            ),
+        )
+        self._body_identity_ttl_s = max(
+            self._body_presence_max_lost_s,
+            float(os.getenv("BODY_PERSIST_IDENTITY_TTL_S", "1.2")),
+        )
+        self._body_identity_lock_seconds = max(
+            0.0, float(os.getenv("BODY_PERSIST_IDENTITY_LOCK_SECONDS", "0.5"))
+        )
+        self._body_identity_switch_min_sim_gain = max(
+            0.0, float(os.getenv("BODY_PERSIST_SWITCH_MIN_SIM_GAIN", "0.0"))
+        )
+        self._body_face_match_min_score = float(
+            os.getenv("BODY_PERSIST_FACE_MATCH_MIN_SCORE", "0.75")
+        )
+        self._body_known_match_min_score = max(
+            0.50,
+            float(
+                os.getenv(
+                    "BODY_PERSIST_KNOWN_MATCH_MIN_SCORE",
+                    str(max(0.75, self._body_face_match_min_score * 0.85)),
+                )
+            ),
+        )
+        self._body_face_match_margin_x_ratio = max(
+            0.0, float(os.getenv("BODY_PERSIST_BODY_EXPAND_X_RATIO", "0.22"))
+        )
+        self._body_face_match_margin_y_ratio = max(
+            0.0, float(os.getenv("BODY_PERSIST_BODY_EXPAND_Y_RATIO", "0.18"))
+        )
+        self._body_face_match_top_ratio = max(
+            0.0, float(os.getenv("BODY_PERSIST_BODY_EXPAND_TOP_RATIO", "0.28"))
+        )
+        self._body_face_max_y_ratio = max(
+            0.55,
+            min(1.0, float(os.getenv("BODY_PERSIST_FACE_MAX_Y_RATIO", "0.92"))),
+        )
+        self._body_unknown_suppress_iou = max(
+            0.0,
+            min(1.0, float(os.getenv("BODY_PERSIST_UNKNOWN_SUPPRESS_IOU", "0.22"))),
+        )
+        self._known_face_draw_scale = max(
+            1.0, float(os.getenv("FACE_KNOWN_DRAW_SCALE", "1.0"))
+        )
+        self._body_face_rel_update_alpha = max(
+            0.05,
+            min(1.0, float(os.getenv("BODY_PERSIST_FACE_REL_ALPHA", "0.35"))),
+        )
+        self._body_face_draw_smooth_alpha = max(
+            0.0,
+            min(1.0, float(os.getenv("BODY_PERSIST_FACE_DRAW_SMOOTH_ALPHA", "0.75"))),
+        )
+        self._body_rebind_iou_min = max(
+            0.0, min(1.0, float(os.getenv("BODY_PERSIST_REBIND_IOU_MIN", "0.35")))
+        )
+        self._body_rebind_center_ratio = max(
+            0.10, float(os.getenv("BODY_PERSIST_REBIND_CENTER_RATIO", "0.50"))
+        )
+        self._body_rebind_min_score = max(
+            0.0, float(os.getenv("BODY_PERSIST_REBIND_MIN_SCORE", "0.85"))
+        )
+        self._body_face_fallback_max_age_s = max(
+            0.0, float(os.getenv("BODY_PERSIST_FACE_FALLBACK_MAX_AGE_S", "1.0"))
+        )
+        self._body_fallback_overlay_enabled = str(
+            os.getenv("BODY_PERSIST_DRAW_FALLBACK_OVERLAY", "1")
+        ).strip().lower() in ("1", "true", "yes", "on")
+        self._body_presence_draw_max_stale_s = max(
+            0.05,
+            float(
+                os.getenv(
+                    "BODY_PERSIST_DRAW_MAX_STALE_S",
+                    os.getenv("BODY_PERSIST_VISIBLE_HOLD_S", "0.45"),
+                )
+            ),
+        )
+        self._body_presence_draw_max_misses = max(
+            0, int(float(os.getenv("BODY_PERSIST_DRAW_MAX_MISSES", "2")))
+        )
+        self._face_overlay_max_stale_s = max(
+            0.05, float(os.getenv("FACE_OVERLAY_MAX_STALE_S", "0.45"))
+        )
+        self._face_overlay_max_det_misses = max(
+            0, int(float(os.getenv("FACE_OVERLAY_MAX_DET_MISSES", "0")))
+        )
+        self._identity_conf_decay_visible_per_s = max(
+            0.0, float(os.getenv("IDENTITY_CONF_DECAY_VISIBLE_PER_S", "0.05"))
+        )
+        self._identity_conf_decay_missing_per_s = max(
+            self._identity_conf_decay_visible_per_s,
+            float(os.getenv("IDENTITY_CONF_DECAY_MISSING_PER_S", "0.16")),
+        )
+        self._identity_conf_boost_face = max(
+            0.01, float(os.getenv("IDENTITY_CONF_BOOST_FACE", "0.22"))
+        )
+        self._identity_conf_boost_body = max(
+            0.0, float(os.getenv("IDENTITY_CONF_BOOST_BODY", "0.03"))
+        )
+        self._identity_conf_min_show = max(
+            0.0, min(1.0, float(os.getenv("IDENTITY_CONF_MIN_SHOW", "0.18")))
+        )
+        self._identity_conf_drop = max(
+            0.0,
+            min(
+                self._identity_conf_min_show,
+                float(os.getenv("IDENTITY_CONF_DROP", "0.08")),
+            ),
+        )
+        self._identity_partial_occ_after_s = max(
+            0.0, float(os.getenv("IDENTITY_PARTIAL_OCCLUSION_AFTER_S", "0.55"))
+        )
+        self._identity_full_occ_after_s = max(
+            self._identity_partial_occ_after_s,
+            float(os.getenv("IDENTITY_FULL_OCCLUSION_AFTER_S", "1.6")),
+        )
+        self._body_embedding_bank_size = max(
+            2, int(float(os.getenv("BODY_EMBEDDING_BANK_SIZE", "12")))
+        )
+        self._body_presence_botsort_model_path = resolve_ai_path(
+            os.getenv(
+                "BODY_PERSIST_BOTSORT_MODEL",
+                os.getenv("PRESENCE_YOLO_MODEL", "yolov8n.pt"),
+            )
+        )
+        self._body_presence_botsort_tracker_yaml = resolve_ai_path(
+            os.getenv(
+                "BODY_PERSIST_BOTSORT_TRACKER_YAML",
+                "app/presence/config/botsort_reid.yaml",
+            )
+        )
+        print(
+            "[BODY-PERSIST] "
+            f"enabled={int(self._body_presence_enabled)} "
+            f"backend={self._body_presence_tracker_backend} "
+            f"use_gpu={int(self._use_gpu)} "
+            f"det_fps={self._body_presence_det_fps:.2f} "
+            f"track_fps={self._body_presence_track_fps:.2f}"
+        )
+        self._inference_frame_enhancer = AdaptiveFrameEnhancer(
+            enabled=(str(os.getenv("LOW_LIGHT_ENHANCE_ENABLED", "1")).strip() != "0"),
+            luma_threshold=float(os.getenv("LOW_LIGHT_LUMA_THRESHOLD", "92")),
+            target_luma=float(os.getenv("LOW_LIGHT_TARGET_LUMA", "122")),
+            min_contrast=float(os.getenv("LOW_LIGHT_MIN_CONTRAST", "26")),
+            clahe_clip_limit=float(os.getenv("LOW_LIGHT_CLAHE_CLIP_LIMIT", "2.2")),
+            clahe_tile_grid=int(float(os.getenv("LOW_LIGHT_CLAHE_TILE_GRID", "8"))),
+            gamma_min=float(os.getenv("LOW_LIGHT_GAMMA_MIN", "0.45")),
+            gamma_max=float(os.getenv("LOW_LIGHT_GAMMA_MAX", "1.0")),
+            denoise=(str(os.getenv("LOW_LIGHT_DENOISE_ENABLED", "0")).strip() == "1"),
+            denoise_h=float(os.getenv("LOW_LIGHT_DENOISE_H", "3.0")),
+        )
         self._enabled_for_attendance: Dict[str, bool] = {}
         # Stream type per camera (attendance/headcount). This is set by api_server
         # based on who is currently watching the recognition stream.
@@ -324,6 +659,16 @@ class AttendanceRuntime:
         self._door_unlock_on_recognition = (
             str(os.getenv("DOOR_UNLOCK_ON_RECOGNITION", "0")).strip() == "1"
         )
+        self._attendance_require_extra_quality = (
+            str(os.getenv("ATTENDANCE_REQUIRE_EXTRA_QUALITY_GATE", "0"))
+            .strip()
+            .lower()
+            in {"1", "true", "yes", "on"}
+        )
+        self._attendance_require_fas = (
+            str(os.getenv("ATTENDANCE_REQUIRE_FAS", "0")).strip().lower()
+            in {"1", "true", "yes", "on"}
+        )
 
         # ---------------------------
         # ERP push (optional, company-wise)
@@ -349,6 +694,20 @@ class AttendanceRuntime:
         try:
             if getattr(self, "_db_writer", None) is not None:
                 self._db_writer.stop(drain_timeout_s=2.0)
+        except Exception:
+            pass
+
+        try:
+            self._body_presence_tracker_by_camera.clear()
+            self._body_presence_botsort_by_camera.clear()
+            self._body_presence_tracks_by_camera.clear()
+            self._body_identity_state_by_camera.clear()
+            self._identity_graph_by_camera.clear()
+            self._body_presence_last_det_ts_by_camera.clear()
+            self._body_presence_last_track_ts_by_camera.clear()
+            self._body_presence_last_error_ts_by_camera.clear()
+            self._body_presence_detector = None
+            self._body_presence_botsort_failed = False
         except Exception:
             pass
 
@@ -565,7 +924,9 @@ class AttendanceRuntime:
             return 1.0
         return v
 
-    def _parse_runtime_box(self, raw: Dict[str, Any]) -> Optional[BoundingBoxRuntimeBox]:
+    def _parse_runtime_box(
+        self, raw: Dict[str, Any]
+    ) -> Optional[BoundingBoxRuntimeBox]:
         box_id = str(raw.get("id") or "").strip()
         if not box_id:
             return None
@@ -661,10 +1022,7 @@ class AttendanceRuntime:
     def _point_inside_runtime_box(
         box: BoundingBoxRuntimeBox, x_unit: float, y_unit: float
     ) -> bool:
-        return (
-            box.left <= x_unit <= box.right
-            and box.top <= y_unit <= box.bottom
-        )
+        return box.left <= x_unit <= box.right and box.top <= y_unit <= box.bottom
 
     @staticmethod
     def _box_tracking_key(
@@ -711,7 +1069,10 @@ class AttendanceRuntime:
         threading.Thread(target=_do, daemon=True).start()
 
     def _prune_bounding_box_tracking_state(self, now: float) -> None:
-        if len(self._bounding_box_tracking_state) <= self._bounding_box_tracking_max_states:
+        if (
+            len(self._bounding_box_tracking_state)
+            <= self._bounding_box_tracking_max_states
+        ):
             return
 
         cutoff = now - 3600.0
@@ -1393,9 +1754,7 @@ class AttendanceRuntime:
     ) -> str:
         return f"{self._gallery_key(company_id)}::{str(camera_id)}::{int(track_id)}"
 
-    def _unknown_person_key(
-        self, company_id: Optional[str], employee_id: str
-    ) -> str:
+    def _unknown_person_key(self, company_id: Optional[str], employee_id: str) -> str:
         return f"{self._gallery_key(company_id)}::person::{str(employee_id).strip()}"
 
     def _should_log_unknown(
@@ -1484,6 +1843,1160 @@ class AttendanceRuntime:
                 print(f"[UNKNOWN] write failed company={cid} cam={camera_id} err={e}")
 
         threading.Thread(target=_do, daemon=True).start()
+
+    @staticmethod
+    def _bbox_iou_xyxy(
+        a: Tuple[int, int, int, int], b: Tuple[int, int, int, int]
+    ) -> float:
+        ax1, ay1, ax2, ay2 = a
+        bx1, by1, bx2, by2 = b
+        ix1, iy1 = max(ax1, bx1), max(ay1, by1)
+        ix2, iy2 = min(ax2, bx2), min(ay2, by2)
+        iw = max(0, ix2 - ix1)
+        ih = max(0, iy2 - iy1)
+        inter = float(iw * ih)
+        area_a = float(max(0, ax2 - ax1) * max(0, ay2 - ay1))
+        area_b = float(max(0, bx2 - bx1) * max(0, by2 - by1))
+        union = area_a + area_b - inter + 1e-6
+        return float(inter / union)
+
+    @staticmethod
+    def _bbox_center_xyxy(box: Tuple[int, int, int, int]) -> Tuple[float, float]:
+        x1, y1, x2, y2 = box
+        return (float(x1 + x2) * 0.5, float(y1 + y2) * 0.5)
+
+    @staticmethod
+    def _expand_xyxy(
+        box: Tuple[int, int, int, int],
+        *,
+        expand_x_ratio: float = 0.0,
+        expand_y_ratio: float = 0.0,
+        expand_top_ratio: float = 0.0,
+        frame_w: Optional[int] = None,
+        frame_h: Optional[int] = None,
+    ) -> Tuple[int, int, int, int]:
+        x1, y1, x2, y2 = [int(v) for v in box]
+        bw = max(1.0, float(x2 - x1))
+        bh = max(1.0, float(y2 - y1))
+        pad_x = float(max(0.0, expand_x_ratio)) * bw
+        pad_y = float(max(0.0, expand_y_ratio)) * bh
+        pad_top = float(max(0.0, expand_top_ratio)) * bh
+
+        nx1 = int(round(float(x1) - pad_x))
+        nx2 = int(round(float(x2) + pad_x))
+        ny1 = int(round(float(y1) - (pad_y + pad_top)))
+        ny2 = int(round(float(y2) + pad_y))
+
+        if frame_w is not None and int(frame_w) > 0:
+            nx1 = max(0, min(int(frame_w) - 1, nx1))
+            nx2 = max(0, min(int(frame_w), nx2))
+        if frame_h is not None and int(frame_h) > 0:
+            ny1 = max(0, min(int(frame_h) - 1, ny1))
+            ny2 = max(0, min(int(frame_h), ny2))
+        if nx2 <= nx1:
+            nx2 = nx1 + 1
+        if ny2 <= ny1:
+            ny2 = ny1 + 1
+        return (nx1, ny1, nx2, ny2)
+
+    @staticmethod
+    def _bbox_overlap_ratio_xyxy(
+        a: Tuple[int, int, int, int], b: Tuple[int, int, int, int]
+    ) -> float:
+        ax1, ay1, ax2, ay2 = a
+        bx1, by1, bx2, by2 = b
+        ix1, iy1 = max(ax1, bx1), max(ay1, by1)
+        ix2, iy2 = min(ax2, bx2), min(ay2, by2)
+        iw = max(0, ix2 - ix1)
+        ih = max(0, iy2 - iy1)
+        inter = float(iw * ih)
+        area_a = float(max(0, ax2 - ax1) * max(0, ay2 - ay1))
+        if area_a <= 1e-6:
+            return 0.0
+        return float(inter / area_a)
+
+    @staticmethod
+    def _smooth_box_xyxy(
+        old_box: Optional[Tuple[int, int, int, int]],
+        new_box: Tuple[int, int, int, int],
+        *,
+        alpha: float,
+        frame_w: Optional[int] = None,
+        frame_h: Optional[int] = None,
+    ) -> Tuple[int, int, int, int]:
+        if old_box is None:
+            return new_box
+        a = max(0.0, min(1.0, float(alpha)))
+        inv = 1.0 - a
+        ox1, oy1, ox2, oy2 = old_box
+        nx1, ny1, nx2, ny2 = new_box
+        sx1 = int(round((inv * float(ox1)) + (a * float(nx1))))
+        sy1 = int(round((inv * float(oy1)) + (a * float(ny1))))
+        sx2 = int(round((inv * float(ox2)) + (a * float(nx2))))
+        sy2 = int(round((inv * float(oy2)) + (a * float(ny2))))
+        if frame_w is not None and int(frame_w) > 0:
+            sx1 = max(0, min(int(frame_w) - 1, sx1))
+            sx2 = max(0, min(int(frame_w), sx2))
+        if frame_h is not None and int(frame_h) > 0:
+            sy1 = max(0, min(int(frame_h) - 1, sy1))
+            sy2 = max(0, min(int(frame_h), sy2))
+        if sx2 <= sx1:
+            sx2 = sx1 + 1
+        if sy2 <= sy1:
+            sy2 = sy1 + 1
+        return (sx1, sy1, sx2, sy2)
+
+    def _known_face_draw_box(
+        self,
+        face_box: Tuple[int, int, int, int],
+        *,
+        frame_w: int,
+        frame_h: int,
+    ) -> Tuple[int, int, int, int]:
+        known_scale = float(max(1.0, self._known_face_draw_scale))
+        expand_ratio = max(0.0, (known_scale - 1.0) * 0.5)
+        return self._expand_xyxy(
+            face_box,
+            expand_x_ratio=expand_ratio,
+            expand_y_ratio=expand_ratio,
+            frame_w=frame_w,
+            frame_h=frame_h,
+        )
+
+    @staticmethod
+    def _shift_box_xyxy(
+        box: Tuple[int, int, int, int],
+        *,
+        dx: float,
+        dy: float,
+        frame_w: Optional[int] = None,
+        frame_h: Optional[int] = None,
+    ) -> Tuple[int, int, int, int]:
+        x1, y1, x2, y2 = [int(v) for v in box]
+        nx1 = int(round(float(x1) + float(dx)))
+        ny1 = int(round(float(y1) + float(dy)))
+        nx2 = int(round(float(x2) + float(dx)))
+        ny2 = int(round(float(y2) + float(dy)))
+        if frame_w is not None and int(frame_w) > 0:
+            nx1 = max(0, min(int(frame_w) - 1, nx1))
+            nx2 = max(0, min(int(frame_w), nx2))
+        if frame_h is not None and int(frame_h) > 0:
+            ny1 = max(0, min(int(frame_h) - 1, ny1))
+            ny2 = max(0, min(int(frame_h), ny2))
+        if nx2 <= nx1:
+            nx2 = nx1 + 1
+        if ny2 <= ny1:
+            ny2 = ny1 + 1
+        return (nx1, ny1, nx2, ny2)
+
+    @staticmethod
+    def _face_rel_from_body(
+        face_box: Tuple[int, int, int, int],
+        body_box: Tuple[int, int, int, int],
+    ) -> Tuple[float, float, float, float]:
+        fx1, fy1, fx2, fy2 = [int(v) for v in face_box]
+        bx1, by1, bx2, by2 = [int(v) for v in body_box]
+        bw = max(1.0, float(bx2 - bx1))
+        bh = max(1.0, float(by2 - by1))
+        fw = max(1.0, float(fx2 - fx1))
+        fh = max(1.0, float(fy2 - fy1))
+        fcx = (float(fx1) + float(fx2)) * 0.5
+        fcy = (float(fy1) + float(fy2)) * 0.5
+        rel_cx = (fcx - float(bx1)) / bw
+        rel_cy = (fcy - float(by1)) / bh
+        rel_w = fw / bw
+        rel_h = fh / bh
+        rel_cx = max(0.0, min(1.0, rel_cx))
+        rel_cy = max(0.0, min(1.0, rel_cy))
+        rel_w = max(0.02, min(0.90, rel_w))
+        rel_h = max(0.02, min(0.90, rel_h))
+        return (float(rel_cx), float(rel_cy), float(rel_w), float(rel_h))
+
+    def _predict_face_box_from_body(
+        self,
+        *,
+        body_box: Tuple[int, int, int, int],
+        body_state: BodyIdentityState,
+        frame_w: int,
+        frame_h: int,
+    ) -> Tuple[int, int, int, int]:
+        bx1, by1, bx2, by2 = [int(v) for v in body_box]
+        bw = max(1.0, float(bx2 - bx1))
+        bh = max(1.0, float(by2 - by1))
+
+        rel_cx = max(0.05, min(0.95, float(getattr(body_state, "face_rel_cx", 0.50))))
+        rel_cy = max(
+            0.02,
+            min(
+                float(self._body_face_max_y_ratio),
+                float(getattr(body_state, "face_rel_cy", 0.18)),
+            ),
+        )
+        rel_w = max(0.06, min(0.70, float(getattr(body_state, "face_rel_w", 0.22))))
+        rel_h = max(0.08, min(0.72, float(getattr(body_state, "face_rel_h", 0.24))))
+
+        face_w = max(14.0, min(0.80 * bw, rel_w * bw))
+        face_h = max(14.0, min(0.80 * bh, rel_h * bh))
+        cx = float(bx1) + (rel_cx * bw)
+        cy = float(by1) + (rel_cy * bh)
+
+        fx1 = int(round(cx - (face_w * 0.5)))
+        fy1 = int(round(cy - (face_h * 0.5)))
+        fx2 = int(round(cx + (face_w * 0.5)))
+        fy2 = int(round(cy + (face_h * 0.5)))
+
+        fx1 = max(0, min(frame_w - 1, fx1))
+        fy1 = max(0, min(frame_h - 1, fy1))
+        fx2 = max(0, min(frame_w, fx2))
+        fy2 = max(0, min(frame_h, fy2))
+        if fx2 <= fx1:
+            fx2 = min(frame_w, fx1 + 1)
+        if fy2 <= fy1:
+            fy2 = min(frame_h, fy1 + 1)
+        return (fx1, fy1, fx2, fy2)
+
+    def _update_body_identity_face_geometry(
+        self,
+        *,
+        body_state: BodyIdentityState,
+        face_box: Tuple[int, int, int, int],
+        body_box: Tuple[int, int, int, int],
+    ) -> None:
+        rel_cx, rel_cy, rel_w, rel_h = self._face_rel_from_body(face_box, body_box)
+        alpha = float(self._body_face_rel_update_alpha)
+        inv = 1.0 - alpha
+        body_state.face_rel_cx = (inv * float(body_state.face_rel_cx)) + (
+            alpha * rel_cx
+        )
+        body_state.face_rel_cy = (inv * float(body_state.face_rel_cy)) + (
+            alpha * rel_cy
+        )
+        body_state.face_rel_w = (inv * float(body_state.face_rel_w)) + (alpha * rel_w)
+        body_state.face_rel_h = (inv * float(body_state.face_rel_h)) + (alpha * rel_h)
+        body_state.last_face_bbox = tuple(int(v) for v in face_box)
+        body_state.last_body_bbox = tuple(int(v) for v in body_box)
+
+    @staticmethod
+    def _sync_body_identity_dwell_anchor(
+        *,
+        body_state: BodyIdentityState,
+        body_track: Optional[PresenceTrack],
+        now: float,
+    ) -> None:
+        current = float(getattr(body_state, "first_seen_ts", 0.0) or 0.0)
+        track_first = (
+            float(getattr(body_track, "first_seen_ts", 0.0) or 0.0)
+            if body_track is not None
+            else 0.0
+        )
+        if current <= 0.0:
+            body_state.first_seen_ts = track_first if track_first > 0.0 else float(now)
+        elif track_first > 0.0 and track_first < current:
+            body_state.first_seen_ts = track_first
+
+    def _body_identity_dwell_seconds(
+        self,
+        *,
+        body_state: Optional[BodyIdentityState],
+        body_track: Optional[PresenceTrack],
+        fallback_first_seen_ts: Optional[float],
+        now: float,
+    ) -> Optional[float]:
+        first_seen = 0.0
+        if body_state is not None:
+            self._sync_body_identity_dwell_anchor(
+                body_state=body_state,
+                body_track=body_track,
+                now=now,
+            )
+            first_seen = float(getattr(body_state, "first_seen_ts", 0.0) or 0.0)
+        if first_seen <= 0.0 and body_track is not None:
+            first_seen = float(getattr(body_track, "first_seen_ts", 0.0) or 0.0)
+        if first_seen <= 0.0 and fallback_first_seen_ts is not None:
+            first_seen = float(fallback_first_seen_ts)
+        if first_seen <= 0.0:
+            return None
+        return max(0.0, float(now) - first_seen)
+
+    def _is_body_track_fresh_for_overlay(
+        self, body_track: Optional[PresenceTrack], *, now: float
+    ) -> bool:
+        if body_track is None:
+            return False
+        last_seen = float(getattr(body_track, "last_seen_ts", 0.0) or 0.0)
+        if last_seen <= 0.0:
+            return False
+        if (float(now) - last_seen) > float(self._body_presence_draw_max_stale_s):
+            return False
+        misses = int(getattr(body_track, "misses", 0) or 0)
+        if misses > int(self._body_presence_draw_max_misses):
+            return False
+        return True
+
+    def _is_face_track_fresh_for_overlay(self, track: Any, *, now: float) -> bool:
+        last_det = float(getattr(track, "last_det_ts", 0.0) or 0.0)
+        if last_det <= 0.0:
+            return False
+        if (float(now) - last_det) > float(self._face_overlay_max_stale_s):
+            return False
+        det_misses = int(getattr(track, "det_misses", 0) or 0)
+        if det_misses > int(self._face_overlay_max_det_misses):
+            return False
+        return True
+
+    @staticmethod
+    def _clamp_unit(value: float) -> float:
+        return float(max(0.0, min(1.0, float(value))))
+
+    def _body_embedding_from_bbox(
+        self,
+        frame_bgr: np.ndarray,
+        body_box: Tuple[int, int, int, int],
+    ) -> Optional[np.ndarray]:
+        if frame_bgr is None or frame_bgr.size == 0:
+            return None
+        h, w = frame_bgr.shape[:2]
+        x1, y1, x2, y2 = [int(v) for v in body_box]
+        x1 = max(0, min(w - 1, x1))
+        y1 = max(0, min(h - 1, y1))
+        x2 = max(0, min(w, x2))
+        y2 = max(0, min(h, y2))
+        if x2 <= x1 or y2 <= y1:
+            return None
+
+        crop = frame_bgr[y1:y2, x1:x2]
+        if crop.size == 0:
+            return None
+
+        # Focus on upper torso to avoid leg/background noise for re-identification.
+        ch, cw = crop.shape[:2]
+        top = 0
+        bottom = max(1, int(round(ch * 0.72)))
+        torso = crop[top:bottom, :]
+        if torso.size == 0:
+            torso = crop
+        torso = cv2.resize(torso, (64, 128), interpolation=cv2.INTER_AREA)
+
+        hsv = cv2.cvtColor(torso, cv2.COLOR_BGR2HSV)
+        hist_h = cv2.calcHist([hsv], [0], None, [16], [0, 180]).reshape(-1)
+        hist_s = cv2.calcHist([hsv], [1], None, [16], [0, 256]).reshape(-1)
+        hist_v = cv2.calcHist([hsv], [2], None, [16], [0, 256]).reshape(-1)
+        gray = cv2.cvtColor(torso, cv2.COLOR_BGR2GRAY)
+        edge = cv2.Canny(gray, 60, 140)
+        edge_hist = cv2.calcHist([edge], [0], None, [8], [0, 256]).reshape(-1)
+
+        feat = np.concatenate([hist_h, hist_s, hist_v, edge_hist]).astype(np.float32)
+        if feat.size == 0:
+            return None
+        return l2_normalize(feat)
+
+    def _update_body_embedding_bank(
+        self,
+        body_state: BodyIdentityState,
+        emb: Optional[np.ndarray],
+    ) -> None:
+        if emb is None:
+            return
+        bank = getattr(body_state, "body_embedding_bank", None)
+        if not isinstance(bank, list):
+            bank = []
+            body_state.body_embedding_bank = bank
+        bank.append(np.asarray(emb, dtype=np.float32))
+        keep = int(max(2, self._body_embedding_bank_size))
+        if len(bank) > keep:
+            del bank[: len(bank) - keep]
+
+    @staticmethod
+    def _body_embedding_centroid(body_state: BodyIdentityState) -> Optional[np.ndarray]:
+        bank = getattr(body_state, "body_embedding_bank", None)
+        if not isinstance(bank, list) or not bank:
+            return None
+        arr = np.vstack([np.asarray(v, dtype=np.float32) for v in bank])
+        centroid = np.mean(arr, axis=0).astype(np.float32)
+        return l2_normalize(centroid)
+
+    @staticmethod
+    def _body_embedding_similarity(
+        a: Optional[np.ndarray], b: Optional[np.ndarray]
+    ) -> float:
+        if a is None or b is None:
+            return -1.0
+        va = np.asarray(a, dtype=np.float32).reshape(-1)
+        vb = np.asarray(b, dtype=np.float32).reshape(-1)
+        if va.size == 0 or vb.size == 0 or va.size != vb.size:
+            return -1.0
+        return float(np.dot(va, vb))
+
+    def _boost_body_identity_state(
+        self,
+        *,
+        body_state: BodyIdentityState,
+        similarity: float,
+        now: float,
+        face_confirmed: bool,
+    ) -> None:
+        last_ts = float(getattr(body_state, "last_confidence_ts", 0.0) or 0.0)
+        if last_ts <= 0.0:
+            last_ts = now
+        dt = max(0.0, now - last_ts)
+        conf = float(getattr(body_state, "confidence", 0.72) or 0.72)
+        conf = max(0.0, conf - (self._identity_conf_decay_visible_per_s * dt))
+        boost = (
+            self._identity_conf_boost_face
+            if face_confirmed
+            else self._identity_conf_boost_body
+        )
+        sim_norm = self._clamp_unit((float(similarity) + 1.0) * 0.5)
+        conf = conf + (boost * (0.65 + (0.35 * sim_norm)))
+        body_state.confidence = self._clamp_unit(conf)
+        body_state.last_confidence_ts = now
+        body_state.visibility_state = (
+            ID_STATE_VISIBLE if face_confirmed else ID_STATE_PARTIAL_OCCLUDED
+        )
+
+    def _decay_body_identity_state(
+        self,
+        *,
+        body_state: BodyIdentityState,
+        now: float,
+        body_visible: bool,
+    ) -> None:
+        last_ts = float(getattr(body_state, "last_confidence_ts", 0.0) or 0.0)
+        if last_ts <= 0.0:
+            last_ts = now
+        dt = max(0.0, now - last_ts)
+        decay = (
+            self._identity_conf_decay_visible_per_s
+            if body_visible
+            else self._identity_conf_decay_missing_per_s
+        )
+        conf = float(getattr(body_state, "confidence", 0.72) or 0.72)
+        conf = conf - (decay * dt)
+        body_state.confidence = self._clamp_unit(conf)
+        body_state.last_confidence_ts = now
+
+        face_age = max(
+            0.0, now - float(getattr(body_state, "last_face_seen_ts", now) or now)
+        )
+        if body_visible:
+            if face_age <= float(self._identity_partial_occ_after_s):
+                body_state.visibility_state = ID_STATE_VISIBLE
+            elif face_age <= float(self._identity_full_occ_after_s):
+                body_state.visibility_state = ID_STATE_PARTIAL_OCCLUDED
+            else:
+                body_state.visibility_state = ID_STATE_FULL_OCCLUDED
+        else:
+            body_state.visibility_state = (
+                ID_STATE_REIDENTIFYING
+                if conf >= float(self._identity_conf_min_show)
+                else ID_STATE_LOST
+            )
+
+    def _score_body_rebind(
+        self,
+        ref_box: Tuple[int, int, int, int],
+        cand_box: Tuple[int, int, int, int],
+        *,
+        ref_emb: Optional[np.ndarray] = None,
+        cand_emb: Optional[np.ndarray] = None,
+    ) -> float:
+        iou = self._bbox_iou_xyxy(ref_box, cand_box)
+        rcx, rcy = self._bbox_center_xyxy(ref_box)
+        ccx, ccy = self._bbox_center_xyxy(cand_box)
+        center_dist = float(np.hypot(float(rcx - ccx), float(rcy - ccy)))
+        rx1, ry1, rx2, ry2 = [int(v) for v in ref_box]
+        cx1, cy1, cx2, cy2 = [int(v) for v in cand_box]
+        rdim = float(max(1, rx2 - rx1, ry2 - ry1))
+        cdim = float(max(1, cx2 - cx1, cy2 - cy1))
+        center_norm = center_dist / max(1.0, max(rdim, cdim))
+
+        area_ref = float(max(1, rx2 - rx1) * max(1, ry2 - ry1))
+        area_cand = float(max(1, cx2 - cx1) * max(1, cy2 - cy1))
+        area_ratio = area_cand / max(1.0, area_ref)
+        if area_ratio < 0.20 or area_ratio > 5.0:
+            return -1.0
+
+        if iou < float(self._body_rebind_iou_min) and center_norm > float(
+            self._body_rebind_center_ratio
+        ):
+            return -1.0
+
+        center_score = max(
+            0.0,
+            1.0 - (center_norm / max(0.01, float(self._body_rebind_center_ratio))),
+        )
+        reid = self._body_embedding_similarity(ref_emb, cand_emb)
+        reid_score = max(0.0, reid)
+        return float((0.70 * iou) + (0.24 * center_score) + (0.20 * reid_score))
+
+    def _rebind_body_identity_tracks(
+        self,
+        *,
+        body_identity_state: Dict[int, BodyIdentityState],
+        body_tracks: Dict[int, PresenceTrack],
+        frame_bgr: Optional[np.ndarray],
+        now: float,
+    ) -> None:
+        if not body_identity_state or not body_tracks:
+            return
+
+        occupied_tids: set[int] = set()
+        for tid in body_identity_state.keys():
+            tid_i = int(tid)
+            if tid_i in body_tracks:
+                occupied_tids.add(tid_i)
+
+        missing_tids: List[int] = [
+            int(tid)
+            for tid in body_identity_state.keys()
+            if int(tid) not in body_tracks
+        ]
+        if not missing_tids:
+            return
+
+        missing_tids.sort(
+            key=lambda tid: float(
+                getattr(body_identity_state.get(int(tid)), "last_seen_ts", 0.0) or 0.0
+            ),
+            reverse=True,
+        )
+        cand_embs: Dict[int, Optional[np.ndarray]] = {}
+        if frame_bgr is not None:
+            for cand_tid, cand_track in body_tracks.items():
+                cand_box = tuple(int(v) for v in cand_track.bbox)
+                cand_embs[int(cand_tid)] = self._body_embedding_from_bbox(
+                    frame_bgr, cand_box
+                )
+
+        for old_tid in missing_tids:
+            state = body_identity_state.get(int(old_tid))
+            if state is None:
+                continue
+            if (now - float(state.last_seen_ts)) > float(self._body_identity_ttl_s):
+                continue
+            if (now - float(state.last_seen_ts)) > float(
+                self._body_presence_draw_max_stale_s
+            ):
+                continue
+
+            ref_box = state.last_body_bbox or state.last_face_bbox
+            if ref_box is None:
+                continue
+
+            ref_emb = self._body_embedding_centroid(state)
+            best_tid: Optional[int] = None
+            best_score = -1.0
+            for cand_tid, cand_track in body_tracks.items():
+                tid_i = int(cand_tid)
+                if tid_i in occupied_tids:
+                    continue
+                cand_box = tuple(int(v) for v in cand_track.bbox)
+                score = self._score_body_rebind(
+                    ref_box,
+                    cand_box,
+                    ref_emb=ref_emb,
+                    cand_emb=cand_embs.get(tid_i),
+                )
+                if score > best_score:
+                    best_score = score
+                    best_tid = tid_i
+
+            if best_tid is None or best_score < float(self._body_rebind_min_score):
+                continue
+
+            body_identity_state.pop(int(old_tid), None)
+            body_identity_state[int(best_tid)] = state
+            state.last_seen_ts = now
+            state.last_body_bbox = tuple(
+                int(v) for v in body_tracks[int(best_tid)].bbox
+            )
+            state.visibility_state = ID_STATE_REIDENTIFYING
+            self._update_body_embedding_bank(state, cand_embs.get(int(best_tid)))
+            occupied_tids.add(int(best_tid))
+
+    def _clear_body_presence_state(self, camera_id: str) -> None:
+        cid = str(camera_id)
+        self._body_presence_tracker_by_camera.pop(cid, None)
+        self._body_presence_botsort_by_camera.pop(cid, None)
+        self._body_presence_tracks_by_camera.pop(cid, None)
+        self._body_identity_state_by_camera.pop(cid, None)
+        self._identity_graph_by_camera.pop(cid, None)
+        self._body_presence_last_det_ts_by_camera.pop(cid, None)
+        self._body_presence_last_track_ts_by_camera.pop(cid, None)
+        self._body_presence_last_error_ts_by_camera.pop(cid, None)
+
+    def _get_identity_graph_manager(self, camera_id: str) -> IdentityGraphManager:
+        cid = str(camera_id)
+        mgr = self._identity_graph_by_camera.get(cid)
+        if mgr is not None:
+            return mgr
+        mgr = IdentityGraphManager(
+            min_show_confidence=float(self._identity_conf_min_show),
+            drop_confidence=float(self._identity_conf_drop),
+            lock_seconds=float(self._body_identity_lock_seconds),
+            switch_min_similarity_gain=float(self._body_identity_switch_min_sim_gain),
+        )
+        self._identity_graph_by_camera[cid] = mgr
+        return mgr
+
+    def _ensure_body_presence_detector(self) -> Optional[PresenceDetector]:
+        if not bool(self._body_presence_enabled):
+            return None
+        if bool(self._body_presence_detector_failed):
+            return None
+        if self._body_presence_detector is not None:
+            return self._body_presence_detector
+
+        default_presence_device = "cuda:0" if bool(self._use_gpu) else "cpu"
+        face_use_gpu_raw = (
+            str(os.getenv("PRESENCE_FACE_USE_GPU", "1" if self._use_gpu else "0"))
+            .strip()
+            .lower()
+        )
+        face_use_gpu = face_use_gpu_raw in {"1", "true", "yes", "on"}
+
+        yolo_cfg = {
+            "model_path": resolve_ai_path(
+                os.getenv("PRESENCE_YOLO_MODEL", "yolov8n.pt")
+            ),
+            "conf": float(os.getenv("PRESENCE_CONF", "0.25")),
+            "iou": float(os.getenv("PRESENCE_IOU", "0.45")),
+            "imgsz": int(float(os.getenv("PRESENCE_IMG_SIZE", "640"))),
+            "device": str(
+                os.getenv("PRESENCE_DEVICE", default_presence_device)
+                or default_presence_device
+            ),
+            "max_det": int(float(os.getenv("PRESENCE_MAX_DET", "100"))),
+        }
+        face_cfg = {
+            "model_name": str(
+                os.getenv("PRESENCE_FACE_MODEL", "buffalo_m") or "buffalo_m"
+            ),
+            "det_size": int(float(os.getenv("PRESENCE_FACE_DET_SIZE", "640"))),
+            "min_face_size": int(float(os.getenv("PRESENCE_FACE_MIN_SIZE", "30"))),
+            "min_det_score": float(os.getenv("PRESENCE_FACE_MIN_SCORE", "0.35")),
+            "use_gpu": bool(face_use_gpu),
+        }
+        try:
+            self._body_presence_detector = PresenceDetector(
+                mode="person",
+                yolo_cfg=yolo_cfg,
+                face_cfg=face_cfg,
+                allow_hog_fallback=bool(self._body_presence_allow_hog_fallback),
+            )
+            return self._body_presence_detector
+        except Exception as e:
+            self._body_presence_detector_failed = True
+            print(f"[BODY-PERSIST] detector init failed; feature disabled. err={e}")
+            return None
+
+    def _get_body_presence_tracker(self, camera_id: str) -> PresenceTracker:
+        cid = str(camera_id)
+        tr = self._body_presence_tracker_by_camera.get(cid)
+        if isinstance(tr, PresenceTracker):
+            return tr
+
+        tr = PresenceTracker(
+            match_iou=float(self._body_presence_match_iou),
+            max_lost_s=float(self._body_presence_max_lost_s),
+            min_hits=int(self._body_presence_min_hits),
+            max_events=200,
+            match_center_ratio=float(self._body_presence_match_center_ratio),
+            reacquire_center_ratio=float(self._body_presence_reacquire_center_ratio),
+            bbox_smooth_alpha=float(self._body_presence_bbox_smooth_alpha),
+            det_nms_iou=float(self._body_presence_det_nms_iou),
+            active_hold_s=float(self._body_presence_visible_hold_s),
+            max_misses=int(self._body_presence_max_misses),
+        )
+        self._body_presence_tracker_by_camera[cid] = tr
+        return tr
+
+    def _get_body_presence_botsort_tracker(
+        self,
+        camera_id: str,
+    ) -> Optional[BoTSORTPresenceTracker]:
+        if bool(self._body_presence_botsort_failed):
+            return None
+        cid = str(camera_id)
+        tr = self._body_presence_botsort_by_camera.get(cid)
+        if tr is not None:
+            return tr
+
+        default_presence_device = "cuda:0" if bool(self._use_gpu) else "cpu"
+        tracker_cfg_path = str(self._body_presence_botsort_tracker_yaml).strip()
+        if not tracker_cfg_path or not os.path.exists(tracker_cfg_path):
+            tracker_cfg_path = (
+                str(
+                    os.getenv("BODY_PERSIST_BOTSORT_TRACKER_YAML", "botsort.yaml")
+                ).strip()
+                or "botsort.yaml"
+            )
+
+        try:
+            tr = BoTSORTPresenceTracker(
+                model_path=str(self._body_presence_botsort_model_path),
+                tracker_cfg=str(tracker_cfg_path),
+                conf=float(os.getenv("PRESENCE_CONF", "0.25")),
+                iou=float(os.getenv("PRESENCE_IOU", "0.45")),
+                imgsz=int(float(os.getenv("PRESENCE_IMG_SIZE", "640"))),
+                device=str(
+                    os.getenv("PRESENCE_DEVICE", default_presence_device)
+                    or default_presence_device
+                ),
+                max_det=int(float(os.getenv("PRESENCE_MAX_DET", "100"))),
+                active_hold_s=float(self._body_presence_visible_hold_s),
+                max_lost_s=float(self._body_presence_max_lost_s),
+                max_misses=int(self._body_presence_max_misses),
+                bbox_smooth_alpha=float(self._body_presence_bbox_smooth_alpha),
+            )
+            self._body_presence_botsort_by_camera[cid] = tr
+            self._body_presence_tracker_by_camera[cid] = tr
+            self._body_presence_botsort_failed = False
+            return tr
+        except Exception as e:
+            self._body_presence_botsort_failed = True
+            last_err = float(
+                self._body_presence_last_error_ts_by_camera.get(cid, 0.0) or 0.0
+            )
+            if (time.time() - last_err) >= float(
+                self._body_presence_error_log_interval_s
+            ):
+                self._body_presence_last_error_ts_by_camera[cid] = time.time()
+                print(f"[BODY-PERSIST] BoTSORT init failed cam={cid} err={e}")
+            return None
+
+    def _update_body_presence_tracks(
+        self, camera_id: str, frame_bgr: np.ndarray, now: float
+    ) -> Dict[int, PresenceTrack]:
+        cid = str(camera_id)
+        if not bool(self._body_presence_enabled):
+            self._clear_body_presence_state(cid)
+            return {}
+
+        backend = str(self._body_presence_tracker_backend).strip().lower()
+        if backend == "botsort":
+            botsort = self._get_body_presence_botsort_tracker(cid)
+            if botsort is None:
+                self._clear_body_presence_state(cid)
+                return {}
+
+            run_period = 1.0 / max(0.2, float(self._body_presence_track_fps))
+            last_track = float(
+                self._body_presence_last_track_ts_by_camera.get(cid, 0.0) or 0.0
+            )
+            run_track = last_track <= 0.0 or (now - last_track) >= run_period
+            try:
+                visible = (
+                    botsort.track(frame_bgr, now=now)
+                    if run_track
+                    else botsort.active_tracks(now=now)
+                )
+                if run_track:
+                    self._body_presence_last_track_ts_by_camera[cid] = now
+                self._body_presence_tracks_by_camera[cid] = visible
+                return visible
+            except Exception as e:
+                last_err = float(
+                    self._body_presence_last_error_ts_by_camera.get(cid, 0.0) or 0.0
+                )
+                if (now - last_err) >= float(self._body_presence_error_log_interval_s):
+                    self._body_presence_last_error_ts_by_camera[cid] = now
+                    print(f"[BODY-PERSIST] BoTSORT track failed cam={cid} err={e}")
+                fallback = botsort.active_tracks(now=now)
+                self._body_presence_tracks_by_camera[cid] = fallback
+                return fallback
+
+        detector = self._ensure_body_presence_detector()
+        if detector is None:
+            self._clear_body_presence_state(cid)
+            return {}
+
+        tracker = self._get_body_presence_tracker(cid)
+        det_period = 1.0 / max(0.2, float(self._body_presence_det_fps))
+        last_det = float(self._body_presence_last_det_ts_by_camera.get(cid, 0.0) or 0.0)
+        run_det = last_det <= 0.0 or (now - last_det) >= det_period
+
+        detections = None
+        if run_det:
+            try:
+                detections = detector.detect(frame_bgr)
+                self._body_presence_last_det_ts_by_camera[cid] = now
+            except Exception as e:
+                last_err = float(
+                    self._body_presence_last_error_ts_by_camera.get(cid, 0.0) or 0.0
+                )
+                if (now - last_err) >= float(self._body_presence_error_log_interval_s):
+                    self._body_presence_last_error_ts_by_camera[cid] = now
+                    print(f"[BODY-PERSIST] detect failed cam={cid} err={e}")
+                detections = []
+
+        tracks = tracker.update(detections, now=now, frame_shape=frame_bgr.shape)
+
+        visible: Dict[int, PresenceTrack] = {}
+        for tr in tracks:
+            age = max(0.0, now - float(getattr(tr, "last_seen_ts", now) or now))
+            if age > float(self._body_presence_visible_hold_s):
+                continue
+            if int(getattr(tr, "misses", 0) or 0) > int(self._body_presence_max_misses):
+                continue
+            visible[int(tr.track_id)] = tr
+
+        self._body_presence_tracks_by_camera[cid] = visible
+        return visible
+
+    def _score_face_to_body(
+        self,
+        face_box: Tuple[int, int, int, int],
+        body_box: Tuple[int, int, int, int],
+    ) -> float:
+        fx1, fy1, fx2, fy2 = [int(v) for v in face_box]
+        bx1, by1, bx2, by2 = self._expand_xyxy(
+            body_box,
+            expand_x_ratio=float(self._body_face_match_margin_x_ratio),
+            expand_y_ratio=float(self._body_face_match_margin_y_ratio),
+            expand_top_ratio=float(self._body_face_match_top_ratio),
+        )
+        if fx2 <= fx1 or fy2 <= fy1 or bx2 <= bx1 or by2 <= by1:
+            return -1.0
+
+        fcx, fcy = self._bbox_center_xyxy((fx1, fy1, fx2, fy2))
+        bw = max(1.0, float(bx2 - bx1))
+        bh = max(1.0, float(by2 - by1))
+        margin_x = 0.10 * bw
+        margin_y = 0.12 * bh
+        inside = (float(bx1) - margin_x) <= fcx <= (float(bx2) + margin_x) and (
+            float(by1) - margin_y
+        ) <= fcy <= (float(by2) + margin_y)
+        if not inside:
+            return -1.0
+
+        if fcy > (float(by1) + (float(self._body_face_max_y_ratio) * bh)):
+            return -1.0
+
+        face_area = float(max(1, fx2 - fx1) * max(1, fy2 - fy1))
+        ix1 = max(fx1, bx1)
+        iy1 = max(fy1, by1)
+        ix2 = min(fx2, bx2)
+        iy2 = min(fy2, by2)
+        inter = float(max(0, ix2 - ix1) * max(0, iy2 - iy1))
+        containment = inter / max(1e-6, face_area)
+        iou = self._bbox_iou_xyxy((fx1, fy1, fx2, fy2), (bx1, by1, bx2, by2))
+
+        head_y = float(by1) + (0.15 * bh)
+        head_align = max(0.0, 1.0 - abs(fcy - head_y) / max(1.0, 0.45 * bh))
+        center_x = float(bx1 + bx2) * 0.5
+        x_align = max(0.0, 1.0 - abs(fcx - center_x) / max(1.0, 0.60 * bw))
+
+        # Exponential penalty for faces too far down the body.
+        # This is CRITICAL for preventing background person body IDs from stealing foreground faces.
+        y_rel = (fcy - float(by1)) / bh
+        v_penalty = 1.0
+        if y_rel > 0.30:
+             v_penalty = max(0.0, 1.0 - ((y_rel - 0.30) * 4.0))
+
+        return float(
+            ((1.40 * containment) + (0.45 * iou) + (0.35 * head_align) + (0.15 * x_align)) * v_penalty
+        )
+
+    def _score_observation_to_body(
+        self,
+        obs_box: Tuple[int, int, int, int],
+        body_box: Tuple[int, int, int, int],
+    ) -> float:
+        face_score = self._score_face_to_body(obs_box, body_box)
+
+        ox1, oy1, ox2, oy2 = [int(v) for v in obs_box]
+        bx1, by1, bx2, by2 = self._expand_xyxy(
+            body_box,
+            expand_x_ratio=float(self._body_face_match_margin_x_ratio),
+            expand_y_ratio=float(self._body_face_match_margin_y_ratio),
+            expand_top_ratio=float(self._body_face_match_top_ratio),
+        )
+        if ox2 <= ox1 or oy2 <= oy1 or bx2 <= bx1 or by2 <= by1:
+            return float(face_score)
+
+        obs_area = float(max(1, ox2 - ox1) * max(1, oy2 - oy1))
+        body_area = float(max(1, bx2 - bx1) * max(1, by2 - by1))
+        area_ratio = obs_area / max(1.0, body_area)
+        if area_ratio > 2.25:
+            return float(face_score)
+
+        ocx, ocy = self._bbox_center_xyxy((ox1, oy1, ox2, oy2))
+        bw = max(1.0, float(bx2 - bx1))
+        bh = max(1.0, float(by2 - by1))
+        margin_x = 0.08 * bw
+        margin_y = 0.08 * bh
+        center_inside = (float(bx1) - margin_x) <= ocx <= (float(bx2) + margin_x) and (
+            float(by1) - margin_y
+        ) <= ocy <= (float(by2) + margin_y)
+
+        obs_overlap = self._bbox_overlap_ratio_xyxy(
+            (ox1, oy1, ox2, oy2), (bx1, by1, bx2, by2)
+        )
+        iou = self._bbox_iou_xyxy((ox1, oy1, ox2, oy2), (bx1, by1, bx2, by2))
+        body_cx = float(bx1 + bx2) * 0.5
+        x_align = max(0.0, 1.0 - abs(float(ocx) - body_cx) / max(1.0, 0.75 * bw))
+        upper_body_y = float(by1) + (0.42 * bh)
+        y_align = max(0.0, 1.0 - abs(float(ocy) - upper_body_y) / max(1.0, 0.80 * bh))
+
+        general_score = 0.0
+        if center_inside:
+            general_score += 0.18
+        general_score += 0.50 * max(0.0, min(1.0, obs_overlap))
+        general_score += 0.25 * max(0.0, min(1.0, iou * 3.0))
+        general_score += 0.08 * x_align
+        general_score += 0.06 * y_align
+
+        return float(max(face_score, general_score))
+
+    def _assign_body_track_to_face(
+        self,
+        *,
+        face_track: Any,
+        body_tracks: Dict[int, PresenceTrack],
+        used_body_track_ids: set[int],
+    ) -> Optional[int]:
+        if not body_tracks:
+            return None
+
+        try:
+            face_box = tuple(int(v) for v in getattr(face_track, "bbox", None) or ())
+        except Exception:
+            return None
+        if len(face_box) != 4:
+            return None
+
+        preferred = getattr(face_track, "body_track_id", None)
+        if preferred is not None:
+            try:
+                preferred_tid = int(preferred)
+            except Exception:
+                preferred_tid = -1
+            if (
+                preferred_tid in body_tracks
+                and preferred_tid not in used_body_track_ids
+            ):
+                pref_score = self._score_observation_to_body(
+                    face_box, body_tracks[preferred_tid].bbox
+                )
+                if pref_score >= float(self._body_face_match_min_score):
+                    used_body_track_ids.add(preferred_tid)
+                    face_track.body_track_id = preferred_tid
+                    return preferred_tid
+
+        best_tid: Optional[int] = None
+        best_score = -1.0
+        for tid, body_tr in body_tracks.items():
+            if int(tid) in used_body_track_ids:
+                continue
+            score = self._score_observation_to_body(face_box, body_tr.bbox)
+            
+            # Prefer larger body boxes if face box is large (simple Z-order hint)
+            face_area = (face_box[2]-face_box[0]) * (face_box[3]-face_box[1])
+            body_area = (body_tr.bbox[2]-body_tr.bbox[0]) * (body_tr.bbox[3]-body_tr.bbox[1])
+            if face_area > 10000 and body_area > 50000:
+                score *= 1.15
+            
+            if score > best_score:
+                best_score = score
+                best_tid = int(tid)
+
+        if best_tid is None or best_score < float(self._body_face_match_min_score):
+            # If no good match, check if we should clear the preferred TID
+            if preferred is not None:
+                 face_track.body_track_id = None
+            return None
+
+        used_body_track_ids.add(best_tid)
+        face_track.body_track_id = best_tid
+        return best_tid
+
+    def _dedupe_body_identity_state(
+        self,
+        *,
+        camera_id: str,
+        body_tracks: Dict[int, PresenceTrack],
+        now: float,
+    ) -> None:
+        cid = str(camera_id)
+        state = self._body_identity_state_by_camera.get(cid)
+        if not state:
+            return
+
+        active_ids = {int(tid) for tid in body_tracks.keys()}
+        ranked_by_employee: Dict[str, List[Tuple[float, int]]] = {}
+        for tid, body_state in state.items():
+            tid_i = int(tid)
+            if tid_i not in active_ids:
+                continue
+            employee_id = str(getattr(body_state, "employee_id", "") or "").strip()
+            if not self._is_known_employee_id(employee_id):
+                continue
+            face_age = max(
+                0.0, float(now) - float(getattr(body_state, "last_face_seen_ts", 0.0) or 0.0)
+            )
+            recency = max(0.0, 1.0 - min(1.0, face_age / 2.0))
+            confidence = float(getattr(body_state, "confidence", 0.0) or 0.0)
+            similarity = float(getattr(body_state, "similarity", 0.0) or 0.0)
+            score = (0.55 * confidence) + (0.30 * similarity) + (0.15 * recency)
+            ranked_by_employee.setdefault(employee_id, []).append((float(score), tid_i))
+
+        remove: set[int] = set()
+        for _employee_id, ranked in ranked_by_employee.items():
+            if len(ranked) <= 1:
+                continue
+            ranked.sort(reverse=True, key=lambda item: item[0])
+            for _score, tid_i in ranked[1:]:
+                remove.add(int(tid_i))
+
+        for tid_i in remove:
+            state.pop(int(tid_i), None)
+
+    def _prune_body_identity_state(
+        self,
+        *,
+        camera_id: str,
+        body_tracks: Dict[int, PresenceTrack],
+        now: float,
+    ) -> None:
+        cid = str(camera_id)
+        state = self._body_identity_state_by_camera.get(cid)
+        if not state:
+            return
+
+        ttl_s = float(self._body_identity_ttl_s)
+        remove: list[int] = []
+        for tid, item in state.items():
+            if int(tid) in body_tracks:
+                continue
+            missing_age = now - float(item.last_seen_ts)
+            if missing_age > max(0.1, float(self._body_presence_draw_max_stale_s)):
+                remove.append(int(tid))
+                continue
+            self._decay_body_identity_state(
+                body_state=item, now=now, body_visible=False
+            )
+            if float(getattr(item, "confidence", 0.0) or 0.0) < float(
+                self._identity_conf_drop
+            ):
+                remove.append(int(tid))
+                continue
+            if (now - float(item.last_seen_ts)) > ttl_s:
+                remove.append(int(tid))
+        for tid in remove:
+            state.pop(int(tid), None)
+
+        if not state:
+            self._body_identity_state_by_camera.pop(cid, None)
+
+    def _is_body_identity_switch_allowed(
+        self,
+        *,
+        camera_id: str,
+        existing_state: Optional[BodyIdentityState],
+        new_employee_id: str,
+        new_similarity: float,
+        now: float,
+    ) -> bool:
+        if existing_state is None:
+            return True
+
+        existing_emp = str(getattr(existing_state, "employee_id", "") or "").strip()
+        if existing_emp == str(new_employee_id or "").strip():
+            return True
+
+        graph = self._get_identity_graph_manager(camera_id)
+        locked_until_ts = float(getattr(existing_state, "locked_until_ts", 0.0) or 0.0)
+        existing_similarity = float(getattr(existing_state, "similarity", 0.0) or 0.0)
+        
+        # High confidence face match unconditionally overrides identity locks.
+        # This instantly fixes BoTSORT ID swaps during crossovers IF we are very sure.
+        if float(new_similarity) >= 0.90:
+            setattr(existing_state, "locked_until_ts", graph.lock_until(now=float(now)))
+            setattr(existing_state, "last_switch_ts", float(now))
+            return True
+
+        # If we already have a decent match, require a VERY large gain to switch.
+        # This prevents 'identity jitter' in crowded office desks.
+        dynamic_gain = float(self.cfg.distinct_sim_margin) * 1.5
+        if existing_similarity > 0.45:
+             dynamic_gain = max(dynamic_gain, 0.15)
+
+        allowed = float(new_similarity) >= (existing_similarity + dynamic_gain)
+        if not allowed and float(now) >= float(locked_until_ts):
+             # If lock is expired, allow standard graph policy
+             allowed = graph.can_switch(
+                existing_employee_id=existing_emp,
+                existing_similarity=existing_similarity,
+                existing_locked_until_ts=locked_until_ts,
+                new_employee_id=str(new_employee_id or "").strip(),
+                new_similarity=float(new_similarity),
+                now=float(now),
+            )
+
+        if allowed:
+            setattr(existing_state, "locked_until_ts", graph.lock_until(now=float(now)))
+            setattr(existing_state, "last_switch_ts", float(now))
+        return bool(allowed)
+
+    def _reconcile_body_identity_graph(
+        self,
+        *,
+        camera_id: str,
+        body_tracks: Dict[int, PresenceTrack],
+        now: float,
+    ) -> None:
+        cid = str(camera_id)
+        body_identity_state = self._body_identity_state_by_camera.get(cid)
+        if not body_identity_state or not body_tracks:
+            return
+
+        graph = self._get_identity_graph_manager(cid)
+        active_track_ids = {int(tid) for tid in body_tracks.keys()}
+
+        nodes: Dict[int, IdentityNode] = {}
+        for tid, state in body_identity_state.items():
+            tid_i = int(tid)
+            if tid_i not in active_track_ids:
+                continue
+            emp = str(getattr(state, "employee_id", "") or "").strip()
+            if not emp:
+                continue
+            if not self._is_known_employee_id(emp):
+                continue
+            node = IdentityNode(
+                track_id=tid_i,
+                employee_id=emp,
+                name=str(getattr(state, "name", emp) or emp),
+                confidence=float(getattr(state, "confidence", 0.0) or 0.0),
+                similarity=float(getattr(state, "similarity", 0.0) or 0.0),
+                last_seen_ts=float(getattr(state, "last_seen_ts", now) or now),
+                locked_until_ts=float(getattr(state, "locked_until_ts", 0.0) or 0.0),
+                last_switch_ts=float(getattr(state, "last_switch_ts", 0.0) or 0.0),
+            )
+            nodes[tid_i] = node
+
+        if not nodes:
+            return
+
+        removed = graph.reconcile(
+            nodes=nodes,
+            active_track_ids=active_track_ids,
+            now=float(now),
+        )
+
+        for tid_i, node in nodes.items():
+            state = body_identity_state.get(int(tid_i))
+            if state is None:
+                continue
+            state.confidence = float(max(0.0, min(1.0, node.confidence)))
+            state.similarity = float(node.similarity)
+            state.last_seen_ts = float(node.last_seen_ts)
+            setattr(state, "locked_until_ts", float(node.locked_until_ts))
+            setattr(state, "last_switch_ts", float(node.last_switch_ts))
+
+        for tid_i in removed:
+            body_identity_state.pop(int(tid_i), None)
 
     # -------------------------
     # Pipeline integration points
@@ -1731,6 +3244,7 @@ class AttendanceRuntime:
         annotated = frame_bgr.copy()
 
         now = time.time()
+        infer_frame, _enhance_stats = self._inference_frame_enhancer.enhance(frame_bgr)
 
         # Always run CPU tracking each frame.
         tracks = state.tracker.update(frame_bgr, now=now)
@@ -1779,8 +3293,16 @@ class AttendanceRuntime:
                                 tr.force_recognition_until_ts,
                                 now + float(self.cfg.burst_seconds),
                             )
-                # Detection just updated boxes; force a quick recognition pass on fresh bboxes.
+                # Detection just updated boxes; force quick recognition only for
+                # tracks that still need an identity/verification sample.
                 for tr in state.tracker.tracks():
+                    stable_known = (
+                        self._is_known_employee_id(getattr(tr, "person_id", None))
+                        and int(getattr(tr, "stable_id_hits", 0) or 0)
+                        >= int(self.cfg.stable_id_confirmations)
+                    )
+                    if stable_known and not getattr(tr, "verify_target_id", None):
+                        continue
                     tr.force_recognition_until_ts = max(
                         tr.force_recognition_until_ts, now + 0.35
                     )
@@ -1806,22 +3328,346 @@ class AttendanceRuntime:
 
         # Scheduled GPU detection (round-robin arbitration, newest-frame only).
         if state.scheduler.should_run_detection(now=now):
-            self._gpu.submit(cid, frame_bgr, ts=now)
+            self._gpu.submit(cid, infer_frame, ts=now)
             state.scheduler.mark_detection_submitted(now=now)
 
-        # Scheduled per-track recognition (CPU by default).
-        rec_stats = state.recognizer.update_tracks(
-            frame_bgr, tracks, state.scheduler, now=now
-        )
-        state.rec_calls_total += int(rec_stats.get("recognition_calls", 0) or 0)
-
         h, w = annotated.shape[:2]
+        # Draw Safety Zone (Boundary Box) for identity latching
+        margin_ratio = float(getattr(self.cfg, "latch_boundary_margin_ratio", 0.005) or 0.005)
+        mx = int(w * margin_ratio)
+        my = int(h * margin_ratio)
+        if mx > 0 and my > 0:
+            # Draw a very subtle thin line for the boundary (near camera edges)
+            overlay = annotated.copy()
+            cv2.rectangle(overlay, (mx, my), (w - mx, h - my), (120, 120, 120), 1)
+            # Add corner accents for a premium "targeting" look
+            corner_len = int(min(w, h) * 0.02)
+            # Top-left
+            cv2.line(overlay, (mx, my), (mx + corner_len, my), (200, 200, 200), 2)
+            cv2.line(overlay, (mx, my), (mx, my + corner_len), (200, 200, 200), 2)
+            # Top-right
+            cv2.line(overlay, (w - mx, my), (w - mx - corner_len, my), (200, 200, 200), 2)
+            cv2.line(overlay, (w - mx, my), (w - mx, my + corner_len), (200, 200, 200), 2)
+            # Bottom-left
+            cv2.line(overlay, (mx, h - my), (mx + corner_len, h - my), (200, 200, 200), 2)
+            cv2.line(overlay, (mx, h - my), (mx, h - my - corner_len), (200, 200, 200), 2)
+            # Bottom-right
+            cv2.line(overlay, (w - mx, h - my), (w - mx - corner_len, h - my), (200, 200, 200), 2)
+            cv2.line(overlay, (w - mx, h - my), (w - mx, h - my - corner_len), (200, 200, 200), 2)
+            
+            cv2.addWeighted(overlay, 0.4, annotated, 0.6, 0, annotated)
+
         unknown_count = 0
         authorized_employee_ids = self._refresh_authorized_employee_ids(cid, company_id)
         has_authorized_scope = len(authorized_employee_ids) > 0
         tracking_boxes = self._refresh_bounding_boxes(cid, company_id)
+        body_tracks_all = self._update_body_presence_tracks(cid, infer_frame, now)
+        body_tracks = {
+            int(tid): tr
+            for tid, tr in body_tracks_all.items()
+            if self._is_body_track_fresh_for_overlay(tr, now=now)
+        }
+        body_identity_state = self._body_identity_state_by_camera.setdefault(cid, {})
+        self._dedupe_body_identity_state(
+            camera_id=cid,
+            body_tracks=body_tracks,
+            now=now,
+        )
+        # Scheduled per-track recognition (CPU by default).
+        rec_stats = state.recognizer.update_tracks(
+            infer_frame, tracks, state.scheduler, now=now
+        )
+        state.rec_calls_total += int(rec_stats.get("recognition_calls", 0) or 0)
+
+        used_body_track_ids: set[int] = set()
+        known_render_boxes: list[Tuple[int, int, int, int]] = []
+        body_fallback_overlays: Dict[
+            int,
+            Tuple[
+                Tuple[int, int, int, int],
+                str,
+                str,
+                Optional[float],
+                Tuple[int, int, int, int],
+                Optional[List[Tuple[int, int]]],
+            ],
+        ] = {}
+
+        if body_tracks:
+            for tr in tracks:
+                if not self._is_known_employee_id(getattr(tr, "person_id", None)):
+                    continue
+                matched_tid = self._assign_body_track_to_face(
+                    face_track=tr,
+                    body_tracks=body_tracks,
+                    used_body_track_ids=used_body_track_ids,
+                )
+                if matched_tid is None:
+                    continue
+                emp_id = str(getattr(tr, "person_id", "") or "").strip()
+                existing_state = body_identity_state.get(int(matched_tid))
+                switch_allowed = self._is_body_identity_switch_allowed(
+                    camera_id=cid,
+                    existing_state=existing_state,
+                    new_employee_id=emp_id,
+                    new_similarity=float(getattr(tr, "similarity", 0.0) or 0.0),
+                    now=now,
+                )
+                if not switch_allowed:
+                    continue
+                if (
+                    existing_state is not None
+                    and str(existing_state.employee_id).strip() == emp_id
+                ):
+                    existing_state.name = str(getattr(tr, "name", "") or emp_id)
+                    existing_state.similarity = float(
+                        getattr(tr, "similarity", 0.0) or 0.0
+                    )
+                    existing_state.last_seen_ts = now
+                    existing_state.last_face_seen_ts = now
+                    if (
+                        float(getattr(existing_state, "last_confidence_ts", 0.0) or 0.0)
+                        <= 0.0
+                    ):
+                        existing_state.last_confidence_ts = now
+                    body_state = existing_state
+                else:
+                    body_state = BodyIdentityState(
+                        employee_id=emp_id,
+                        name=str(getattr(tr, "name", "") or emp_id),
+                        similarity=float(getattr(tr, "similarity", 0.0) or 0.0),
+                        last_seen_ts=now,
+                        last_face_seen_ts=now,
+                        confidence=max(
+                            0.55,
+                            min(0.98, float(getattr(tr, "similarity", 0.0) or 0.0)),
+                        ),
+                        visibility_state=ID_STATE_VISIBLE,
+                        last_confidence_ts=now,
+                    )
+                    body_identity_state[int(matched_tid)] = body_state
+                setattr(
+                    body_state,
+                    "locked_until_ts",
+                    self._get_identity_graph_manager(cid).lock_until(now=now),
+                )
+                body_tr = body_tracks.get(int(matched_tid))
+                if body_tr is not None:
+                    self._sync_body_identity_dwell_anchor(
+                        body_state=body_state,
+                        body_track=body_tr,
+                        now=now,
+                    )
+                    self._update_body_identity_face_geometry(
+                        body_state=body_state,
+                        face_box=tuple(int(v) for v in tr.bbox),
+                        body_box=tuple(int(v) for v in body_tr.bbox),
+                    )
+                    body_emb = self._body_embedding_from_bbox(
+                        infer_frame,
+                        tuple(int(v) for v in body_tr.bbox),
+                    )
+                    self._update_body_embedding_bank(body_state, body_emb)
+                self._boost_body_identity_state(
+                    body_state=body_state,
+                    similarity=float(getattr(tr, "similarity", 0.0) or 0.0),
+                    now=now,
+                    face_confirmed=True,
+                )
+                stale_same_emp: list[int] = []
+                for other_tid, other_state in body_identity_state.items():
+                    if int(other_tid) == int(matched_tid):
+                        continue
+                    if str(other_state.employee_id) != emp_id:
+                        continue
+                    if (now - float(other_state.last_face_seen_ts)) > 0.5:
+                        stale_same_emp.append(int(other_tid))
+                for stale_tid in stale_same_emp:
+                    body_identity_state.pop(int(stale_tid), None)
+
+        if body_tracks and body_identity_state:
+            self._dedupe_body_identity_state(
+                camera_id=cid,
+                body_tracks=body_tracks,
+                now=now,
+            )
+
+        if body_tracks and body_identity_state:
+            self._rebind_body_identity_tracks(
+                body_identity_state=body_identity_state,
+                body_tracks=body_tracks,
+                frame_bgr=infer_frame,
+                now=now,
+            )
+
+        if body_tracks and body_identity_state:
+            self._dedupe_body_identity_state(
+                camera_id=cid,
+                body_tracks=body_tracks,
+                now=now,
+            )
+
+        if body_tracks and body_identity_state:
+            for tid, body_state in body_identity_state.items():
+                body_tr = body_tracks.get(int(tid))
+                if body_tr is None:
+                    self._decay_body_identity_state(
+                        body_state=body_state,
+                        now=now,
+                        body_visible=False,
+                    )
+                    continue
+                body_state.last_seen_ts = now
+                self._decay_body_identity_state(
+                    body_state=body_state,
+                    now=now,
+                    body_visible=True,
+                )
+                prev_body_box = (
+                    tuple(int(v) for v in body_state.last_body_bbox)
+                    if body_state.last_body_bbox is not None
+                    else None
+                )
+                curr_body_box = tuple(int(v) for v in body_tr.bbox)
+                self._sync_body_identity_dwell_anchor(
+                    body_state=body_state,
+                    body_track=body_tr,
+                    now=now,
+                )
+                body_state.last_body_bbox = curr_body_box
+                body_emb = self._body_embedding_from_bbox(infer_frame, curr_body_box)
+                self._update_body_embedding_bank(body_state, body_emb)
+                if not self._is_known_employee_id(
+                    getattr(body_state, "employee_id", None)
+                ):
+                    continue
+                self._boost_body_identity_state(
+                    body_state=body_state,
+                    similarity=float(getattr(body_state, "similarity", 0.0) or 0.0),
+                    now=now,
+                    face_confirmed=False,
+                )
+                if float(getattr(body_state, "confidence", 0.0) or 0.0) < float(
+                    self._identity_conf_min_show
+                ):
+                    continue
+                employee_id = str(body_state.employee_id or "").strip()
+                if has_authorized_scope and employee_id not in authorized_employee_ids:
+                    continue
+                # 100% Accuracy: Trust the body identity even if face-fallback timer expires.
+                # Only skip if the identity is fully dropped or authorized scope is violated.
+                if not self._body_fallback_overlay_enabled:
+                    continue
+
+                predicted_seed = self._predict_face_box_from_body(
+                    body_box=curr_body_box,
+                    body_state=body_state,
+                    frame_w=w,
+                    frame_h=h,
+                )
+                face_seed = (
+                    tuple(int(v) for v in body_state.last_draw_face_bbox)
+                    if body_state.last_draw_face_bbox is not None
+                    else None
+                )
+                if face_seed is None and body_state.last_face_bbox is not None:
+                    face_seed = self._known_face_draw_box(
+                        tuple(int(v) for v in body_state.last_face_bbox),
+                        frame_w=w,
+                        frame_h=h,
+                    )
+                if face_seed is None:
+                    face_seed = predicted_seed
+                else:
+                    face_seed = self._smooth_box_xyxy(
+                        face_seed,
+                        predicted_seed,
+                        alpha=0.35,
+                        frame_w=w,
+                        frame_h=h,
+                    )
+
+                shifted_seed = face_seed
+                if prev_body_box is not None:
+                    prev_cx, prev_cy = self._bbox_center_xyxy(prev_body_box)
+                    curr_cx, curr_cy = self._bbox_center_xyxy(curr_body_box)
+                    dx = float(curr_cx - prev_cx)
+                    dy = float(curr_cy - prev_cy)
+                    cbx1, cby1, cbx2, cby2 = curr_body_box
+                    max_shift = 1.8 * float(max(1, cbx2 - cbx1, cby2 - cby1))
+                    if float(np.hypot(dx, dy)) <= max_shift:
+                        shifted_seed = self._shift_box_xyxy(
+                            face_seed,
+                            dx=dx,
+                            dy=dy,
+                            frame_w=w,
+                            frame_h=h,
+                        )
+
+                smooth_box = self._smooth_box_xyxy(
+                    body_state.last_draw_face_bbox,
+                    shifted_seed,
+                    alpha=float(self._body_face_draw_smooth_alpha),
+                    frame_w=w,
+                    frame_h=h,
+                )
+                body_state.last_draw_face_bbox = smooth_box
+                known_render_boxes.append(smooth_box)
+                dwell_s = self._body_identity_dwell_seconds(
+                    body_state=body_state,
+                    body_track=body_tr,
+                    fallback_first_seen_ts=None,
+                    now=now,
+                )
+                body_fallback_overlays[int(tid)] = (
+                    smooth_box,
+                    employee_id,
+                    str(body_state.name or employee_id),
+                    dwell_s,
+                    curr_body_box,
+                    getattr(body_tr, "mask_polygon", None),
+                )
+
+        if body_tracks and body_identity_state:
+            self._reconcile_body_identity_graph(
+                camera_id=cid,
+                body_tracks=body_tracks,
+                now=now,
+            )
+
+        body_drawn_employee_ids = {
+            str(payload[1]).strip()
+            for payload in body_fallback_overlays.values()
+            if payload[1]
+        }
+
+        primary_known_face_track_by_employee: Dict[str, int] = {}
+        primary_known_face_score_by_employee: Dict[str, float] = {}
+        for tr in tracks:
+            if not self._is_face_track_fresh_for_overlay(tr, now=now):
+                continue
+            emp_id = str(getattr(tr, "person_id", "") or "").strip()
+            if not self._is_known_employee_id(emp_id):
+                continue
+            if has_authorized_scope and emp_id not in authorized_employee_ids:
+                continue
+            sim = float(getattr(tr, "similarity", 0.0) or 0.0)
+            stable_hits = float(getattr(tr, "stable_id_hits", 0) or 0)
+            embed_age = (
+                now - float(getattr(tr, "last_embed_ts", 0.0) or 0.0)
+                if float(getattr(tr, "last_embed_ts", 0.0) or 0.0) > 0.0
+                else 999.0
+            )
+            score = sim + (0.01 * min(stable_hits, 10.0)) - (0.02 * min(embed_age, 5.0))
+            old_score = primary_known_face_score_by_employee.get(emp_id)
+            if old_score is None or score > old_score:
+                primary_known_face_track_by_employee[emp_id] = int(tr.track_id)
+                primary_known_face_score_by_employee[emp_id] = float(score)
+
+        drawn_known_employee_ids: set[str] = set()
 
         for tr in tracks:
+<<<<<<< HEAD
             # --- SMOOTHING ---
             # Use Exponential Moving Average (EMA) for fluid, jitter-free movement.
             # This is applied every frame to the tracker's raw output.
@@ -1855,16 +3701,323 @@ class AttendanceRuntime:
             is_locked_display = has_lock and not live_recognized  # face not visible, using lock
 
             recognized_known = self._is_known_employee_id(effective_person_id)
+=======
+            x1, y1, x2, y2 = [int(v) for v in tr.bbox]
+            face_track_fresh = self._is_face_track_fresh_for_overlay(tr, now=now)
+            recognized_known = self._is_known_employee_id(tr.person_id)
+>>>>>>> b04451665d91d4d85a660894ec8c5e2bbeaa1012
             known = recognized_known and (
                 not has_authorized_scope
                 or str(effective_person_id or "").strip() in authorized_employee_ids
             )
             unauthorized_known = recognized_known and not known
+<<<<<<< HEAD
 
             # 🔓 DOOR UNLOCK — only on live recognition (not just lock display)
             if (
                 live_recognized
                 and known
+=======
+            if known:
+                emp_for_primary = str(tr.person_id or "").strip()
+                primary_tid = primary_known_face_track_by_employee.get(emp_for_primary)
+                if primary_tid is not None and int(tr.track_id) != int(primary_tid):
+                    continue
+            if not face_track_fresh:
+                continue
+
+            matched_body_tid: Optional[int] = None
+            if body_tracks:
+                preferred_tid_raw = getattr(tr, "body_track_id", None)
+                preferred_tid: Optional[int] = None
+                if preferred_tid_raw is not None:
+                    try:
+                        candidate_tid = int(preferred_tid_raw)
+                    except Exception:
+                        candidate_tid = -1
+                    if candidate_tid in body_tracks:
+                        face_box = (x1, y1, x2, y2)
+                        pref_score = self._score_observation_to_body(
+                            face_box, body_tracks[candidate_tid].bbox
+                        )
+                        if pref_score >= float(self._body_face_match_min_score):
+                            preferred_tid = candidate_tid
+                if (
+                    preferred_tid is not None
+                    and preferred_tid in used_body_track_ids
+                    and not recognized_known
+                ):
+                    preferred_tid = None
+                if preferred_tid is not None:
+                    matched_body_tid = preferred_tid
+                    if recognized_known:
+                        used_body_track_ids.add(int(preferred_tid))
+                else:
+                    matched_body_tid = self._assign_body_track_to_face(
+                        face_track=tr,
+                        body_tracks=body_tracks,
+                        used_body_track_ids=used_body_track_ids,
+                    )
+                if recognized_known and matched_body_tid is not None:
+                    emp_id = str(tr.person_id or "").strip()
+                    existing_state = body_identity_state.get(int(matched_body_tid))
+                    switch_allowed = self._is_body_identity_switch_allowed(
+                        camera_id=cid,
+                        existing_state=existing_state,
+                        new_employee_id=emp_id,
+                        new_similarity=float(tr.similarity),
+                        now=now,
+                    )
+                    if not switch_allowed:
+                        existing_state = body_identity_state.get(int(matched_body_tid))
+                        if existing_state is not None:
+                            self._boost_body_identity_state(
+                                body_state=existing_state,
+                                similarity=float(
+                                    getattr(existing_state, "similarity", 0.0) or 0.0
+                                ),
+                                now=now,
+                                face_confirmed=False,
+                            )
+                        continue
+                    if (
+                        existing_state is not None
+                        and str(existing_state.employee_id).strip() == emp_id
+                    ):
+                        existing_state.name = str(tr.name or emp_id)
+                        existing_state.similarity = float(tr.similarity)
+                        existing_state.last_seen_ts = now
+                        existing_state.last_face_seen_ts = now
+                        if (
+                            float(
+                                getattr(existing_state, "last_confidence_ts", 0.0)
+                                or 0.0
+                            )
+                            <= 0.0
+                        ):
+                            existing_state.last_confidence_ts = now
+                        body_state = existing_state
+                    else:
+                        body_state = BodyIdentityState(
+                            employee_id=emp_id,
+                            name=str(tr.name or emp_id),
+                            similarity=float(tr.similarity),
+                            last_seen_ts=now,
+                            last_face_seen_ts=now,
+                            confidence=max(0.55, min(0.98, float(tr.similarity))),
+                            visibility_state=ID_STATE_VISIBLE,
+                            last_confidence_ts=now,
+                        )
+                        body_identity_state[int(matched_body_tid)] = body_state
+                    setattr(
+                        body_state,
+                        "locked_until_ts",
+                        self._get_identity_graph_manager(cid).lock_until(now=now),
+                    )
+                    body_tr = body_tracks.get(int(matched_body_tid))
+                    if body_tr is not None:
+                        self._sync_body_identity_dwell_anchor(
+                            body_state=body_state,
+                            body_track=body_tr,
+                            now=now,
+                        )
+                        self._update_body_identity_face_geometry(
+                            body_state=body_state,
+                            face_box=(x1, y1, x2, y2),
+                            body_box=tuple(int(v) for v in body_tr.bbox),
+                        )
+                        body_emb = self._body_embedding_from_bbox(
+                            infer_frame,
+                            tuple(int(v) for v in body_tr.bbox),
+                        )
+                        self._update_body_embedding_bank(body_state, body_emb)
+                    self._boost_body_identity_state(
+                        body_state=body_state,
+                        similarity=float(tr.similarity),
+                        now=now,
+                        face_confirmed=True,
+                    )
+            if matched_body_tid is None and body_tracks and body_identity_state:
+                face_box = (x1, y1, x2, y2)
+                best_tid: Optional[int] = None
+                best_score = -1.0
+                for cand_tid, cand_state in body_identity_state.items():
+                    if not self._is_known_employee_id(
+                        getattr(cand_state, "employee_id", None)
+                    ):
+                        continue
+                    body_tr = body_tracks.get(int(cand_tid))
+                    if body_tr is None:
+                        continue
+                    score = self._score_observation_to_body(face_box, body_tr.bbox)
+                    if score > best_score:
+                        best_score = score
+                        best_tid = int(cand_tid)
+                if best_tid is not None and best_score >= float(
+                    self._body_known_match_min_score
+                ):
+                    matched_body_tid = int(best_tid)
+
+            body_state = (
+                body_identity_state.get(int(matched_body_tid))
+                if matched_body_tid is not None
+                else None
+            )
+            matched_body_tr = (
+                body_tracks.get(int(matched_body_tid))
+                if matched_body_tid is not None
+                else None
+            )
+            matched_body_fresh = self._is_body_track_fresh_for_overlay(
+                matched_body_tr, now=now
+            )
+            body_identity_hold_ok = bool(
+                matched_body_fresh
+                and body_state is not None
+                and (
+                    float(self._body_face_fallback_max_age_s) <= 0.0
+                    or (
+                        now
+                        - float(getattr(body_state, "last_face_seen_ts", 0.0) or 0.0)
+                    )
+                    <= float(self._body_face_fallback_max_age_s)
+                )
+            )
+            body_conf = (
+                float(getattr(body_state, "confidence", 0.0) or 0.0)
+                if body_state is not None
+                else 0.0
+            )
+            # 100% Accuracy: Trust the body identity even if face recognition is stale/obscured.
+            body_has_stable_identity = bool(
+                body_state is not None
+                and self._is_known_employee_id(getattr(body_state, "employee_id", None))
+                and body_conf >= float(self._identity_conf_min_show)
+            )
+            
+            display_employee_id: Optional[str] = (
+                str(tr.person_id or "").strip()
+                if recognized_known and face_track_fresh
+                else (
+                    str(body_state.employee_id).strip()
+                    if body_has_stable_identity and body_state is not None
+                    else None
+                )
+            )
+            display_name = (
+                str(tr.name or display_employee_id or "Unknown")
+                if recognized_known and face_track_fresh
+                else (
+                    str(body_state.name or body_state.employee_id)
+                    if body_has_stable_identity and body_state is not None
+                    else "Unknown"
+                )
+            )
+            display_known = bool(
+                display_employee_id
+                and self._is_known_employee_id(display_employee_id)
+                and (
+                    not has_authorized_scope
+                    or str(display_employee_id) in authorized_employee_ids
+                )
+            )
+            if body_state is not None:
+                if matched_body_fresh and matched_body_tr is not None:
+                    body_state.last_seen_ts = now
+                    self._sync_body_identity_dwell_anchor(
+                        body_state=body_state,
+                        body_track=matched_body_tr,
+                        now=now,
+                    )
+                    body_state.last_body_bbox = tuple(
+                        int(v) for v in matched_body_tr.bbox
+                    )
+                    if not recognized_known:
+                        self._boost_body_identity_state(
+                            body_state=body_state,
+                            similarity=float(
+                                getattr(body_state, "similarity", 0.0) or 0.0
+                            ),
+                            now=now,
+                            face_confirmed=False,
+                        )
+                else:
+                    self._decay_body_identity_state(
+                        body_state=body_state,
+                        now=now,
+                        body_visible=False,
+                    )
+            if not display_known and not face_track_fresh:
+                continue
+
+            suppress_unknown_overlay = False
+            if not display_known:
+                if body_has_stable_identity:
+                    suppress_unknown_overlay = True
+                else:
+                    face_box = (x1, y1, x2, y2)
+                    if body_tracks and body_identity_state:
+                        # 1) Direct match check (most accurate)
+                        if matched_body_tid is not None:
+                            bs = body_identity_state.get(int(matched_body_tid))
+                            if bs and self._is_known_employee_id(getattr(bs, "employee_id", None)):
+                                suppress_unknown_overlay = True
+                        
+                        # 2) Spatial fallback check
+                        if not suppress_unknown_overlay:
+                            for cand_tid, cand_state in body_identity_state.items():
+                                if not self._is_known_employee_id(getattr(cand_state, "employee_id", None)):
+                                    continue
+                                cand_employee_id = str(getattr(cand_state, "employee_id", "") or "").strip()
+                                if has_authorized_scope and cand_employee_id not in authorized_employee_ids:
+                                    continue
+                                body_tr = body_tracks.get(int(cand_tid))
+                                if body_tr is None:
+                                    continue
+                                score = self._score_observation_to_body(face_box, tuple(int(v) for v in body_tr.bbox))
+                                if score >= float(self._body_known_match_min_score) * 0.85:
+                                    suppress_unknown_overlay = True
+                                    break
+
+                    fcx, fcy = self._bbox_center_xyxy(face_box)
+                    if not suppress_unknown_overlay:
+                        for kbox in known_render_boxes:
+                            kx1, ky1, kx2, ky2 = kbox
+                            iou = self._bbox_iou_xyxy(face_box, kbox)
+                            overlap = self._bbox_overlap_ratio_xyxy(face_box, kbox)
+                            center_inside = float(kx1) <= fcx <= float(kx2) and float(
+                                ky1
+                            ) <= fcy <= float(ky2)
+                            if (
+                                iou >= float(self._body_unknown_suppress_iou)
+                                or overlap >= 0.55
+                                or center_inside
+                            ):
+                                suppress_unknown_overlay = True
+                                break
+
+            embed_age = (
+                now - float(getattr(tr, "last_embed_ts", 0.0) or 0.0)
+                if float(getattr(tr, "last_embed_ts", 0.0) or 0.0) > 0.0
+                else 1e9
+            )
+            known_for_actions = bool(
+                known
+                and face_track_fresh
+                and embed_age
+                <= max(
+                    0.6,
+                    float(
+                        getattr(self.cfg, "attendance_max_embed_age_seconds", 0.9)
+                        or 0.9
+                    ),
+                )
+            )
+
+            # DOOR UNLOCK - EVERY KNOWN RECOGNITION (NO DELAY)
+            if (
+                known_for_actions
+>>>>>>> b04451665d91d4d85a660894ec8c5e2bbeaa1012
                 and self._door_unlock_on_recognition
                 and enable_attendance
                 and self.get_stream_type(cid) == "attendance"
@@ -1877,9 +4030,13 @@ class AttendanceRuntime:
                     similarity=float(tr.similarity),
                 )
 
-            if not known:
+            if suppress_unknown_overlay:
+                continue
+
+            if not display_known:
                 unknown_count += 1
 
+<<<<<<< HEAD
             # --- CLUTTER FILTER (GHOST DETECTION SUPPRESSION) ---
             # Don't draw "Unknown" boxes if they are low confidence or haven't been confirmed
             # by the tracker for long enough. This eliminates "ghosts" on background objects.
@@ -1913,8 +4070,59 @@ class AttendanceRuntime:
                 timer_str = _format_duration(duration_s)
                 _draw_label_card(annotated, timer_str, x1, y1 - 10, known=False, scale=0.45)
 
+=======
+            if body_has_stable_identity and not recognized_known:
+                continue
 
-            if recognized_known and company_id and tracking_boxes:
+            color = ACCENT_KNOWN if display_known else ACCENT_UNKNOWN
+            draw_x1, draw_y1, draw_x2, draw_y2 = x1, y1, x2, y2
+            
+            skip_face_rendering = False
+            if display_known and display_employee_id and str(display_employee_id) in body_drawn_employee_ids:
+                skip_face_rendering = True
+>>>>>>> b04451665d91d4d85a660894ec8c5e2bbeaa1012
+
+            if not skip_face_rendering:
+                if display_known:
+                    if body_state is not None:
+                        body_state.last_draw_face_bbox = (
+                            draw_x1,
+                            draw_y1,
+                            draw_x2,
+                            draw_y2,
+                        )
+                    known_render_boxes.append((draw_x1, draw_y1, draw_x2, draw_y2))
+                cv2.rectangle(annotated, (draw_x1, draw_y1), (draw_x2, draw_y2), color, 3)
+
+                label = (
+                    display_name
+                    if (display_known or body_has_stable_identity or recognized_known)
+                    else "Unknown"
+                )
+                if display_known or body_has_stable_identity or recognized_known:
+                    dwell_s = self._body_identity_dwell_seconds(
+                        body_state=(
+                            body_state if (display_known or body_has_stable_identity) else None
+                        ),
+                        body_track=matched_body_tr,
+                        fallback_first_seen_ts=float(getattr(tr, "created_ts", now) or now),
+                        now=now,
+                    )
+                else:
+                    dwell_s = None
+                label = _label_with_dwell(label, dwell_s)
+                _draw_label_card(
+                    annotated,
+                    label,
+                    draw_x1,
+                    max(38, draw_y1 - 14),
+                    display_known,
+                    scale=0.75,
+                )
+                if display_known and display_employee_id:
+                    drawn_known_employee_ids.add(str(display_employee_id))
+
+            if known_for_actions and company_id and tracking_boxes:
                 self._handle_bounding_box_tracking_for_track(
                     camera_id=cid,
                     camera_name=camera_name,
@@ -1929,7 +4137,10 @@ class AttendanceRuntime:
 
             if (
                 enable_attendance
-                and not known
+                and not known_for_actions
+                and not body_has_stable_identity
+                and face_track_fresh
+                and (not recognized_known or unauthorized_known)
                 and company_id
                 and self.get_stream_type(cid) == "attendance"
                 and self._should_log_unknown(
@@ -1950,8 +4161,12 @@ class AttendanceRuntime:
                 )
 
             # Attendance marking (debounced + verified + async writer)
+<<<<<<< HEAD
             # Only note_seen for LIVE face recognition, not display lock
             if enable_attendance and live_recognized and known and company_id:
+=======
+            if enable_attendance and known_for_actions and company_id:
+>>>>>>> b04451665d91d4d85a660894ec8c5e2bbeaa1012
                 self._debouncer.note_seen(
                     company_id=company_id,
                     employee_id=str(tr.person_id),
@@ -1960,18 +4175,20 @@ class AttendanceRuntime:
 
             if not enable_attendance:
                 continue
-            if not known:
+            if not known_for_actions:
                 continue
             if not company_id:
                 continue
 
-            # Avoid partial edge faces and low-quality crops
-            if x1 <= 4 or y1 <= 4 or x2 >= (w - 4) or y2 >= (h - 4):
-                continue
+            if self._attendance_require_extra_quality:
+                # Optional extra gate. Recognition already has its own quality gate,
+                # so keep this off by default for fast attendance writes.
+                if x1 <= 4 or y1 <= 4 or x2 >= (w - 4) or y2 >= (h - 4):
+                    continue
 
-            q_score = quality_score((x1, y1, x2, y2), frame_bgr)
-            if q_score < float(self.cfg.min_att_quality):
-                continue
+                q_score = quality_score((x1, y1, x2, y2), infer_frame)
+                if q_score < float(self.cfg.min_att_quality):
+                    continue
 
             decision = self._debouncer.consider(
                 camera_id=cid,
@@ -1988,47 +4205,31 @@ class AttendanceRuntime:
             if tr.person_id != str(decision.job.employee_id):
                 continue
 
-            bbox_key = (x1, y1, x2, y2)
+            if self._attendance_require_fas:
+                bbox_key = (x1, y1, x2, y2)
 
-            if self._fas_skip_laptop and str(cid).startswith("laptop-"):
-                fas_ok, fas_dbg = True, {"fas": "skipped_laptop"}
-            else:
-                fas_ok, fas_dbg = self.fas_gate.check(
-                    camera_id=cid,
-                    person_key=str(decision.job.employee_id),
-                    frame_bgr=frame_bgr,
-                    bbox=bbox_key,
-                    kps=tr.kps,
-                )
+                if self._fas_skip_laptop and str(cid).startswith("laptop-"):
+                    fas_ok, fas_dbg = True, {"fas": "skipped_laptop"}
+                else:
+                    fas_ok, fas_dbg = self.fas_gate.check(
+                        camera_id=cid,
+                        person_key=str(decision.job.employee_id),
+                        frame_bgr=frame_bgr,
+                        bbox=bbox_key,
+                        kps=tr.kps,
+                    )
 
-            # Optional: allow attendance even when only the pose-change challenge fails.
-            # This improves recall for fast-moving people where head-turn may not happen.
-            if (
-                (not fas_ok)
-                and isinstance(fas_dbg, dict)
-                and fas_dbg.get("fas") == "need_pose_change"
-                and str(os.getenv("FAS_ALLOW_NO_POSE_FOR_ATTENDANCE", "0")).strip()
-                == "1"
-            ):
-                fas_ok = True
-                fas_dbg = {**fas_dbg, "fas": "pose_bypassed"}
+                if (
+                    (not fas_ok)
+                    and isinstance(fas_dbg, dict)
+                    and fas_dbg.get("fas") == "need_pose_change"
+                    and str(os.getenv("FAS_ALLOW_NO_POSE_FOR_ATTENDANCE", "0")).strip()
+                    == "1"
+                ):
+                    fas_ok = True
 
-            # print(
-            #     "[FAS DEBUG]",
-            #     "cam=",
-            #     str(cid),
-            #     "emp=",
-            #     str(decision.job.employee_id),
-            #     "ok=",
-            #     fas_ok,
-            #     "dbg=",
-            #     fas_dbg,
-            #     "kps_none=",
-            #     tr.kps is None,
-            # )
-
-            if not fas_ok:
-                continue
+                if not fas_ok:
+                    continue
 
             ok = self._db_writer.enqueue(decision.job)
             if ok:
@@ -2042,6 +4243,48 @@ class AttendanceRuntime:
                     f"[ATTENDANCE] writer queue full, dropped emp={decision.job.employee_id} cam={cid}"
                 )
 
+        if body_tracks and body_identity_state:
+            self._dedupe_body_identity_state(
+                camera_id=cid,
+                body_tracks=body_tracks,
+                now=now,
+            )
+
+        if body_tracks and body_identity_state:
+            self._reconcile_body_identity_graph(
+                camera_id=cid,
+                body_tracks=body_tracks,
+                now=now,
+            )
+
+        if self._body_fallback_overlay_enabled and body_fallback_overlays:
+            for payload in body_fallback_overlays.values():
+                _face_box, employee_id, draw_label, dwell_s, body_box, mask_poly = payload
+                employee_id = str(employee_id or "").strip()
+                bx1, by1, bx2, by2 = [int(v) for v in body_box]
+                
+                if mask_poly is not None and len(mask_poly) > 2:
+                    poly_arr = np.array(mask_poly, np.int32).reshape((-1, 1, 2))
+                    cv2.polylines(annotated, [poly_arr], True, ACCENT_KNOWN, 3)
+                else:
+                    cv2.rectangle(annotated, (bx1, by1), (bx2, by2), ACCENT_KNOWN, 3)
+                    
+                _draw_label_card(
+                    annotated,
+                    _label_with_dwell(str(draw_label or "Unknown"), dwell_s),
+                    bx1,
+                    max(38, by1 - 14),
+                    True,
+                    scale=0.75,
+                )
+                if employee_id:
+                    drawn_known_employee_ids.add(employee_id)
+
+        self._prune_body_identity_state(
+            camera_id=cid,
+            body_tracks=body_tracks,
+            now=now,
+        )
         # Monitoring (per camera, every few seconds)
         self._maybe_log_camera_stats(
             camera_id=cid,

@@ -22,6 +22,7 @@ class PresenceTrack:
     last_cx: float = 0.0
     last_cy: float = 0.0
     last_update_ts: float = 0.0
+    mask_polygon: Optional[List[Tuple[int, int]]] = None
 
     def dwell_seconds(self, now: float) -> float:
         return max(0.0, float(now) - float(self.first_seen_ts))
@@ -190,12 +191,13 @@ class PresenceTracker:
 
     def update(
         self,
-        detections: List[PersonDetection],
+        detections: Optional[List[PersonDetection]],
         *,
         now: Optional[float] = None,
         frame_shape: Optional[Tuple[int, int, int]] = None,
     ) -> List[PresenceTrack]:
         ts = time.time() if now is None else float(now)
+        det_cycle = detections is not None
 
         if self._last_update_ts is not None:
             dt = ts - float(self._last_update_ts)
@@ -212,17 +214,18 @@ class PresenceTracker:
             h, w = int(frame_shape[0]), int(frame_shape[1])
 
         valid: List[Tuple[PersonDetection, Tuple[int, int, int, int]]] = []
-        for d in detections:
-            x1, y1, x2, y2 = d.bbox
-            if w is not None and h is not None:
-                x1 = max(0, min(w - 1, x1))
-                y1 = max(0, min(h - 1, y1))
-                x2 = max(0, min(w, x2))
-                y2 = max(0, min(h, y2))
-            if x2 <= x1 or y2 <= y1:
-                continue
-            valid.append((d, (x1, y1, x2, y2)))
-        valid = _dedup_detections(valid, iou_threshold=self.det_nms_iou)
+        if det_cycle:
+            for d in detections or []:
+                x1, y1, x2, y2 = d.bbox
+                if w is not None and h is not None:
+                    x1 = max(0, min(w - 1, x1))
+                    y1 = max(0, min(h - 1, y1))
+                    x2 = max(0, min(w, x2))
+                    y2 = max(0, min(h, y2))
+                if x2 <= x1 or y2 <= y1:
+                    continue
+                valid.append((d, (x1, y1, x2, y2)))
+            valid = _dedup_detections(valid, iou_threshold=self.det_nms_iou)
 
         # Predict track boxes forward (constant velocity) so fast motion doesn't break dwell timers.
         pred_boxes: Dict[int, Tuple[int, int, int, int]] = {}
@@ -236,159 +239,160 @@ class PresenceTracker:
                 pred = _shift_bbox(tr.bbox, dx, dy)
             pred_boxes[int(tid)] = _clamp_bbox(pred, w=w, h=h)
 
-        # Greedy assignment using IoU + center-distance scoring.
-        pairs: List[Tuple[float, int, int]] = []
-        track_items = list(self._tracks.items())
-        for det_idx, (_det, det_box) in enumerate(valid):
-            for tid, tr in track_items:
-                tr_box = pred_boxes.get(int(tid), tr.bbox)
-                t_area = _bbox_area(tr_box)
-                d_area = _bbox_area(det_box)
-                area_ratio = float(d_area / (t_area + 1e-6))
-                if area_ratio < self.area_ratio_min or area_ratio > self.area_ratio_max:
-                    continue
-
-                iou = _bbox_iou(tr_box, det_box)
-                scale = max(24.0, max(_bbox_max_dim(tr_box), _bbox_max_dim(det_box)))
-                center_gate_px = self.match_center_ratio * scale
-                center_dist_px = _center_distance(tr_box, det_box)
-                if iou < self.match_iou and center_dist_px > center_gate_px:
-                    continue
-
-                center_score = max(0.0, 1.0 - (center_dist_px / (center_gate_px + 1e-6)))
-                score = (0.75 * iou) + (0.25 * center_score) + min(0.05, 0.005 * tr.hits)
-                pairs.append((score, tid, det_idx))
-
-        pairs.sort(reverse=True, key=lambda x: x[0])
-
         assigned_tracks = set()
         assigned_dets = set()
 
-        for _score, tid, det_idx in pairs:
-            if tid in assigned_tracks or det_idx in assigned_dets:
-                continue
-            assigned_tracks.add(tid)
-            assigned_dets.add(det_idx)
+        if det_cycle:
+            # Greedy assignment using IoU + center-distance scoring.
+            pairs: List[Tuple[float, int, int]] = []
+            track_items = list(self._tracks.items())
+            for det_idx, (_det, det_box) in enumerate(valid):
+                for tid, tr in track_items:
+                    tr_box = pred_boxes.get(int(tid), tr.bbox)
+                    t_area = _bbox_area(tr_box)
+                    d_area = _bbox_area(det_box)
+                    area_ratio = float(d_area / (t_area + 1e-6))
+                    if area_ratio < self.area_ratio_min or area_ratio > self.area_ratio_max:
+                        continue
 
-            tr = self._tracks.get(tid)
-            if tr is None:
-                continue
+                    iou = _bbox_iou(tr_box, det_box)
+                    scale = max(24.0, max(_bbox_max_dim(tr_box), _bbox_max_dim(det_box)))
+                    center_gate_px = self.match_center_ratio * scale
+                    center_dist_px = _center_distance(tr_box, det_box)
+                    if iou < self.match_iou and center_dist_px > center_gate_px:
+                        continue
 
-            det, det_box = valid[det_idx]
-            tr_box = pred_boxes.get(int(tid), tr.bbox)
-            tr.bbox = _smooth_bbox(
-                tr_box, det_box, alpha=self.bbox_smooth_alpha
-            )
-            tr.bbox = _clamp_bbox(tr.bbox, w=w, h=h)
+                    center_score = max(0.0, 1.0 - (center_dist_px / (center_gate_px + 1e-6)))
+                    score = (0.75 * iou) + (0.25 * center_score) + min(0.05, 0.005 * tr.hits)
+                    pairs.append((score, tid, det_idx))
 
-            # Velocity update (EMA) from last confirmed center to new center.
-            prev_seen_ts = float(tr.last_seen_ts)
-            dt_det = ts - prev_seen_ts
-            new_cx, new_cy = _bbox_center(tr.bbox)
-            if dt_det > 1e-3:
-                obs_vx = float(new_cx - float(getattr(tr, "last_cx", new_cx))) / float(dt_det)
-                obs_vy = float(new_cy - float(getattr(tr, "last_cy", new_cy))) / float(dt_det)
-                speed = float(math.hypot(obs_vx, obs_vy))
-                if speed > self.max_speed_px_s:
-                    scale_down = self.max_speed_px_s / (speed + 1e-6)
-                    obs_vx *= scale_down
-                    obs_vy *= scale_down
-                tr.vx = (1.0 - self.vel_alpha) * float(getattr(tr, "vx", 0.0)) + self.vel_alpha * float(obs_vx)
-                tr.vy = (1.0 - self.vel_alpha) * float(getattr(tr, "vy", 0.0)) + self.vel_alpha * float(obs_vy)
-            tr.last_cx = float(new_cx)
-            tr.last_cy = float(new_cy)
-            tr.last_update_ts = float(ts)
-            tr.last_seen_ts = ts
-            tr.hits += 1
-            tr.conf = float(det.conf)
-            tr.misses = 0
+            pairs.sort(reverse=True, key=lambda x: x[0])
 
-        # Reacquire unmatched detections with nearby lost tracks before creating new IDs.
-        for det_idx, (det, det_box) in enumerate(valid):
-            if det_idx in assigned_dets:
-                continue
-
-            best_tid: Optional[int] = None
-            best_dist = float("inf")
-            det_scale = max(24.0, _bbox_max_dim(det_box))
-
-            for tid, tr in self._tracks.items():
-                if tid in assigned_tracks:
+            for _score, tid, det_idx in pairs:
+                if tid in assigned_tracks or det_idx in assigned_dets:
                     continue
-                age_s = ts - float(tr.last_seen_ts)
-                if age_s > self.max_lost_s:
+                assigned_tracks.add(tid)
+                assigned_dets.add(det_idx)
+
+                tr = self._tracks.get(tid)
+                if tr is None:
                     continue
+
+                det, det_box = valid[det_idx]
                 tr_box = pred_boxes.get(int(tid), tr.bbox)
-                t_area = _bbox_area(tr_box)
-                d_area = _bbox_area(det_box)
-                area_ratio = float(d_area / (t_area + 1e-6))
-                if area_ratio < self.area_ratio_min or area_ratio > self.area_ratio_max:
+                tr.bbox = _smooth_bbox(
+                    tr_box, det_box, alpha=self.bbox_smooth_alpha
+                )
+                tr.bbox = _clamp_bbox(tr.bbox, w=w, h=h)
+
+                # Velocity update (EMA) from last confirmed center to new center.
+                prev_seen_ts = float(tr.last_seen_ts)
+                dt_det = ts - prev_seen_ts
+                new_cx, new_cy = _bbox_center(tr.bbox)
+                if dt_det > 1e-3:
+                    obs_vx = float(new_cx - float(getattr(tr, "last_cx", new_cx))) / float(dt_det)
+                    obs_vy = float(new_cy - float(getattr(tr, "last_cy", new_cy))) / float(dt_det)
+                    speed = float(math.hypot(obs_vx, obs_vy))
+                    if speed > self.max_speed_px_s:
+                        scale_down = self.max_speed_px_s / (speed + 1e-6)
+                        obs_vx *= scale_down
+                        obs_vy *= scale_down
+                    tr.vx = (1.0 - self.vel_alpha) * float(getattr(tr, "vx", 0.0)) + self.vel_alpha * float(obs_vx)
+                    tr.vy = (1.0 - self.vel_alpha) * float(getattr(tr, "vy", 0.0)) + self.vel_alpha * float(obs_vy)
+                tr.last_cx = float(new_cx)
+                tr.last_cy = float(new_cy)
+                tr.last_update_ts = float(ts)
+                tr.last_seen_ts = ts
+                tr.hits += 1
+                tr.conf = float(det.conf)
+                tr.misses = 0
+
+            # Reacquire unmatched detections with nearby lost tracks before creating new IDs.
+            for det_idx, (det, det_box) in enumerate(valid):
+                if det_idx in assigned_dets:
                     continue
 
-                tr_scale = max(24.0, _bbox_max_dim(tr_box))
-                reacquire_gate_px = self.reacquire_center_ratio * max(det_scale, tr_scale)
-                dist_px = _center_distance(tr_box, det_box)
-                if dist_px > reacquire_gate_px:
+                best_tid: Optional[int] = None
+                best_dist = float("inf")
+                det_scale = max(24.0, _bbox_max_dim(det_box))
+
+                for tid, tr in self._tracks.items():
+                    if tid in assigned_tracks:
+                        continue
+                    age_s = ts - float(tr.last_seen_ts)
+                    if age_s > self.max_lost_s:
+                        continue
+                    tr_box = pred_boxes.get(int(tid), tr.bbox)
+                    t_area = _bbox_area(tr_box)
+                    d_area = _bbox_area(det_box)
+                    area_ratio = float(d_area / (t_area + 1e-6))
+                    if area_ratio < self.area_ratio_min or area_ratio > self.area_ratio_max:
+                        continue
+
+                    tr_scale = max(24.0, _bbox_max_dim(tr_box))
+                    reacquire_gate_px = self.reacquire_center_ratio * max(det_scale, tr_scale)
+                    dist_px = _center_distance(tr_box, det_box)
+                    if dist_px > reacquire_gate_px:
+                        continue
+                    if dist_px < best_dist:
+                        best_dist = dist_px
+                        best_tid = tid
+
+                if best_tid is None:
                     continue
-                if dist_px < best_dist:
-                    best_dist = dist_px
-                    best_tid = tid
 
-            if best_tid is None:
-                continue
+                tr = self._tracks.get(best_tid)
+                if tr is None:
+                    continue
+                tr_box = pred_boxes.get(int(best_tid), tr.bbox)
+                tr.bbox = _smooth_bbox(tr_box, det_box, alpha=self.bbox_smooth_alpha)
+                tr.bbox = _clamp_bbox(tr.bbox, w=w, h=h)
 
-            tr = self._tracks.get(best_tid)
-            if tr is None:
-                continue
-            tr_box = pred_boxes.get(int(best_tid), tr.bbox)
-            tr.bbox = _smooth_bbox(tr_box, det_box, alpha=self.bbox_smooth_alpha)
-            tr.bbox = _clamp_bbox(tr.bbox, w=w, h=h)
+                prev_seen_ts = float(tr.last_seen_ts)
+                dt_det = ts - prev_seen_ts
+                new_cx, new_cy = _bbox_center(tr.bbox)
+                if dt_det > 1e-3:
+                    obs_vx = float(new_cx - float(getattr(tr, "last_cx", new_cx))) / float(dt_det)
+                    obs_vy = float(new_cy - float(getattr(tr, "last_cy", new_cy))) / float(dt_det)
+                    speed = float(math.hypot(obs_vx, obs_vy))
+                    if speed > self.max_speed_px_s:
+                        scale_down = self.max_speed_px_s / (speed + 1e-6)
+                        obs_vx *= scale_down
+                        obs_vy *= scale_down
+                    tr.vx = (1.0 - self.vel_alpha) * float(getattr(tr, "vx", 0.0)) + self.vel_alpha * float(obs_vx)
+                    tr.vy = (1.0 - self.vel_alpha) * float(getattr(tr, "vy", 0.0)) + self.vel_alpha * float(obs_vy)
+                tr.last_cx = float(new_cx)
+                tr.last_cy = float(new_cy)
+                tr.last_update_ts = float(ts)
+                tr.last_seen_ts = ts
+                tr.hits += 1
+                tr.conf = float(det.conf)
+                tr.misses = 0
+                assigned_tracks.add(best_tid)
+                assigned_dets.add(det_idx)
 
-            prev_seen_ts = float(tr.last_seen_ts)
-            dt_det = ts - prev_seen_ts
-            new_cx, new_cy = _bbox_center(tr.bbox)
-            if dt_det > 1e-3:
-                obs_vx = float(new_cx - float(getattr(tr, "last_cx", new_cx))) / float(dt_det)
-                obs_vy = float(new_cy - float(getattr(tr, "last_cy", new_cy))) / float(dt_det)
-                speed = float(math.hypot(obs_vx, obs_vy))
-                if speed > self.max_speed_px_s:
-                    scale_down = self.max_speed_px_s / (speed + 1e-6)
-                    obs_vx *= scale_down
-                    obs_vy *= scale_down
-                tr.vx = (1.0 - self.vel_alpha) * float(getattr(tr, "vx", 0.0)) + self.vel_alpha * float(obs_vx)
-                tr.vy = (1.0 - self.vel_alpha) * float(getattr(tr, "vy", 0.0)) + self.vel_alpha * float(obs_vy)
-            tr.last_cx = float(new_cx)
-            tr.last_cy = float(new_cy)
-            tr.last_update_ts = float(ts)
-            tr.last_seen_ts = ts
-            tr.hits += 1
-            tr.conf = float(det.conf)
-            tr.misses = 0
-            assigned_tracks.add(best_tid)
-            assigned_dets.add(det_idx)
-
-        # New tracks for unassigned detections
-        for det_idx, (det, det_box) in enumerate(valid):
-            if det_idx in assigned_dets:
-                continue
-            tid = self._next_id
-            self._next_id += 1
-            cx, cy = _bbox_center(det_box)
-            self._tracks[tid] = PresenceTrack(
-                track_id=tid,
-                bbox=det_box,
-                first_seen_ts=ts,
-                last_seen_ts=ts,
-                hits=1,
-                conf=float(det.conf),
-                misses=0,
-                vx=0.0,
-                vy=0.0,
-                last_cx=float(cx),
-                last_cy=float(cy),
-                last_update_ts=float(ts),
-            )
-            assigned_tracks.add(tid)
+            # New tracks for unassigned detections.
+            for det_idx, (det, det_box) in enumerate(valid):
+                if det_idx in assigned_dets:
+                    continue
+                tid = self._next_id
+                self._next_id += 1
+                cx, cy = _bbox_center(det_box)
+                self._tracks[tid] = PresenceTrack(
+                    track_id=tid,
+                    bbox=det_box,
+                    first_seen_ts=ts,
+                    last_seen_ts=ts,
+                    hits=1,
+                    conf=float(det.conf),
+                    misses=0,
+                    vx=0.0,
+                    vy=0.0,
+                    last_cx=float(cx),
+                    last_cy=float(cy),
+                    last_update_ts=float(ts),
+                )
+                assigned_tracks.add(tid)
 
         # Remove tracks that are not visible for too long.
         effective_max_misses = int(self.max_misses)
@@ -400,7 +404,8 @@ class PresenceTracker:
         for tid, tr in self._tracks.items():
             if tid in assigned_tracks:
                 continue
-            tr.misses += 1
+            if det_cycle:
+                tr.misses += 1
 
             # Advance box using last known velocity so re-acquire remains stable.
             dt = ts - float(getattr(tr, "last_update_ts", tr.last_seen_ts))
@@ -412,7 +417,9 @@ class PresenceTracker:
                 tr.vx = float(getattr(tr, "vx", 0.0)) * float(self.vel_decay)
                 tr.vy = float(getattr(tr, "vy", 0.0)) * float(self.vel_decay)
 
-            if (ts - tr.last_seen_ts) > self.max_lost_s or tr.misses > effective_max_misses:
+            too_old = (ts - tr.last_seen_ts) > self.max_lost_s
+            too_many_misses = det_cycle and tr.misses > effective_max_misses
+            if too_old or too_many_misses:
                 dead.append(tid)
 
         for tid in dead:

@@ -133,6 +133,9 @@ export async function createCamera(req: Request, res: Response) {
         name: camera.name,
         companyId,
         rtspUrl: camera.rtspUrl,
+        sendWidth: (camera as any).sendWidth ?? null,
+        sendHeight: (camera as any).sendHeight ?? null,
+        sendFps: (camera as any).sendFps ?? null,
       });
 
       if (result.ok) {

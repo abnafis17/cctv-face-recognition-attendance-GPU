@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import threading
 from typing import Optional
 
@@ -33,6 +34,60 @@ def _camera_matches_identifier(camera: dict, identifier: str) -> bool:
     return key == camera_id or key == cam_id
 
 
+def _to_int(value: object, default: int) -> int:
+    try:
+        return int(float(str(value).strip()))
+    except Exception:
+        return int(default)
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = str(os.getenv(name, "1" if default else "0")).strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _resolve_ingest_profile(
+    *,
+    camera: Optional[dict] = None,
+    ingest_width: Optional[int] = None,
+    ingest_height: Optional[int] = None,
+    ingest_fps: Optional[float] = None,
+) -> tuple[int, int, int]:
+    default_width = max(16, _to_int(os.getenv("CAMERA_DEFAULT_WIDTH"), 1280))
+    default_height = max(16, _to_int(os.getenv("CAMERA_DEFAULT_HEIGHT"), 720))
+    default_fps = max(0, _to_int(os.getenv("CAMERA_DEFAULT_INGEST_FPS"), 0))
+
+    width = default_width
+    height = default_height
+    fps = default_fps
+
+    if camera:
+        camera_width = _to_int(camera.get("sendWidth"), 0)
+        camera_height = _to_int(camera.get("sendHeight"), 0)
+        camera_fps = _to_int(camera.get("sendFps"), 0)
+        if camera_width > 0:
+            width = camera_width
+        if camera_height > 0:
+            height = camera_height
+        if camera_fps > 0:
+            fps = camera_fps
+
+    if ingest_width is not None and int(ingest_width) > 0:
+        width = int(ingest_width)
+    if ingest_height is not None and int(ingest_height) > 0:
+        height = int(ingest_height)
+    if ingest_fps is not None and float(ingest_fps) > 0:
+        fps = int(float(ingest_fps))
+
+    if _env_bool("CAMERA_ENFORCE_DEFAULT_PROFILE", False):
+        width = max(width, default_width)
+        height = max(height, default_height)
+        if default_fps > 0:
+            fps = max(fps, default_fps)
+
+    return max(16, width), max(16, height), max(0, fps)
+
+
 def _start_camera_runtime(
     *,
     container,
@@ -43,6 +98,10 @@ def _start_camera_runtime(
     company_id: Optional[str],
     stream_type: str,
     attendance_enabled: bool,
+    camera: Optional[dict] = None,
+    ingest_width: Optional[int] = None,
+    ingest_height: Optional[int] = None,
+    ingest_fps: Optional[float] = None,
 ) -> bool:
     camera_id = str(camera_id or "").strip()
     camera_name = str(camera_name or camera_id).strip() or camera_id
@@ -52,7 +111,21 @@ def _start_camera_runtime(
     if not camera_id or not rtsp_url:
         return False
 
-    started_now = bool(container.camera_rt.start(camera_id, rtsp_url))
+    width, height, profile_fps = _resolve_ingest_profile(
+        camera=camera,
+        ingest_width=ingest_width,
+        ingest_height=ingest_height,
+        ingest_fps=ingest_fps,
+    )
+    started_now = bool(
+        container.camera_rt.start(
+            camera_id,
+            rtsp_url,
+            width=width,
+            height=height,
+            target_fps=profile_fps,
+        )
+    )
     if company_id:
         container.attendance_rt.set_company_for_camera(camera_id, company_id)
     container.attendance_rt.set_stream_type(camera_id, stream_type)
@@ -114,6 +187,7 @@ def _prewarm_camera_runtimes(
             company_id=company_id,
             stream_type=stream_type,
             attendance_enabled=bool(camera.get("attendance", True)),
+            camera=camera,
         )
         if started_now:
             print(
@@ -165,6 +239,7 @@ def _ensure_camera_runtime(
             company_id=company_id,
             stream_type=stream_type,
             attendance_enabled=bool(camera.get("attendance", True)),
+            camera=camera,
         )
         if not started_now and not container.camera_rt.is_running(camera_id):
             return
@@ -213,7 +288,16 @@ def _recover_camera_runtime(
         if not rtsp_url:
             return
 
-        started_now = bool(container.camera_rt.start(camera_id, rtsp_url))
+        width, height, profile_fps = _resolve_ingest_profile(camera=camera)
+        started_now = bool(
+            container.camera_rt.start(
+                camera_id,
+                rtsp_url,
+                width=width,
+                height=height,
+                target_fps=profile_fps,
+            )
+        )
         if company_id:
             container.attendance_rt.set_company_for_camera(camera_id, company_id)
 
@@ -282,13 +366,27 @@ def start_camera(
     attendance_enabled: Optional[bool] = Query(
         default=None, alias="attendance_enabled"
     ),
+    ingest_width: Optional[int] = Query(default=None, alias="ingest_width"),
+    ingest_height: Optional[int] = Query(default=None, alias="ingest_height"),
+    ingest_fps: Optional[float] = Query(default=None, alias="ingest_fps"),
     x_company_id: Optional[str] = Header(default=None, alias="x-company-id"),
     container=Depends(get_container),
 ):
     if ai_fps is None:
         ai_fps = env_float("AI_FPS", 10.0)
 
-    started_now = container.camera_rt.start(camera_id, rtsp_url)
+    width, height, profile_fps = _resolve_ingest_profile(
+        ingest_width=ingest_width,
+        ingest_height=ingest_height,
+        ingest_fps=ingest_fps,
+    )
+    started_now = container.camera_rt.start(
+        camera_id,
+        rtsp_url,
+        width=width,
+        height=height,
+        target_fps=profile_fps,
+    )
     cam_name = str(camera_name or camera_id)
 
     resolved_company_id = str(company_id or x_company_id or "").strip() or None
@@ -315,6 +413,7 @@ def start_camera(
         "camera_name": cam_name,
         "recognition_running": True,
         "attendance_enabled": resolved_attendance_enabled,
+        "capture_profile": container.camera_rt.get_profile(camera_id),
     }
 
 
@@ -395,6 +494,27 @@ def camera_recognition_prewarm(
         "ok": True,
         "queued": True,
         "camera_count": len(camera_ids),
+    }
+
+
+@router.get("/camera/runtime/status")
+def camera_runtime_status(container=Depends(get_container)):
+    profiles = container.camera_rt.list_profiles()
+    return {
+        "ok": True,
+        "running_camera_count": len(profiles),
+        "profiles": profiles,
+    }
+
+
+@router.get("/camera/runtime/status/{camera_id}")
+def camera_runtime_status_one(camera_id: str, container=Depends(get_container)):
+    profile = container.camera_rt.get_profile(camera_id)
+    return {
+        "ok": True,
+        "camera_id": camera_id,
+        "running": profile is not None,
+        "profile": profile,
     }
 
 

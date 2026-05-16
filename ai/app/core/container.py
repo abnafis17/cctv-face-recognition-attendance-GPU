@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import threading
 from dataclasses import dataclass, field
 from typing import Dict, Optional
@@ -20,6 +21,42 @@ from app.runtimes.hls_runtime import HLSRuntime
 from app.presence.runtime import PresenceRuntime
 from app.presence.worker import PresenceWorker
 from app.presence.clients import PresenceStreamClients
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = str(os.getenv(name, "1" if default else "0")).strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(str(os.getenv(name, str(default))).strip())
+    except Exception:
+        return float(default)
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(float(str(os.getenv(name, str(default))).strip()))
+    except Exception:
+        return int(default)
+
+
+def _env_str(name: str, default: str) -> str:
+    value = str(os.getenv(name, default)).strip()
+    return value or default
+
+
+def _resolve_use_gpu() -> bool:
+    raw = os.getenv("USE_GPU")
+    if raw is not None and str(raw).strip() != "":
+        return _env_bool("USE_GPU", False)
+    try:
+        import torch  # type: ignore
+
+        return bool(torch.cuda.is_available())
+    except Exception:
+        return False
 
 
 class StreamClientManager:
@@ -161,14 +198,24 @@ def build_container() -> ServiceContainer:
     gallery_refresh = float(rec_cfg.get("gallery_refresh_s", 1.0))
 
     camera_rt = CameraRuntime()
+    use_gpu = _resolve_use_gpu()
 
     attendance_rt = AttendanceRuntime(
+<<<<<<< HEAD
         use_gpu=True, # CoreML on Mac
         model_name=model_name,
         similarity_threshold=sim_threshold,
         gallery_refresh_s=gallery_refresh,
         cooldown_s=int(att_cfg.get("cooldown_seconds", 30)),
         stable_hits_required=int(att_cfg.get("stable_hits_required", 2)),
+=======
+        use_gpu=use_gpu,
+        model_name=_env_str("INSIGHTFACE_MODEL", "buffalo_m"),
+        min_face_size=max(10, _env_int("MIN_FACE_SIZE", 20)),
+        similarity_threshold=_env_float("SIMILARITY_THRESHOLD", 0.35),
+        cooldown_s=max(1, _env_int("ATTENDANCE_DEBOUNCE_SECONDS", 60)),
+        stable_hits_required=max(1, _env_int("STABLE_ID_CONFIRMATIONS", 3)),
+>>>>>>> b04451665d91d4d85a660894ec8c5e2bbeaa1012
     )
 
     rec_worker = RecognitionWorker(camera_rt=camera_rt, attendance_rt=attendance_rt)

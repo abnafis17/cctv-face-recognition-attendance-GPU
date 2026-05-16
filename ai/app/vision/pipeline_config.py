@@ -50,6 +50,15 @@ class Config:
     embed_refresh_seconds: float = 0.25
     embed_refresh_seconds_unknown: float = 0.15
     unknown_burst_after_seconds: float = 0.6
+    # Once a known identity is stable, keep the name attached to the track and
+    # avoid repeated embedding/matching until the track is cleared/reacquired.
+    known_identity_latch_enabled: bool = True
+    known_identity_latch_min_hits: int = 0
+    # Margin ratio (0..0.5) from edges of camera frame.
+    # Latching is only active while the face is fully inside this Safety Zone.
+    latch_boundary_margin_ratio: float = 0.05
+    # If two tracks overlap by more than this IoU, suspend latching to prevent identity swaps.
+    latch_max_overlap_iou: float = 0.15
 
     # --- Matching thresholds ---
     similarity_threshold: float = 0.35
@@ -84,6 +93,20 @@ class Config:
     identity_hold_min_iou: float = 0.05
     identity_hold_max_det_misses: int = 1
     identity_hold_max_center_shift_ratio: float = 0.35
+    # Expanded zone (keeps identity while face center remains in this area).
+    identity_hold_zone_enabled: bool = True
+    identity_hold_zone_scale: float = 1.6
+    # Safety refresh: still re-run recognition periodically even inside hold zone.
+    identity_hold_zone_recheck_seconds: float = 3.5
+
+    # --- Recognition quality + temporal fusion ---
+    recognition_quality_gate_enabled: bool = True
+    recognition_min_face_px: int = 24
+    recognition_min_brightness: float = 10.0
+    recognition_min_sharpness: float = 6.0
+    recognition_max_abs_yaw: float = 78.0
+    recognition_max_abs_pitch: float = 70.0
+    embedding_fusion_window: int = 3
 
     # --- Attendance safety ---
     attendance_max_embed_age_seconds: float = 0.9
@@ -138,6 +161,24 @@ class Config:
         )
         cfg.unknown_burst_after_seconds = _env_float(
             "UNKNOWN_BURST_AFTER_SECONDS", cfg.unknown_burst_after_seconds
+        )
+        cfg.known_identity_latch_enabled = _env_bool(
+            "KNOWN_IDENTITY_LATCH_ENABLED", cfg.known_identity_latch_enabled
+        )
+        cfg.known_identity_latch_min_hits = max(
+            0,
+            _env_int(
+                "KNOWN_IDENTITY_LATCH_MIN_HITS",
+                cfg.known_identity_latch_min_hits,
+            ),
+        )
+        cfg.latch_boundary_margin_ratio = max(
+            0.0,
+            min(0.45, _env_float("LATCH_BOUNDARY_MARGIN_RATIO", cfg.latch_boundary_margin_ratio)),
+        )
+        cfg.latch_max_overlap_iou = max(
+            0.0,
+            min(1.0, _env_float("LATCH_MAX_OVERLAP_IOU", cfg.latch_max_overlap_iou)),
         )
 
         # Thresholds
@@ -233,6 +274,46 @@ class Config:
                 "IDENTITY_HOLD_MAX_CENTER_SHIFT_RATIO",
                 cfg.identity_hold_max_center_shift_ratio,
             ),
+        )
+        cfg.identity_hold_zone_enabled = _env_bool(
+            "IDENTITY_HOLD_ZONE_ENABLED", cfg.identity_hold_zone_enabled
+        )
+        cfg.identity_hold_zone_scale = max(
+            1.0, _env_float("IDENTITY_HOLD_ZONE_SCALE", cfg.identity_hold_zone_scale)
+        )
+        cfg.identity_hold_zone_recheck_seconds = max(
+            0.0,
+            _env_float(
+                "IDENTITY_HOLD_ZONE_RECHECK_SECONDS",
+                cfg.identity_hold_zone_recheck_seconds,
+            ),
+        )
+        cfg.recognition_quality_gate_enabled = _env_bool(
+            "RECOGNITION_QUALITY_GATE_ENABLED",
+            cfg.recognition_quality_gate_enabled,
+        )
+        cfg.recognition_min_face_px = max(
+            8,
+            _env_int("RECOGNITION_MIN_FACE_PX", cfg.recognition_min_face_px),
+        )
+        cfg.recognition_min_brightness = max(
+            0.0,
+            _env_float("RECOGNITION_MIN_BRIGHTNESS", cfg.recognition_min_brightness),
+        )
+        cfg.recognition_min_sharpness = max(
+            0.0,
+            _env_float("RECOGNITION_MIN_SHARPNESS", cfg.recognition_min_sharpness),
+        )
+        cfg.recognition_max_abs_yaw = max(
+            0.0,
+            _env_float("RECOGNITION_MAX_ABS_YAW", cfg.recognition_max_abs_yaw),
+        )
+        cfg.recognition_max_abs_pitch = max(
+            0.0,
+            _env_float("RECOGNITION_MAX_ABS_PITCH", cfg.recognition_max_abs_pitch),
+        )
+        cfg.embedding_fusion_window = max(
+            1, _env_int("EMBEDDING_FUSION_WINDOW", cfg.embedding_fusion_window)
         )
         cfg.attendance_max_embed_age_seconds = max(
             0.0,

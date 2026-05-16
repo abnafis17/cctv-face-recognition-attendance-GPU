@@ -160,7 +160,9 @@ def mjpeg_generator_recognition(
             cached = rec_worker.get_latest_jpeg_item(camera_id)
             if cached is not None:
                 cached_bytes, cached_ts = cached
-                if (time.time() - float(cached_ts)) <= max_cached_jpeg_age_s:
+                age = time.time() - float(cached_ts)
+                # Visual fallback: prefer slightly stale annotated frame over raw frame to prevent blinking.
+                if age <= max(max_cached_jpeg_age_s, 2.0):
                     jpg_bytes = cached_bytes
 
             if jpg_bytes is None:
@@ -338,7 +340,9 @@ def mjpeg_generator_presence(
             cached = presence_worker.get_latest_jpeg_item(camera_id)
             if cached is not None:
                 cached_bytes, cached_ts = cached
-                if (time.time() - float(cached_ts)) <= max_cached_jpeg_age_s:
+                age = time.time() - float(cached_ts)
+                # Visual fallback: prefer slightly stale annotated frame over raw frame to prevent blinking.
+                if age <= max(max_cached_jpeg_age_s, 2.0):
                     jpg_bytes = cached_bytes
 
             if jpg_bytes is None:
