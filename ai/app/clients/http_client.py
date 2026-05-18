@@ -36,6 +36,7 @@ class HttpClient:
             {
                 "Content-Type": "application/json",
                 "Accept": "application/json",
+                "Connection": "close",
             }
         )
         if default_headers:
@@ -73,8 +74,8 @@ class HttpClient:
                 detail: Any = res.json()
             except Exception:
                 detail = res.text
-            raise RuntimeError(f"[HttpClient] {res.status_code} {url} → {detail}") from err
-        raise RuntimeError(f"[HttpClient] Request failed → {url}") from err
+            raise RuntimeError(f"[HttpClient] {res.status_code} {url} → {detail} | Underlying error: {err}") from err
+        raise RuntimeError(f"[HttpClient] Request failed → {url} | Underlying error: {err}") from err
 
     def set_default_headers(self, headers: Optional[Dict[str, str]]) -> None:
         if not headers:

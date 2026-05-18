@@ -3,9 +3,6 @@ import { Prisma } from "@prisma/client";
 import { ZodError } from "zod";
 import {
   cameraAuthorizedEmployeesUpdateSchema,
-  cameraBoundingBoxTrackingEventSchema,
-  cameraBoundingBoxTrackingListQuerySchema,
-  cameraBoundingBoxesUpdateSchema,
   cameraCreateSchema,
   cameraListQuerySchema,
   cameraParamSchema,
@@ -13,21 +10,13 @@ import {
 } from "../validators/camera.validators";
 import {
   CameraAuthorizedEmployeesValidationError,
-  CameraBoundingBoxesValidationError,
   createCompanyCamera,
   deleteCompanyCamera,
   listCompanyCameraAuthorizedEmployees,
-  listCompanyCameraBoundingBoxes,
   listCompanyCameras,
-  replaceCompanyCameraBoundingBoxes,
   updateCompanyCameraAuthorizedEmployees,
   updateCompanyCamera,
 } from "../services/camera.service";
-import {
-  BoundingBoxTrackingValidationError,
-  listCompanyCameraBoundingBoxTracking,
-  recordCompanyCameraBoundingBoxTrackingEvent,
-} from "../services/boundingBoxTracking.service";
 import {
   autoStartCameraById,
   syncCameraAuthorizedEmployeesToAi,
@@ -313,140 +302,3 @@ export async function updateCameraAuthorizedEmployees(req: Request, res: Respons
   }
 }
 
-export async function listCameraBoundingBoxes(req: Request, res: Response) {
-  try {
-    const companyId = companyIdFromReq(req);
-    if (!companyId) return res.status(400).json({ error: "Missing company id" });
-
-    const { id: anyId } = cameraParamSchema.parse({
-      id: req.params?.id,
-    });
-
-    const state = await listCompanyCameraBoundingBoxes(companyId, anyId);
-    if (!state) return res.status(404).json({ error: "Camera not found" });
-
-    return res.json(state);
-  } catch (error: unknown) {
-    if (error instanceof ZodError) return respondValidationError(res, error);
-    return res.status(500).json({
-      error: "Failed to load camera bounding boxes",
-      detail: error instanceof Error ? error.message : String(error),
-    });
-  }
-}
-
-export async function replaceCameraBoundingBoxes(req: Request, res: Response) {
-  try {
-    const companyId = companyIdFromReq(req);
-    if (!companyId) return res.status(400).json({ error: "Missing company id" });
-
-    const { id: anyId } = cameraParamSchema.parse({
-      id: req.params?.id,
-    });
-
-    const payload = cameraBoundingBoxesUpdateSchema.parse({
-      boxes: req.body?.boxes ?? [],
-    });
-
-    const state = await replaceCompanyCameraBoundingBoxes(
-      companyId,
-      anyId,
-      payload.boxes
-    );
-    if (!state) return res.status(404).json({ error: "Camera not found" });
-
-    return res.json(state);
-  } catch (error: unknown) {
-    if (error instanceof ZodError) return respondValidationError(res, error);
-    if (error instanceof CameraBoundingBoxesValidationError) {
-      return res.status(400).json({
-        error: "Bounding box payload is invalid",
-        invalidEmployeeIds: error.invalidEmployeeIds,
-        invalidBoxIds: error.invalidBoxIds,
-        invalidBoxes: error.invalidBoxes,
-      });
-    }
-    return res.status(500).json({
-      error: "Failed to update camera bounding boxes",
-      detail: error instanceof Error ? error.message : String(error),
-    });
-  }
-}
-
-export async function listCameraBoundingBoxTracking(req: Request, res: Response) {
-  try {
-    const companyId = companyIdFromReq(req);
-    if (!companyId) return res.status(400).json({ error: "Missing company id" });
-
-    const { id: anyId } = cameraParamSchema.parse({
-      id: req.params?.id,
-    });
-
-    const query = cameraBoundingBoxTrackingListQuerySchema.parse(req.query ?? {});
-    const state = await listCompanyCameraBoundingBoxTracking(
-      companyId,
-      anyId,
-      query,
-    );
-    if (!state) return res.status(404).json({ error: "Camera not found" });
-
-    return res.json(state);
-  } catch (error: unknown) {
-    if (error instanceof ZodError) return respondValidationError(res, error);
-    if (error instanceof BoundingBoxTrackingValidationError) {
-      return res.status(error.statusCode).json({ error: error.message });
-    }
-    return res.status(500).json({
-      error: "Failed to load camera bounding box tracking records",
-      detail: error instanceof Error ? error.message : String(error),
-    });
-  }
-}
-
-export async function recordCameraBoundingBoxTrackingEvent(
-  req: Request,
-  res: Response,
-) {
-  try {
-    const companyId = companyIdFromReq(req);
-    if (!companyId) return res.status(400).json({ error: "Missing company id" });
-
-    const { id: anyId } = cameraParamSchema.parse({
-      id: req.params?.id,
-    });
-
-    const payload = cameraBoundingBoxTrackingEventSchema.parse({
-      boundingBoxId: req.body?.boundingBoxId ?? req.body?.bounding_box_id,
-      employeeId: req.body?.employeeId ?? req.body?.employee_id,
-      eventType:
-        req.body?.eventType ??
-        req.body?.event_type ??
-        req.body?.state ??
-        req.body?.status,
-      occurredAt:
-        req.body?.occurredAt ??
-        req.body?.occurred_at ??
-        req.body?.timestamp ??
-        req.body?.at,
-      confidence: req.body?.confidence,
-    });
-
-    const result = await recordCompanyCameraBoundingBoxTrackingEvent(
-      companyId,
-      anyId,
-      payload,
-    );
-    if (!result) return res.status(404).json({ error: "Camera not found" });
-
-    return res.json(result);
-  } catch (error: unknown) {
-    if (error instanceof ZodError) return respondValidationError(res, error);
-    if (error instanceof BoundingBoxTrackingValidationError) {
-      return res.status(error.statusCode).json({ error: error.message });
-    }
-    return res.status(500).json({
-      error: "Failed to record camera bounding box tracking event",
-      detail: error instanceof Error ? error.message : String(error),
-    });
-  }
-}

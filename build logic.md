@@ -5,12 +5,12 @@
 | :--- | :--- | :--- |
 | **Backend** | `npx tsc` | `node dist/index.js` |
 | **Frontend** | `npm run build` | `npm run start` |
-| **AI Engine** | `pip install -r requirements.txt` | `python -m uvicorn app.api_server:app ...` |
+| **AI Engine** | `pip install -r requirements.txt` | `python lite_ai_server.py` |
 
 ---
 
-## 1. AI Engine (FastAPI)
-The AI engine handles real-time computer vision tasks. While it doesn't require a compilation step, it should be run using an optimized ASGI server configuration.
+## 1. AI Engine (Lite Stream Server)
+The AI engine handles real-time face detection & recognition. It operates on an ultra-lightweight, decoupled FastAPI runner optimized to keep Jetson Orin Nano CPU/GPU usage minimal.
 
 ### Build / Setup
 1. **Initialize Virtual Environment**:
@@ -26,9 +26,9 @@ The AI engine handles real-time computer vision tasks. While it doesn't require 
    ```
 
 ### Production Run
-Run the server with optimized flags to reduce logging overhead:
+Run the server:
 ```bash
-python -m uvicorn app.api_server:app --host 0.0.0.0 --port 8000 --no-access-log --workers 1
+python lite_ai_server.py
 ```
 
 ---

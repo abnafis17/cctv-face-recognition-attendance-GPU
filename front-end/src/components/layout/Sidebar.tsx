@@ -28,16 +28,12 @@ const nav = [
   // { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/cameras", label: "Cameras (Live)", icon: Cctv },
   { href: "/camera-list", label: "Camera List", icon: ListVideo },
-  { href: "/headcount", label: "Headcount Camera", icon: Video },
-  { href: "/presence", label: "Presence (Dwell)", icon: Activity },
   { href: "/enroll", label: "Enrollment(Auto)", icon: UserPlus },
   { href: "/employees", label: "Employees", icon: Users },
   { href: "/daily-attendance", label: "Daily Attendance", icon: CalendarClock },
   { href: "/attendance", label: "Recognition History", icon: History },
   { href: "/unknown-recognition", label: "Unknown History", icon: UserX },
   { href: "/settings", label: "Settings", icon: Settings },
-  { href: "/gatepass", label: "Gate Pass", icon: Mail },
-  { href: "/bounding-box", label: "Bounding Box", icon: Video },
 ];
 
 function isActive(pathname: string, href: string) {

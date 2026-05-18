@@ -28,6 +28,11 @@ class BackendClient:
         timeout_s: float = 10.0,
         company_id: Optional[str] = None,
     ):
+        try:
+            timeout_s = float(os.getenv("BACKEND_TIMEOUT_S", str(timeout_s)))
+        except Exception:
+            pass
+
         resolved = (
             base_url or os.getenv("BACKEND_BASE_URL") or "http://127.0.0.1:3001"
         ).rstrip("/")

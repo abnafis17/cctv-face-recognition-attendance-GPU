@@ -12,7 +12,6 @@ import {
   getAttendanceEvents,
   pushAttendanceEvent,
 } from "../services/attendanceEvents";
-import { pushHeadcountEvent } from "../services/headcountEvents";
 
 const cameraHasAttendanceField = Prisma.dmmf.datamodel.models
   .find((m) => m.name === "Camera")
@@ -84,31 +83,7 @@ export async function createAttendance(req: Request, res: Response) {
     let cam = normalizedCameraId
       ? await findCameraByAnyId(normalizedCameraId, companyId)
       : null;
-    if (normalizedCameraId && !cam) {
-      // Auto-register laptop/adhoc cameras so attendance is not blocked.
-      // Use (companyId, camId) upsert so we never create duplicates for the same company camera id.
-      const defaultName = normalizedCameraId.startsWith("laptop-")
-        ? "Laptop Camera"
-        : normalizedCameraId;
 
-      cam = await prisma.camera.upsert({
-        where: {
-          companyId_camId: {
-            companyId,
-            camId: normalizedCameraId,
-          },
-        },
-        create: {
-          camId: normalizedCameraId,
-          name: defaultName,
-          companyId,
-          // This is a virtual/browser camera; do not mark it as an active RTSP camera.
-          isActive: false,
-          ...(cameraHasAttendanceField ? { attendance: false } : {}),
-        },
-        update: {},
-      });
-    }
 
     // OT requisition mode: DO NOT write to Attendance table.
     // Instead, upsert a per-employee/day OtRequisition row.
@@ -157,15 +132,7 @@ export async function createAttendance(req: Request, res: Response) {
         },
       });
 
-      // Push an event so OT clients can refresh without polling.
-      pushHeadcountEvent(companyId, {
-        at: new Date().toISOString(),
-        headcountId: row.id,
-        employeeId: employeePublicId(employee),
-        status: "OT",
-        timestamp: row.timestamp.toISOString(),
-        cameraId: row.cameraId,
-      });
+
 
       return res.json({
         ok: true,
@@ -179,60 +146,7 @@ export async function createAttendance(req: Request, res: Response) {
       });
     }
 
-    // Headcount mode: DO NOT write to Attendance table.
-    // Persist each scan so the headcount page can build per-run history.
-    if (eventType === "headcount") {
-      const ts = parsedTimestamp;
 
-      const dateStr = ts.toLocaleDateString("en-CA", { timeZone: "Asia/Dhaka" });
-      const { start: dayStart, end: dayEnd } = dhakaDayRange(dateStr);
-
-      const hadAttendanceToday = await prisma.attendance.findFirst({
-        where: {
-          companyId,
-          employeeId: employee.id,
-          timestamp: { gte: dayStart, lt: dayEnd },
-        },
-        select: { id: true },
-      });
-
-      const status = hadAttendanceToday ? "MATCH" : "UNMATCH";
-      const notes = JSON.stringify({ firstSeen: ts.toISOString() });
-
-      const row = await prisma.headcount.create({
-        data: {
-          companyId,
-          cameraId: cam ? cam.id : null,
-          employeeId: employee.id,
-          timestamp: ts,
-          status,
-          confidence: confidence ?? null,
-          notes,
-        },
-      });
-
-      // Push an event so headcount clients can refresh without polling.
-      pushHeadcountEvent(companyId, {
-        at: new Date().toISOString(),
-        headcountId: row.id,
-        employeeId: employeePublicId(employee),
-        status: row.status,
-        timestamp: row.timestamp.toISOString(),
-        cameraId: row.cameraId,
-      });
-
-      return res.json({
-        ok: true,
-        headcount: {
-          id: row.id,
-          status: row.status,
-          timestamp: row.timestamp.toISOString(),
-          cameraId: row.cameraId,
-        },
-        employeeId: employeePublicId(employee),
-        snapshotPath: snapshotPath ?? null,
-      });
-    }
 
     const row = await prisma.attendance.create({
       data: {

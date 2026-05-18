@@ -20,9 +20,6 @@ function cameraTaskLabel(task: string): string {
     .trim()
     .toLowerCase();
   if (normalized === "attendance") return "Attendance";
-  if (normalized === "box") return "Bounding Box";
-  if (normalized === "presence") return "Presence";
-  if (normalized === "gate_pass" || normalized === "gatepass") return "Gate Pass";
   return normalized ? normalized : "-";
 }
 
@@ -67,14 +64,7 @@ export function buildCameraColumns({
           .trim()
           .toLowerCase();
         const label = cameraTaskLabel(task);
-        const styleClass =
-          task === "box"
-            ? "bg-sky-100 text-sky-700"
-            : task === "presence"
-            ? "bg-blue-100 text-blue-700"
-            : task === "gate_pass" || task === "gatepass"
-              ? "bg-amber-100 text-amber-700"
-              : "bg-emerald-100 text-emerald-700";
+        const styleClass = "bg-emerald-100 text-emerald-700";
 
         return (
           <div className="flex justify-center px-1 py-2">

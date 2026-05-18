@@ -40,32 +40,7 @@ export async function createUnknownRecognition(req: Request, res: Response) {
       ? await findCameraByAnyId(normalizedCameraId, companyId)
       : null;
 
-    if (normalizedCameraId && !cam) {
-      const defaultName =
-        cameraName ||
-        (normalizedCameraId.startsWith("laptop-")
-          ? "Laptop Camera"
-          : normalizedCameraId);
 
-      cam = await prisma.camera.upsert({
-        where: {
-          companyId_camId: {
-            companyId,
-            camId: normalizedCameraId,
-          },
-        },
-        create: {
-          camId: normalizedCameraId,
-          name: defaultName,
-          companyId,
-          isActive: false,
-          ...(cameraHasAttendanceField ? { attendance: false } : {}),
-        },
-        update: {
-          ...(cameraName ? { name: cameraName } : {}),
-        },
-      });
-    }
 
     const row = await prisma.unknownRecognition.create({
       data: {

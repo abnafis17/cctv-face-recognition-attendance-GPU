@@ -24,6 +24,65 @@ from ..utils import l2_normalize
 from .insightface_pack import normalize_model_pack_layout
 
 
+def _to_kps5(kps_any) -> Optional[np.ndarray]:
+    """
+    Normalize landmarks to (5,2) float32 in the order expected by face_align.norm_crop:
+      [left_eye, right_eye, nose, left_mouth, right_mouth]
+    """
+    if kps_any is None:
+        return None
+    kps = np.asarray(kps_any)
+    if kps.size == 0:
+        return None
+
+    # (5,2) already
+    if kps.shape == (5, 2):
+        return kps.astype(np.float32, copy=False)
+
+    # flattened (10,)
+    if kps.ndim == 1 and kps.shape[0] == 10:
+        try:
+            return kps.reshape(5, 2).astype(np.float32, copy=False)
+        except Exception:
+            return None
+
+    # (N,2) fallback (N >= 5, e.g., 68-point or 106-point)
+    if kps.ndim == 2 and kps.shape[1] == 2 and kps.shape[0] >= 5:
+        pts = kps.astype(np.float32, copy=False)
+        xs = pts[:, 0]
+        ys = pts[:, 1]
+
+        # Robust center point
+        cx = float(np.median(xs))
+        cy = float(np.median(ys))
+
+        left_idx = np.where(xs < cx)[0]
+        right_idx = np.where(xs >= cx)[0]
+
+        # extreme split fallback
+        if left_idx.size == 0 or right_idx.size == 0:
+            left_idx = np.argsort(xs)[: max(1, pts.shape[0] // 2)]
+            right_idx = np.argsort(xs)[max(1, pts.shape[0] // 2) :]
+
+        # Eyes: top-most (min y) in left/right halves
+        le = pts[left_idx[np.argmin(ys[left_idx])]]
+        re_ = pts[right_idx[np.argmin(ys[right_idx])]]
+
+        # Mouth corners: bottom-most (max y) in left/right halves
+        lm = pts[left_idx[np.argmax(ys[left_idx])]]
+        rm = pts[right_idx[np.argmax(ys[right_idx])]]
+
+        # Nose: closest point to the center of the keypoint cloud
+        d2 = (xs - cx) ** 2 + (ys - cy) ** 2
+        nose = pts[int(np.argmin(d2))]
+
+        out = np.stack([le, re_, nose, lm, rm], axis=0).astype(np.float32, copy=False)
+        return out
+
+    return None
+
+
+
 CPU_PROVIDERS = ["CPUExecutionProvider"]
 
 
@@ -189,7 +248,7 @@ class FaceDetector:
         det_n = _env_int("AI_DET_SIZE", det_size[0])
         self.det_size = (det_n, det_n)
 
-        self.min_face_size = int(min_face_size)
+        self.min_face_size = _env_int("MIN_FACE_SIZE", _env_int("RECOGNITION_MIN_FACE_PX", min_face_size))
         self.min_det_score = _clamp(_env_float("MIN_FACE_DET_SCORE", min_det_score), 0.0, 1.0)
 
         normalize_model_pack_layout(model_name)
@@ -202,7 +261,7 @@ class FaceDetector:
         # SAFETY: Never allow "buffalo_s" or "buffalo_m" as direct overrides.
         # They are model packs, not detector models.
         raw_override = _env_str("AI_DETECTOR_MODEL", "")
-        if raw_override.lower() in ("buffalo_s", "buffalo_m", "buffalo_l"):
+        if raw_override.lower() in ("buffalo_s", "buffalo_m", "buffalo_l", "buffalo_sc"):
             self.detector_model_name = ""
         else:
             self.detector_model_name = raw_override
@@ -230,13 +289,16 @@ class FaceDetector:
 
         if self.detector is None:
             print(f"[FaceDetector] Using default FaceAnalysis detector (from {model_name})")
+            modules = ["detection"]
+            if model_name != "buffalo_sc":
+                modules.append("landmark_2d_106")
             self.app, active_providers, active_ctx_id = create_face_analysis_with_fallback(
                 model_name=model_name,
                 providers=providers,
                 ctx_id=ctx_id,
                 det_size=self.det_size,
                 log_prefix="FaceDetector",
-                allowed_modules=["detection"],
+                allowed_modules=modules,
             )
 
         print(
@@ -259,7 +321,7 @@ class FaceDetector:
             for i in range(bboxes.shape[0]):
                 score = float(bboxes[i, 4])
                 bbox = bboxes[i, 0:4]
-                kps = kpss[i] if kpss is not None else None
+                kps = _to_kps5(kpss[i]) if kpss is not None else None
 
                 w = float(bbox[2] - bbox[0])
                 h = float(bbox[3] - bbox[1])
@@ -281,6 +343,15 @@ class FaceDetector:
                 if min(w, h) < self.min_face_size:
                     continue
                 kps = getattr(f, "kps", None)
+                if kps is None:
+                    for attr in ("landmark_2d_106", "landmark_3d_68", "landmark_2d_68", "landmark_2d_5"):
+                        val = getattr(f, attr, None)
+                        if val is not None:
+                            kps = _to_kps5(val)
+                            if kps is not None:
+                                break
+                else:
+                    kps = _to_kps5(kps)
                 det = FaceDetection(bbox=bbox, kps=kps, det_score=score)
 
                 if score >= self.min_det_score:
@@ -346,9 +417,9 @@ class FaceEmbedder:
     ) -> Optional[np.ndarray]:
         try:
             if kps is not None:
-                kps = np.asarray(kps, dtype=np.float32)
-                if kps.ndim == 2 and kps.shape[1] == 2 and kps.shape[0] >= 3:
-                    aimg = face_align.norm_crop(frame_bgr, landmark=kps, image_size=112)
+                kps_mapped = _to_kps5(kps)
+                if kps_mapped is not None:
+                    aimg = face_align.norm_crop(frame_bgr, landmark=kps_mapped, image_size=112)
                     with self._lock:
                         emb = self.model.get_feat(aimg).flatten().astype(np.float32)
                     return l2_normalize(emb)

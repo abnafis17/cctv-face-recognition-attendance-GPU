@@ -12,11 +12,7 @@ export const API = {
 
   DAILY_ATTENDANCE_LIST: "/attendance/daily",
 
-  HEADCOUNT_CAMERAS: "/headcount/cameras",
-  HEADCOUNT_LIST: "/headcount",
   UNKNOWN_RECOGNITIONS: "/unknown-recognitions",
-  GATEPASS_TABLE: "/gatepass",
-  GATEPASS_TYPES: "/gatepass/types",
   SETTINGS_RELAY: "/settings/relay",
   SETTINGS_ERP: "/settings/erp",
 };
