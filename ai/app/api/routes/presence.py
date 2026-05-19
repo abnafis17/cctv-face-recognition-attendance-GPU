@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, Query
@@ -12,19 +13,30 @@ from app.streams.mjpeg import mjpeg_generator_presence
 router = APIRouter()
 
 
-def _normalize_optional_int(
-    value: Optional[int],
-    *,
-    min_value: int,
-    max_value: int,
-) -> Optional[int]:
-    if value is None:
-        return None
+def _to_int(value: object, default: int) -> int:
     try:
-        parsed = int(float(str(value).strip()))
+        return int(float(str(value).strip()))
     except Exception:
-        return None
-    return max(min_value, min(max_value, parsed))
+        return int(default)
+
+
+def _resolve_ingest_profile(
+    ingest_width: Optional[int],
+    ingest_height: Optional[int],
+    ingest_fps: Optional[float],
+) -> tuple[int, int, int]:
+    width = max(16, _to_int(os.getenv("CAMERA_DEFAULT_WIDTH"), 1280))
+    height = max(16, _to_int(os.getenv("CAMERA_DEFAULT_HEIGHT"), 720))
+    fps = max(0, _to_int(os.getenv("CAMERA_DEFAULT_INGEST_FPS"), 0))
+
+    if ingest_width is not None and int(ingest_width) > 0:
+        width = int(ingest_width)
+    if ingest_height is not None and int(ingest_height) > 0:
+        height = int(ingest_height)
+    if ingest_fps is not None and float(ingest_fps) > 0:
+        fps = int(float(ingest_fps))
+
+    return width, height, fps
 
 
 @router.api_route("/presence/start", methods=["GET", "POST"])
@@ -33,10 +45,9 @@ def presence_start(
     rtsp_url: Optional[str] = None,
     camera_name: Optional[str] = None,
     ai_fps: Optional[float] = None,
-    send_fps: Optional[int] = Query(default=None, alias="send_fps"),
-    send_width: Optional[int] = Query(default=None, alias="send_width"),
-    send_height: Optional[int] = Query(default=None, alias="send_height"),
-    jpeg_quality: Optional[int] = Query(default=None, alias="jpeg_quality"),
+    ingest_width: Optional[int] = Query(default=None, alias="ingest_width"),
+    ingest_height: Optional[int] = Query(default=None, alias="ingest_height"),
+    ingest_fps: Optional[float] = Query(default=None, alias="ingest_fps"),
     company_id: Optional[str] = Query(default=None, alias="companyId"),
     x_company_id: Optional[str] = Header(default=None, alias="x-company-id"),
     container=Depends(get_container),
@@ -53,30 +64,18 @@ def presence_start(
     camera_started_now = False
     rtsp_url_value = str(rtsp_url or "").strip()
     if rtsp_url_value:
-        normalized_send_fps = _normalize_optional_int(
-            send_fps, min_value=1, max_value=30
+        width, height, profile_fps = _resolve_ingest_profile(
+            ingest_width=ingest_width,
+            ingest_height=ingest_height,
+            ingest_fps=ingest_fps,
         )
-        normalized_send_width = _normalize_optional_int(
-            send_width, min_value=160, max_value=3840
-        )
-        normalized_send_height = _normalize_optional_int(
-            send_height, min_value=120, max_value=2160
-        )
-        normalized_jpeg_quality = _normalize_optional_int(
-            jpeg_quality, min_value=1, max_value=100
-        )
-        container.camera_rt.set_stream_profile(
-            camera_id,
-            send_fps=normalized_send_fps,
-            send_width=normalized_send_width,
-            send_height=normalized_send_height,
-            jpeg_quality=normalized_jpeg_quality,
-        )
-        width = min(3840, max(1280, int(normalized_send_width or 1280)))
-        height = min(2160, max(720, int(normalized_send_height or 720)))
         camera_started_now = bool(
             container.camera_rt.start(
-                camera_id, rtsp_url_value, width=width, height=height
+                camera_id,
+                rtsp_url_value,
+                width=width,
+                height=height,
+                target_fps=profile_fps,
             )
         )
 
@@ -98,6 +97,7 @@ def presence_start(
         "camera_id": camera_id,
         "camera_name": str(camera_name or ""),
         "ai_fps": float(ai_fps),
+        "capture_profile": container.camera_rt.get_profile(camera_id),
     }
 
 

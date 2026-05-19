@@ -120,29 +120,15 @@ async function startCameraOnAi(params: {
   companyId: string;
   rtspUrl: string;
   streamType?: string | null;
-  sendFps?: number | null;
   sendWidth?: number | null;
   sendHeight?: number | null;
-  jpegQuality?: number | null;
+  sendFps?: number | null;
 }) {
-  const clampInt = (
-    value: number | null | undefined,
-    min: number,
-    max: number
-  ) => {
-    if (value === null || value === undefined) return undefined;
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed)) return undefined;
-    return Math.min(max, Math.max(min, Math.round(parsed)));
-  };
-
-  const sendFps = clampInt(params.sendFps, 1, 30);
-  const sendWidth = clampInt(params.sendWidth, 160, 3840);
-  const sendHeight = clampInt(params.sendHeight, 120, 2160);
-  const jpegQuality = clampInt(params.jpegQuality, 1, 100);
-
   const attendanceEnabled = streamTypeAttendanceEnabled(params.streamType);
   const { cameraId, cameraName, companyId, rtspUrl } = params;
+  const sendWidth = Number(params.sendWidth ?? 0);
+  const sendHeight = Number(params.sendHeight ?? 0);
+  const sendFps = Number(params.sendFps ?? 0);
   const response = await axios.post(
     `${AI_BASE}/camera/start`,
     null,
@@ -154,10 +140,15 @@ async function startCameraOnAi(params: {
         rtsp_url: rtspUrl,
         ...(params.streamType ? { stream_type: params.streamType } : {}),
         attendance_enabled: attendanceEnabled,
-        ...(sendFps !== undefined ? { send_fps: sendFps } : {}),
-        ...(sendWidth !== undefined ? { send_width: sendWidth } : {}),
-        ...(sendHeight !== undefined ? { send_height: sendHeight } : {}),
-        ...(jpegQuality !== undefined ? { jpeg_quality: jpegQuality } : {}),
+        ...(Number.isFinite(sendWidth) && sendWidth > 0
+          ? { ingest_width: Math.trunc(sendWidth) }
+          : {}),
+        ...(Number.isFinite(sendHeight) && sendHeight > 0
+          ? { ingest_height: Math.trunc(sendHeight) }
+          : {}),
+        ...(Number.isFinite(sendFps) && sendFps > 0
+          ? { ingest_fps: Math.trunc(sendFps) }
+          : {}),
       },
       headers: companyId ? { "x-company-id": companyId } : undefined,
       timeout: Number(process.env.AI_START_TIMEOUT_MS || 30000),
@@ -207,10 +198,9 @@ export async function autoStartCameraById(params: {
   companyId: string | null;
   rtspUrl: string | null;
   streamType?: string | null;
-  sendFps?: number | null;
   sendWidth?: number | null;
   sendHeight?: number | null;
-  jpegQuality?: number | null;
+  sendFps?: number | null;
   persistDbState?: boolean;
 }) {
   const cameraId = String(params.id || "").trim();
@@ -230,10 +220,9 @@ export async function autoStartCameraById(params: {
       companyId,
       rtspUrl: params.rtspUrl.trim(),
       streamType: params.streamType,
-      sendFps: params.sendFps,
       sendWidth: params.sendWidth,
       sendHeight: params.sendHeight,
-      jpegQuality: params.jpegQuality,
+      sendFps: params.sendFps,
     });
 
     if (persistDbState) {
@@ -329,10 +318,9 @@ export async function autoStartRtspCamerasOnBoot() {
     name: true,
     companyId: true,
     rtspUrl: true,
-    sendFps: true,
     sendWidth: true,
     sendHeight: true,
-    jpegQuality: true,
+    sendFps: true,
   };
   if (cameraHasTaskField) cameraSelect.task = true;
 
@@ -346,10 +334,9 @@ export async function autoStartRtspCamerasOnBoot() {
     name: string;
     companyId: string | null;
     rtspUrl: string | null;
-    sendFps?: number | null;
     sendWidth?: number | null;
     sendHeight?: number | null;
-    jpegQuality?: number | null;
+    sendFps?: number | null;
     task?: string | null;
   }>;
 
@@ -377,10 +364,9 @@ export async function autoStartRtspCamerasOnBoot() {
       name: cam.name,
       companyId: cam.companyId,
       rtspUrl: cam.rtspUrl,
-      sendFps: cam.sendFps,
-      sendWidth: cam.sendWidth,
-      sendHeight: cam.sendHeight,
-      jpegQuality: cam.jpegQuality,
+      sendWidth: cam.sendWidth ?? null,
+      sendHeight: cam.sendHeight ?? null,
+      sendFps: cam.sendFps ?? null,
       persistDbState: false,
     });
 

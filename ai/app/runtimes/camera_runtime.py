@@ -1,7 +1,7 @@
 from __future__ import annotations
+import os
 from typing import Dict, Optional
 import threading
-import cv2
 import numpy as np
 
 from ..vision.capture import FrameGrabber
@@ -13,67 +13,77 @@ class CameraRuntime:
         self._lock = threading.Lock()
         self.injected_frames: Dict[str, np.ndarray] = {}
         self.injected_locks: Dict[str, threading.Lock] = {}
-        self.stream_profiles: Dict[str, Dict[str, int]] = {}
+        self._camera_cfg: Dict[str, tuple[str, int, int, int, str]] = {}
 
-    @staticmethod
-    def _clamp_int(value: int, min_value: int, max_value: int) -> int:
-        return max(min_value, min(max_value, int(value)))
-
-    def set_stream_profile(
+    def start(
         self,
         camera_id: str,
-        *,
-        send_fps: Optional[int] = None,
-        send_width: Optional[int] = None,
-        send_height: Optional[int] = None,
-        jpeg_quality: Optional[int] = None,
-    ) -> None:
-        with self._lock:
-            cur = dict(self.stream_profiles.get(str(camera_id), {}))
-            if send_fps is not None:
-                cur["send_fps"] = self._clamp_int(int(send_fps), 1, 30)
-            if send_width is not None:
-                cur["send_width"] = self._clamp_int(int(send_width), 160, 3840)
-            if send_height is not None:
-                cur["send_height"] = self._clamp_int(int(send_height), 120, 2160)
-            if jpeg_quality is not None:
-                cur["jpeg_quality"] = self._clamp_int(int(jpeg_quality), 1, 100)
-            if cur:
-                self.stream_profiles[str(camera_id)] = cur
-
-    def get_stream_profile(self, camera_id: str) -> Dict[str, int]:
-        with self._lock:
-            return dict(self.stream_profiles.get(str(camera_id), {}))
-
-    def start(self, camera_id: str, rtsp_url: str, width: int = 1280, height: int = 720) -> bool:
+        rtsp_url: str,
+        width: int = 1280,
+        height: int = 720,
+        target_fps: int = 0,
+    ) -> bool:
         """
         Idempotent start:
-        - If already running with same source, do nothing.
+        - If already running with same source + profile, do nothing.
         - If source changed, restart.
         Returns True if a start/restart happened, False if it was already running.
         """
+        width = max(16, int(width))
+        height = max(16, int(height))
+        target_fps = max(0, int(target_fps))
+
+        # Prefer lower ingest fps by default when caller does not specify one.
+        if target_fps <= 0:
+            try:
+                target_fps = max(
+                    0, int(float(str(os.getenv("CAMERA_DEFAULT_INGEST_FPS", "0")).strip()))
+                )
+            except Exception:
+                target_fps = 0
+
         with self._lock:
             existing = self.cameras.get(camera_id)
-            if (
-                existing
-                and getattr(existing, "rtsp_url", None) == rtsp_url
-                and int(getattr(existing, "width", width)) == int(width)
-                and int(getattr(existing, "height", height)) == int(height)
-            ):
+            existing_sig = self._camera_cfg.get(camera_id)
+            expected_sig = (
+                str(rtsp_url or "").strip(),
+                int(width),
+                int(height),
+                int(target_fps),
+                str(os.getenv("STREAM_CAPTURE_BACKEND", "auto")).strip().lower()
+                or "auto",
+            )
+
+            if existing and existing_sig == expected_sig:
                 return False
 
             if existing:
                 existing.stop()
                 self.cameras.pop(camera_id, None)
+                self._camera_cfg.pop(camera_id, None)
 
-            grabber = FrameGrabber(rtsp_url, width=width, height=height)
+            grabber = FrameGrabber(
+                rtsp_url,
+                width=width,
+                height=height,
+                target_fps=target_fps,
+            )
             grabber.start()
             self.cameras[camera_id] = grabber
+            # Persist the effective signature (including backend request) for idempotency.
+            self._camera_cfg[camera_id] = (
+                str(grabber.rtsp_url or "").strip(),
+                int(grabber.width),
+                int(grabber.height),
+                int(grabber.target_fps),
+                str(grabber.requested_backend),
+            )
             return True
 
     def stop(self, camera_id: str) -> bool:
         with self._lock:
             grabber = self.cameras.pop(camera_id, None)
+            self._camera_cfg.pop(camera_id, None)
         if not grabber:
             return False
         try:
@@ -95,6 +105,33 @@ class CameraRuntime:
     def is_running(self, camera_id: str) -> bool:
         with self._lock:
             return str(camera_id) in self.cameras
+
+    def get_profile(self, camera_id: str) -> Optional[dict]:
+        with self._lock:
+            sig = self._camera_cfg.get(str(camera_id))
+            grabber = self.cameras.get(str(camera_id))
+        if not sig:
+            return None
+        src, width, height, fps, backend_request = sig
+        backend_effective = str(getattr(grabber, "backend_name", backend_request))
+        return {
+            "source": src,
+            "width": int(width),
+            "height": int(height),
+            "ingest_fps": int(fps),
+            "backend_request": backend_request,
+            "backend_effective": backend_effective,
+        }
+
+    def list_profiles(self) -> Dict[str, dict]:
+        with self._lock:
+            camera_ids = list(self.cameras.keys())
+        profiles: Dict[str, dict] = {}
+        for camera_id in camera_ids:
+            profile = self.get_profile(camera_id)
+            if profile is not None:
+                profiles[camera_id] = profile
+        return profiles
 
     def inject_frame(self, camera_id: str, frame: np.ndarray):
         """Inject a frame from a laptop/WebRTC source."""

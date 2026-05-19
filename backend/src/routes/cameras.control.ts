@@ -76,10 +76,9 @@ r.post("/start/:id", async (req, res) => {
       companyId,
       rtspUrl: cam.rtspUrl,
       streamType: task,
-      sendFps: (cam as any).sendFps,
-      sendWidth: (cam as any).sendWidth,
-      sendHeight: (cam as any).sendHeight,
-      jpegQuality: (cam as any).jpegQuality,
+      sendWidth: (cam as any).sendWidth ?? null,
+      sendHeight: (cam as any).sendHeight ?? null,
+      sendFps: (cam as any).sendFps ?? null,
     });
 
     if (!started.ok) {

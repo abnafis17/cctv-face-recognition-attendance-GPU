@@ -100,3 +100,44 @@ This repo now uses a **CPU-steady / GPU-burst** attendance pipeline to keep GPU 
 - If attendance is missed for fast-moving people: set `ATTENDANCE_FAST_MODE=1` (and optionally `FAS_ALLOW_NO_POSE_FOR_ATTENDANCE=1`).
 
 **Note:** For CSRT/KCF trackers install `opencv-contrib-python` (this repo’s `requirements*.txt` now uses it). If unavailable, the code falls back to another OpenCV tracker.
+
+## Production RTSP ingest (FFmpeg-first)
+
+This service now supports a production ingest backend where RTSP/network streams are captured with FFmpeg instead of `cv2.VideoCapture`, while keeping all existing attendance/presence/business logic unchanged.
+
+### Backend selection
+- `STREAM_CAPTURE_BACKEND=auto` (recommended): FFmpeg for network streams, OpenCV for webcams.
+- `STREAM_CAPTURE_BACKEND=ffmpeg`: force FFmpeg for network streams.
+- `STREAM_CAPTURE_BACKEND=opencv`: legacy OpenCV capture path.
+
+### High-density defaults
+- `CAMERA_DEFAULT_WIDTH=640`
+- `CAMERA_DEFAULT_HEIGHT=360`
+- `CAMERA_DEFAULT_INGEST_FPS=8`
+
+You can still override per camera using backend camera fields:
+- `sendWidth`
+- `sendHeight`
+- `sendFps`
+
+### FFmpeg low-latency controls
+- `FFMPEG_CAPTURE_RTSP_TRANSPORT=tcp`
+- `FFMPEG_CAPTURE_FFLAGS=nobuffer+discardcorrupt`
+- `FFMPEG_CAPTURE_FLAGS=low_delay`
+- `FFMPEG_CAPTURE_TIMEOUT_US=0`
+- `FFMPEG_CAPTURE_RW_TIMEOUT_US=15000000`
+- `FFMPEG_CAPTURE_PROBESIZE=5000000`
+- `FFMPEG_CAPTURE_ANALYZEDURATION=5000000`
+- `FFMPEG_CAPTURE_STARTUP_FRAME_TIMEOUT_S=15`
+- `FFMPEG_CAPTURE_MAX_STARTUP_FAILS_BEFORE_FALLBACK=6`
+- `FFMPEG_CAPTURE_AUTO_FALLBACK_TO_OPENCV=1`
+
+Optional hardware decode:
+- `FFMPEG_HWACCEL=cuda` on NVIDIA systems
+- `FFMPEG_HWACCEL_DEVICE` when device binding is needed
+
+### Runtime status endpoints
+- `GET /camera/runtime/status`
+- `GET /camera/runtime/status/{camera_id}`
+
+These endpoints expose active capture profiles and backend mode per camera for operations/debugging.
