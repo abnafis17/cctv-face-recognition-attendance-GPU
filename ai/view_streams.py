@@ -35,7 +35,9 @@ if script_dir not in sys.path:
 try:
     from app.clients.backend_client import BackendClient
     from app.vision.insightface_models import FaceDetector, FaceEmbedder
-    from app.utils import l2_normalize
+    from app.utils import l2_normalize, open_capture_with_fallback
+    from app.vision.body_detector import UniversalBodyDetector
+    from app.vision.body_tracker import BodyTracker, face_belongs_to_body, draw_polygon_body_bbox
 except ImportError as e:
     print(f"Error importing AI service modules: {e}")
     print("Please make sure you run this script within the 'ai' directory structure and environment.")
@@ -70,17 +72,14 @@ class FrameGrabber(threading.Thread):
     def run(self):
         print(f"[{self.rtsp_url}] Thread started. Initializing capture...")
         
-        # Open video capture with OpenCV FFmpeg backend
-        cap = cv2.VideoCapture(self.rtsp_url, cv2.CAP_FFMPEG)
-        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        cap = open_capture_with_fallback(self.rtsp_url)
 
         while self.running:
             if not cap.isOpened():
                 self.connected = False
                 print(f"[{self.rtsp_url}] Failed to open stream. Retrying in 3 seconds...")
                 time.sleep(3.0)
-                cap = cv2.VideoCapture(self.rtsp_url, cv2.CAP_FFMPEG)
-                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                cap = open_capture_with_fallback(self.rtsp_url)
                 continue
 
             self.connected = True
@@ -90,8 +89,7 @@ class FrameGrabber(threading.Thread):
                 print(f"[{self.rtsp_url}] Lost stream connection. Reconnecting in 1 second...")
                 cap.release()
                 time.sleep(1.0)
-                cap = cv2.VideoCapture(self.rtsp_url, cv2.CAP_FFMPEG)
-                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                cap = open_capture_with_fallback(self.rtsp_url)
                 continue
 
             with self.lock:
@@ -223,6 +221,8 @@ def run_viewer(url):
     
     detector = FaceDetector(model_name=model_name, use_gpu=use_gpu)
     embedder = FaceEmbedder(model_name=model_name, use_gpu=use_gpu)
+    body_detector = UniversalBodyDetector()
+    body_tracker = BodyTracker(recheck_interval=4.0)
     
     similarity_threshold = float(os.getenv("SIMILARITY_THRESHOLD", "0.35"))
     print(f"Similarity Threshold set to: {similarity_threshold}")
@@ -238,7 +238,6 @@ def run_viewer(url):
     
     try:
         last_detect_time = 0.0
-        active_faces = []
         
         while True:
             has_new, frame_orig = grabber.get_frame()
@@ -247,82 +246,83 @@ def run_viewer(url):
                 h, w = frame_orig.shape[:2]
                 now = time.time()
                 
-                # Perform Face Detection at a stable, reduced rate (e.g. ~6 FPS / 160ms interval)
+                # Perform Face Detection and body tracking at a stable, reduced rate (e.g. ~6 FPS / 160ms interval)
                 # to prevent GIL congestion while maintaining smooth real-time video playback.
                 if has_new and (now - last_detect_time >= 0.16):
                     last_detect_time = now
+                    
+                    # 1. Detect human bodies
+                    bodies = body_detector.detect(frame_orig)
+                    
+                    # 2. Update body tracker
+                    body_tracker.update(bodies)
+                    
+                    # 3. Detect faces
                     faces = detector.detect(frame_orig)
                     
-                    active_faces = []
+                    # 4. Associate detected faces to body tracks
                     for face in faces:
-                        bbox = face.bbox
-                        x1, y1, x2, y2 = [int(v) for v in bbox]
+                        fx1, fy1, fx2, fy2 = [int(v) for v in face.bbox]
+                        fx1 = max(0, min(w - 1, fx1))
+                        fy1 = max(0, min(h - 1, fy1))
+                        fx2 = max(0, min(w, fx2))
+                        fy2 = max(0, min(h, fy2))
+                        face_bbox = (fx1, fy1, fx2, fy2)
                         
-                        # Clamp bbox values to frame borders
-                        x1 = max(0, min(w - 1, x1))
-                        y1 = max(0, min(h - 1, y1))
-                        x2 = max(0, min(w, x2))
-                        y2 = max(0, min(h, y2))
-                        
-                        # Extract Feature Embedding and match
-                        emb = embedder.embed(frame_orig, bbox=(x1, y1, x2, y2), kps=face.kps)
-                        
-                        matched_name = "Unknown"
-                        match_score = -1.0
-                        
-                        if emb is not None and len(gallery_templates) > 0:
-                            # Find best cosine similarity match
-                            best_idx = -1
-                            best_score = -1.0
-                            for idx, t in enumerate(gallery_templates):
-                                score = float(np.dot(t["embedding"], emb))
-                                if score > best_score:
-                                    best_score = score
-                                    best_idx = idx
-                            
-                            if best_score >= similarity_threshold:
-                                matched_name = gallery_templates[best_idx]["name"]
-                                match_score = best_score
-                        
-                        active_faces.append({
-                            "bbox": (x1, y1, x2, y2),
-                            "name": matched_name,
-                            "score": match_score
-                        })
+                        # Find matching body track
+                        matched_track = None
+                        for track in body_tracker.tracks:
+                            if face_belongs_to_body(face_bbox, track.bbox):
+                                matched_track = track
+                                break
+                                
+                        if matched_track is not None:
+                            # Check if we should re-recognize
+                            if matched_track.should_recognize(now, recheck_interval=body_tracker.recheck_interval):
+                                emb = embedder.embed(frame_orig, bbox=face_bbox, kps=face.kps)
+                                
+                                if emb is not None and len(gallery_templates) > 0:
+                                    best_idx = -1
+                                    best_score = -1.0
+                                    for idx, t in enumerate(gallery_templates):
+                                        score = float(np.dot(t["embedding"], emb))
+                                        if score > best_score:
+                                            best_score = score
+                                            best_idx = idx
+                                            
+                                    if best_score >= similarity_threshold:
+                                        matched_track.name = gallery_templates[best_idx]["name"]
+                                        matched_track.score = best_score
+                                        
+                                # Update the last checked timestamp
+                                matched_track.last_recognize_time = now
 
                 # Copy frame for annotations
                 frame = frame_orig.copy()
                 
-                # Draw latest recognized/cached faces
-                for f_info in active_faces:
-                    x1, y1, x2, y2 = f_info["bbox"]
-                    matched_name = f_info["name"]
-                    match_score = f_info["score"]
+                # Draw latest recognized/cached body tracks
+                for track in body_tracker.tracks:
+                    bx1, by1, bx2, by2 = track.bbox
+                    matched_name = track.name
+                    match_score = track.score
                     
                     if matched_name != "Unknown":
-                        color = (130, 190, 78) # Premium Emerald (BGR)
+                        color = (220, 180, 0) # Neon Cyan/Teal (BGR)
                         label = f"{matched_name} ({match_score:.2f})"
                     else:
-                        color = (60, 60, 240) # Crimson Red (BGR)
+                        color = (180, 190, 30) # Blue-Green/Teal (BGR)
                         label = "Unknown"
-
-                    # Draw sleek premium bounding box
-                    cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
                     
-                    # High-readability font scale (0.55) and bold/thick font text sizes
+                    # Draw slate background & text plate above the head/body (Polygons and boxes are omitted for maximum Jetson Nano performance)
                     label_sz, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_DUPLEX, 0.55, 1)
-                    
-                    # Slate Black background for professional high-contrast readability
-                    y_top = max(y1 - label_sz[1] - 12, 0)
+                    y_top = max(by1 - label_sz[1] - 12, 0)
                     bg_color = (28, 28, 28)
-                    cv2.rectangle(frame, (x1, y_top), (x1 + label_sz[0] + 12, y_top + label_sz[1] + 12), bg_color, cv2.FILLED)
-                    cv2.rectangle(frame, (x1, y_top), (x1 + label_sz[0] + 12, y_top + label_sz[1] + 12), color, 1)
-                    
-                    # Render sharp white text over the slate dark background
-                    cv2.putText(frame, label, (x1 + 6, y_top + label_sz[1] + 6), cv2.FONT_HERSHEY_DUPLEX, 0.55, (255, 255, 255), 1, cv2.LINE_AA)
+                    cv2.rectangle(frame, (bx1, y_top), (bx1 + label_sz[0] + 12, y_top + label_sz[1] + 12), bg_color, cv2.FILLED)
+                    cv2.rectangle(frame, (bx1, y_top), (bx1 + label_sz[0] + 12, y_top + label_sz[1] + 12), color, 1)
+                    cv2.putText(frame, label, (bx1 + 6, y_top + label_sz[1] + 6), cv2.FONT_HERSHEY_DUPLEX, 0.55, (255, 255, 255), 1, cv2.LINE_AA)
 
                 # Add beautiful HUD overlay
-                draw_hud(frame, url, grabber.fps, grabber.connected, len(active_faces))
+                draw_hud(frame, url, grabber.fps, grabber.connected, len(body_tracker.tracks))
                 cv2.imshow(window_name, frame)
             else:
                 # Show connecting screen

@@ -16,8 +16,15 @@ from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-# Ensure root of project is in path
+# Set low-delay environment variables for OpenCV FFmpeg backend globally
+os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp|fflags;nobuffer|flags;low_delay"
+
+import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from app.vision.body_tracker import BodyTracker, face_belongs_to_body, draw_polygon_body_bbox
+from app.utils import open_capture_with_fallback
+
 
 # Compatibility wrapper for camera_rt to bridge LiteCameraStream to EnrollmentAutoService2
 class CameraRuntimeCompat:
@@ -67,9 +74,9 @@ def get_enroller2_auto():
 # Load environmental variables
 load_dotenv()
 
-# Setup clean production logs
+# Setup clean production logs (WARNING level to make streaming log-free & lag-free)
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[logging.StreamHandler(sys.stdout)]
 )
@@ -95,20 +102,23 @@ FALLBACK_CAMERAS = {
 # 2. Lazy-Load Face Models (Ensures fast startup)
 detector = None
 embedder = None
+body_detector = None
 models_lock = threading.Lock()
 
 def init_models():
-    global detector, embedder
+    global detector, embedder, body_detector
     with models_lock:
         if detector is not None:
             return
         logger.info("Initializing Face Detection & Embedding models on GPU...")
         from app.vision.insightface_models import FaceDetector, FaceEmbedder
+        from app.vision.body_detector import UniversalBodyDetector
         model_name = os.getenv("INSIGHTFACE_MODEL", "buffalo_m")
         det_model_name = os.getenv("AI_DETECTOR_MODEL", "buffalo_sc")
         detector = FaceDetector(model_name=det_model_name, use_gpu=True)
         embedder = FaceEmbedder(model_name=model_name, use_gpu=True)
-        logger.info("InsightFace GPU Models initialized successfully.")
+        body_detector = UniversalBodyDetector()
+        logger.info("InsightFace GPU Models & Body Detector initialized successfully.")
 
 def get_l2_norm(emb):
     norm = np.linalg.norm(emb)
@@ -171,6 +181,10 @@ class LiteCameraStream:
         self.authorized_employee_ids = set()
         self.last_authorized_fetch = 0.0
         
+        # Body Tracker
+        self.body_tracker = BodyTracker(recheck_interval=4.0)
+        
+        
         # Start Ingest thread (continuously drains RTSP frames to prevent OpenCV buffer build-up/latency)
         self.ingest_thread = threading.Thread(target=self._run_ingest, name=f"lite-ingest-{camera_id}", daemon=True)
         self.ingest_thread.start()
@@ -182,15 +196,13 @@ class LiteCameraStream:
 
     def _run_ingest(self):
         logger.info(f"[INGEST] Dedicated ingestion loop started for camera: {self.camera_id}")
-        cap = cv2.VideoCapture(self.rtsp_url, cv2.CAP_FFMPEG)
-        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        cap = open_capture_with_fallback(self.rtsp_url)
         
         while not self.stopped:
             if not cap.isOpened():
                 logger.warning(f"[INGEST] RTSP Stream disconnected for {self.camera_id}. Retrying in 2.0s...")
                 time.sleep(2.0)
-                cap = cv2.VideoCapture(self.rtsp_url, cv2.CAP_FFMPEG)
-                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                cap = open_capture_with_fallback(self.rtsp_url)
                 continue
                 
             ret, frame = cap.read()
@@ -232,8 +244,6 @@ class LiteCameraStream:
         ai_period = 1.0 / AI_FPS
         last_gallery_sync = time.time()
         
-        active_tracks = [] # tracks from the previous frames: [{"bbox": bbox, "emb": emb, "name": name, "emp_id": emp_id, "score": score, "last_embed_time": t}]
-        
         while not self.stopped:
             frame = self.latest_raw_frame
             if frame is None:
@@ -261,121 +271,98 @@ class LiteCameraStream:
                     
                 h, w = frame.shape[:2]
                 
-                # Perform Face Detection
+                # 1. Detect human bodies
+                bodies = body_detector.detect(frame)
+                
+                # 2. Update body tracker
+                self.body_tracker.update(bodies)
+                
+                # 3. Detect faces
                 faces = detector.detect(frame)
                 
-                current_tracks = []
-                
+                # 4. Associate detected faces to body tracks
                 for face in faces:
-                    x1, y1, x2, y2 = [int(v) for v in face.bbox]
-                    x1 = max(0, min(w - 1, x1))
-                    y1 = max(0, min(h - 1, y1))
-                    x2 = max(0, min(w, x2))
-                    y2 = max(0, min(h, y2))
-                    bbox = (x1, y1, x2, y2)
+                    fx1, fy1, fx2, fy2 = [int(v) for v in face.bbox]
+                    fx1 = max(0, min(w - 1, fx1))
+                    fy1 = max(0, min(h - 1, fy1))
+                    fx2 = max(0, min(w, fx2))
+                    fy2 = max(0, min(h, fy2))
+                    face_bbox = (fx1, fy1, fx2, fy2)
                     
-
-                    # Attempt to find overlapping track from previous frame to reuse embedding
+                    # Find matching body track
                     matched_track = None
-                    best_iou = 0.0
-                    for track in active_tracks:
-                        iou = compute_iou(bbox, track["bbox"])
-                        if iou > 0.35 and iou > best_iou:
-                            best_iou = iou
+                    for track in self.body_tracker.tracks:
+                        if face_belongs_to_body(face_bbox, track.bbox):
                             matched_track = track
+                            break
                             
-                    # If we found a track, and the embedding is fresh (less than 1.5s old), we reuse it!
-                    reuse_matched = False
-                    if matched_track is not None and (now - matched_track["last_embed_time"] < 1.5):
-                        emb = matched_track["emb"]
-                        matched_name = matched_track["name"]
-                        match_score = matched_track["score"]
-                        matched_emp_id = matched_track["emp_id"]
-                        last_embed_time = matched_track["last_embed_time"]
-                        reuse_matched = True
-                        
-                    if not reuse_matched:
-                        # Extract Embedding and Compare Cosine Similarity
-                        emb = embedder.embed(frame, bbox=bbox, kps=face.kps)
-                        matched_name = "Unknown"
-                        match_score = -1.0
-                        matched_emp_id = None
-                        best_name = "Unknown"
-                        best_score = 0.0
-                        last_embed_time = now
-                        
-                        if emb is not None:
-                            with gallery_lock:
-                                templates = list(gallery_templates)
-                                
-                            best_idx = -1
-                            for idx, t in enumerate(templates):
-                                score = float(np.dot(t["embedding"], emb))
-                                if score > best_score:
-                                    best_score = score
-                                    best_idx = idx
+                    if matched_track is not None:
+                        # Check if we should re-recognize
+                        if matched_track.should_recognize(now, recheck_interval=self.body_tracker.recheck_interval):
+                            emb = embedder.embed(frame, bbox=face_bbox, kps=face.kps)
+                            
+                            if emb is not None:
+                                with gallery_lock:
+                                    templates = list(gallery_templates)
                                     
-                            if best_idx != -1:
-                                best_name = templates[best_idx]["name"]
-                                matched_emp_id = templates[best_idx]["employee_id"]
+                                best_idx = -1
+                                max_score = 0.0
+                                for idx, t in enumerate(templates):
+                                    score = float(np.dot(t["embedding"], emb))
+                                    if score > max_score:
+                                        max_score = score
+                                        best_idx = idx
+                                        
+                                if best_idx != -1 and max_score >= SIMILARITY_THRESHOLD:
+                                    best_name = templates[best_idx]["name"]
+                                    matched_emp_id = templates[best_idx]["employee_id"]
+                                    best_score = max_score
+                                    
+                                    # Update the track details only upon successful recognition match
+                                    matched_track.name = best_name
+                                    matched_track.emp_id = matched_emp_id
+                                    matched_track.score = best_score
+                                    
+                                    # Determine authorization status
+                                    is_authorized = True
+                                    has_auth_list = len(self.authorized_employee_ids) > 0
+                                    if has_auth_list and matched_emp_id not in self.authorized_employee_ids:
+                                        is_authorized = False
+                                    matched_track.is_authorized = is_authorized
+                                    
+                            # Update the last checked timestamp
+                            matched_track.last_recognize_time = now
+                            
+                        # Trigger Non-Blocking Attendance Log if identified and authorized
+                        if matched_track.emp_id and matched_track.is_authorized:
+                            self._trigger_attendance(matched_track.emp_id, matched_track.score)
 
-                            if best_score >= SIMILARITY_THRESHOLD:
-                                matched_name = best_name
-                                match_score = best_score
-                                
-                    # Determine authorization status for this particular camera
-                    is_authorized = True
-                    has_auth_list = len(self.authorized_employee_ids) > 0
-                    if matched_name != "Unknown" and matched_emp_id:
-                        if has_auth_list and matched_emp_id not in self.authorized_employee_ids:
-                            is_authorized = False
-
-                    # Store to current tracks
-                    current_tracks.append({
-                        "bbox": bbox,
-                        "emb": emb,
-                        "name": matched_name,
-                        "emp_id": matched_emp_id,
-                        "score": match_score,
-                        "last_embed_time": last_embed_time,
-                        "is_authorized": is_authorized
-                    })
-                    
-                    # Trigger Non-Blocking Attendance Log only if employee is authorized for this camera
-                    if matched_emp_id and is_authorized:
-                        self._trigger_attendance(matched_emp_id, match_score)
+                # 5. Draw visual annotations on the body tracks if viewer is active
+                if annotated is not None:
+                    for track in self.body_tracker.tracks:
+                        bx1, by1, bx2, by2 = track.bbox
                         
-                    # Draw visual results only if viewer is active
-                    if annotated is not None:
-                        if matched_name != "Unknown":
-                            if is_authorized:
-                                color = (130, 190, 78) # Premium Emerald (BGR: 130, 190, 78) for Authorized
-                                label = f"{matched_name} ({match_score:.2f})"
+                        # Set track color: teal/cyan base, or warning red if unauthorized
+                        if track.name != "Unknown":
+                            if track.is_authorized:
+                                color = (220, 180, 0) # Neon Cyan/Teal (BGR: 220, 180, 0)
+                                label = f"{track.name} ({track.score:.2f})"
                             else:
-                                color = (60, 60, 240) # Crimson Red (BGR: 60, 60, 240) for Unauthorized
-                                label = f"Unauthorized: {matched_name}"
+                                color = (60, 60, 240) # Crimson Red (BGR: 60, 60, 240)
+                                label = f"Unauthorized: {track.name}"
                         else:
-                            color = (60, 60, 240) # Crimson Red (BGR: 60, 60, 240) for Unknown
+                            color = (180, 190, 30) # Blue-Green/Teal BGR: (180, 190, 30)
                             label = "Unknown"
                             
-                        # Draw sleek premium bounding box
-                        cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
-                        
-                        # High-readability font scale (0.55) and bold/thick font text sizes
+                        # Draw slate background & text plate above the head/body (Polygons and boxes are omitted for maximum Jetson Nano performance)
                         label_sz, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_DUPLEX, 0.55, 1)
-                        
-                        # Slate Black background for professional high-contrast readability
-                        y_top = max(y1 - label_sz[1] - 12, 0)
+                        y_top = max(by1 - label_sz[1] - 12, 0)
                         bg_color = (28, 28, 28)
-                        cv2.rectangle(annotated, (x1, y_top), (x1 + label_sz[0] + 12, y_top + label_sz[1] + 12), bg_color, cv2.FILLED)
-                        # Connect accent border outline to the box
-                        cv2.rectangle(annotated, (x1, y_top), (x1 + label_sz[0] + 12, y_top + label_sz[1] + 12), color, 1)
                         
-                        # Render sharp white text over the slate dark background
-                        cv2.putText(annotated, label, (x1 + 6, y_top + label_sz[1] + 6), cv2.FONT_HERSHEY_DUPLEX, 0.55, (255, 255, 255), 1, cv2.LINE_AA)
-                
-                # Keep active tracks updated for the next frame
-                active_tracks = current_tracks
+                        cv2.rectangle(annotated, (bx1, y_top), (bx1 + label_sz[0] + 12, y_top + label_sz[1] + 12), bg_color, cv2.FILLED)
+                        cv2.rectangle(annotated, (bx1, y_top), (bx1 + label_sz[0] + 12, y_top + label_sz[1] + 12), color, 1)
+                        cv2.putText(annotated, label, (bx1 + 6, y_top + label_sz[1] + 6), cv2.FONT_HERSHEY_DUPLEX, 0.55, (255, 255, 255), 1, cv2.LINE_AA)
+                        
                 self.latest_annotated_frame = annotated
                 
             time.sleep(0.002) # Yield CPU
@@ -785,4 +772,4 @@ if __name__ == "__main__":
     host = os.getenv("AI_SERVER_HOST", "0.0.0.0")
     port = int(os.getenv("AI_SERVER_PORT", "8000"))
     logger.info(f"Starting Lite AI Server on {host}:{port}...")
-    uvicorn.run(app, host=host, port=port, log_config=None)
+    uvicorn.run(app, host=host, port=port, log_config=None, access_log=False)
