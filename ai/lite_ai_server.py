@@ -188,7 +188,8 @@ class LiteCameraStream:
         self.company_id = company_id
         
         self.latest_raw_frame = None
-        self.latest_annotated_frame = None
+        self.latest_raw_jpeg = None
+        self.latest_annotated_jpeg = None
         self.active_viewers = 0
         self.stopped = False
         self.cap = None
@@ -244,7 +245,51 @@ class LiteCameraStream:
             if frame is not None and frame.ndim == 3 and frame.shape[2] == 4:
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
             self.latest_raw_frame = frame
-            last_frame_time = time.time()
+            
+            # Dynamic viewer check: only encode/draw if we have active viewers
+            now = time.time()
+            is_viewer_active = (now - last_active_times.get(self.camera_id, 0.0) < 5.0)
+            if self.active_viewers > 0 or is_viewer_active:
+                # 1. Encode raw JPEG once
+                ret_jpeg, jpeg_bytes = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), MJPEG_RAW_JPEG_QUALITY])
+                if ret_jpeg:
+                    self.latest_raw_jpeg = jpeg_bytes.tobytes()
+                    
+                # 2. Draw overlays and encode annotated JPEG once at full ingest speed
+                annotated = frame.copy()
+                with self.body_tracker.lock:
+                    tracks_copy = list(self.body_tracker.tracks)
+                    
+                for track in tracks_copy:
+                    bx1, by1, bx2, by2 = track.bbox
+                    if track.name != "Unknown":
+                        if track.is_authorized:
+                            color = (220, 180, 0) # Neon Cyan/Teal (BGR: 220, 180, 0)
+                            label = f"{track.name} ({track.score:.2f})"
+                        else:
+                            color = (60, 60, 240) # Crimson Red (BGR: 60, 60, 240)
+                            label = f"Unauthorized: {track.name}"
+                    else:
+                        color = (180, 190, 30) # Blue-Green/Teal BGR: (180, 190, 30)
+                        label = "Unknown"
+                        
+                    # Draw body tracking boundary box
+                    draw_polygon_body_bbox(annotated, track.bbox, color, 1)
+                    
+                    # Draw label text plate
+                    label_sz, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_DUPLEX, 0.55, 1)
+                    y_top = max(by1 - label_sz[1] - 12, 0)
+                    bg_color = (28, 28, 28)
+                    
+                    cv2.rectangle(annotated, (bx1, y_top), (bx1 + label_sz[0] + 12, y_top + label_sz[1] + 12), bg_color, cv2.FILLED)
+                    cv2.rectangle(annotated, (bx1, y_top), (bx1 + label_sz[0] + 12, y_top + label_sz[1] + 12), color, 1)
+                    cv2.putText(annotated, label, (bx1 + 6, y_top + label_sz[1] + 6), cv2.FONT_HERSHEY_DUPLEX, 0.55, (255, 255, 255), 1, cv2.LINE_AA)
+                    
+                ret_jpeg, jpeg_bytes = cv2.imencode(".jpg", annotated, [int(cv2.IMWRITE_JPEG_QUALITY), MJPEG_RECOGNITION_JPEG_QUALITY])
+                if ret_jpeg:
+                    self.latest_annotated_jpeg = jpeg_bytes.tobytes()
+            
+            last_frame_time = now
             
         if self.cap:
             self.cap.release()
@@ -302,12 +347,7 @@ class LiteCameraStream:
                 last_ai_time = now
                 self._refresh_authorized_employees()
                 
-                # Dynamic viewer activity check: only copy and draw overlays if someone is actively watching
-                is_viewer_active = (now - last_active_times.get(self.camera_id, 0.0) < 5.0)
-                if is_viewer_active:
-                    annotated = frame.copy()
-                else:
-                    annotated = None
+                pass
                     
                 h, w = frame.shape[:2]
                 
@@ -372,33 +412,7 @@ class LiteCameraStream:
                         if matched_track is not None:
                             self._process_recognition(frame, face, face_bbox, matched_track, now)
 
-                # 5. Draw visual annotations on the tracks if viewer is active
-                if annotated is not None:
-                    for track in self.body_tracker.tracks:
-                        bx1, by1, bx2, by2 = track.bbox
-                        
-                        # Set track color: teal/cyan base, or warning red if unauthorized
-                        if track.name != "Unknown":
-                            if track.is_authorized:
-                                color = (220, 180, 0) # Neon Cyan/Teal (BGR: 220, 180, 0)
-                                label = f"{track.name} ({track.score:.2f})"
-                            else:
-                                color = (60, 60, 240) # Crimson Red (BGR: 60, 60, 240)
-                                label = f"Unauthorized: {track.name}"
-                        else:
-                            color = (180, 190, 30) # Blue-Green/Teal BGR: (180, 190, 30)
-                            label = "Unknown"
-                            
-                        # Draw slate background & text plate above the track box
-                        label_sz, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_DUPLEX, 0.55, 1)
-                        y_top = max(by1 - label_sz[1] - 12, 0)
-                        bg_color = (28, 28, 28)
-                        
-                        cv2.rectangle(annotated, (bx1, y_top), (bx1 + label_sz[0] + 12, y_top + label_sz[1] + 12), bg_color, cv2.FILLED)
-                        cv2.rectangle(annotated, (bx1, y_top), (bx1 + label_sz[0] + 12, y_top + label_sz[1] + 12), color, 1)
-                        cv2.putText(annotated, label, (bx1 + 6, y_top + label_sz[1] + 6), cv2.FONT_HERSHEY_DUPLEX, 0.55, (255, 255, 255), 1, cv2.LINE_AA)
-                        
-                self.latest_annotated_frame = annotated
+                pass
                 
             time.sleep(0.002) # Yield CPU
             
@@ -640,23 +654,19 @@ def mjpeg_recognition_generator(camera_id: str, company_id: str):
     gui_period = 1.0 / OPENCV_VIEWER_FPS
     placeholder_bytes = make_dark_placeholder(camera_id)
     
+    stream.active_viewers += 1
     try:
         while True:
             t_start = time.time()
-            
-            # Keep stream active timestamp alive
             last_active_times[camera_id] = t_start
             
-            frame = stream.latest_annotated_frame
-            if frame is None:
-                # Still connecting, yield placeholder
-                yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + placeholder_bytes + b'\r\n')
+            jpeg_bytes = stream.latest_annotated_jpeg
+            if jpeg_bytes is None:
+                yield (b'--frame\n'
+                       b'Content-Type: image/jpeg\n\n' + placeholder_bytes + b'\n')
             else:
-                ret, jpeg = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), MJPEG_RECOGNITION_JPEG_QUALITY])
-                if ret:
-                    yield (b'--frame\r\n'
-                           b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
+                yield (b'--frame\n'
+                       b'Content-Type: image/jpeg\n\n' + jpeg_bytes + b'\n')
             
             t_spent = time.time() - t_start
             t_sleep = gui_period - t_spent
@@ -664,7 +674,10 @@ def mjpeg_recognition_generator(camera_id: str, company_id: str):
                 time.sleep(t_sleep)
                 
     except Exception as e:
-        logger.info(f"Client stopped viewing recognition stream: {camera_id} ({e})")
+        logger.info(f"Client error in recognition stream: {camera_id} ({e})")
+    finally:
+        stream.active_viewers = max(0, stream.active_viewers - 1)
+        logger.info(f"Client stopped viewing recognition stream: {camera_id}")
 
 def mjpeg_raw_generator(camera_id: str, company_id: str):
     logger.info(f"Client started viewing raw stream: {camera_id}")
@@ -673,20 +686,19 @@ def mjpeg_raw_generator(camera_id: str, company_id: str):
     gui_period = 1.0 / OPENCV_VIEWER_FPS
     placeholder_bytes = make_dark_placeholder(camera_id)
     
+    stream.active_viewers += 1
     try:
         while True:
             t_start = time.time()
             last_active_times[camera_id] = t_start
             
-            frame = stream.latest_raw_frame
-            if frame is None:
-                yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + placeholder_bytes + b'\r\n')
+            jpeg_bytes = stream.latest_raw_jpeg
+            if jpeg_bytes is None:
+                yield (b'--frame\n'
+                       b'Content-Type: image/jpeg\n\n' + placeholder_bytes + b'\n')
             else:
-                ret, jpeg = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), MJPEG_RAW_JPEG_QUALITY])
-                if ret:
-                    yield (b'--frame\r\n'
-                           b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
+                yield (b'--frame\n'
+                       b'Content-Type: image/jpeg\n\n' + jpeg_bytes + b'\n')
             
             t_spent = time.time() - t_start
             t_sleep = gui_period - t_spent
@@ -694,7 +706,10 @@ def mjpeg_raw_generator(camera_id: str, company_id: str):
                 time.sleep(t_sleep)
                 
     except Exception as e:
-        logger.info(f"Client stopped viewing raw stream: {camera_id} ({e})")
+        logger.info(f"Client error in raw stream: {camera_id} ({e})")
+    finally:
+        stream.active_viewers = max(0, stream.active_viewers - 1)
+        logger.info(f"Client stopped viewing raw stream: {camera_id}")
 
 @app.get("/camera/recognition/stream/{camera_id}/{camera_name}")
 def recognition_stream(

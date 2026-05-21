@@ -143,12 +143,13 @@ def draw_hud(frame, url, fps, connected, detected_faces):
     """
     h, w = frame.shape[:2]
     
-    # 1. Overlay a semi-transparent panel for HUD text
-    overlay = frame.copy()
+    # 1. Overlay a semi-transparent panel for HUD text (ROI optimization)
     panel_w = min(w - 20, 380)
     panel_h = 90
-    cv2.rectangle(overlay, (10, 10), (10 + panel_w, 10 + panel_h), (20, 20, 20), -1)
-    cv2.addWeighted(overlay, 0.6, frame, 0.4, 0, frame)
+    sub_roi = frame[10:10+panel_h, 10:10+panel_w]
+    overlay = sub_roi.copy()
+    cv2.rectangle(overlay, (0, 0), (panel_w, panel_h), (20, 20, 20), -1)
+    cv2.addWeighted(overlay, 0.6, sub_roi, 0.4, 0, sub_roi)
     
     # 2. Draw border
     cv2.rectangle(frame, (10, 10), (10 + panel_w, 10 + panel_h), (80, 80, 80), 1)
@@ -261,87 +262,88 @@ def run_viewer(url):
             has_new, frame_orig = grabber.get_frame()
             
             if frame_orig is not None:
-                h, w = frame_orig.shape[:2]
-                now = time.time()
-                
-                # Perform Face Detection and body tracking at a stable, reduced rate (e.g. ~6 FPS / 160ms interval)
-                # to prevent GIL congestion while maintaining smooth real-time video playback.
-                if has_new and (now - last_detect_time >= 0.16):
-                    last_detect_time = now
+                if has_new:
+                    h, w = frame_orig.shape[:2]
+                    now = time.time()
                     
-                    # 1. Detect human bodies
-                    bodies = body_detector.detect(frame_orig)
-                    
-                    # 2. Update body tracker
-                    body_tracker.update(bodies)
-                    
-                    # 3. Detect faces
-                    faces = detector.detect(frame_orig)
-                    
-                    # 4. Associate detected faces to body tracks
-                    for face in faces:
-                        fx1, fy1, fx2, fy2 = [int(v) for v in face.bbox]
-                        fx1 = max(0, min(w - 1, fx1))
-                        fy1 = max(0, min(h - 1, fy1))
-                        fx2 = max(0, min(w, fx2))
-                        fy2 = max(0, min(h, fy2))
-                        face_bbox = (fx1, fy1, fx2, fy2)
+                    # Perform Face Detection and body tracking at a stable, reduced rate (e.g. ~6 FPS / 160ms interval)
+                    # to prevent GIL congestion while maintaining smooth real-time video playback.
+                    if now - last_detect_time >= 0.16:
+                        last_detect_time = now
                         
-                        # Find matching body track
-                        matched_track = None
-                        for track in body_tracker.tracks:
-                            if face_belongs_to_body(face_bbox, track.bbox):
-                                matched_track = track
-                                break
-                                
-                        if matched_track is not None:
-                            # Check if we should re-recognize
-                            if matched_track.should_recognize(now, recheck_interval=body_tracker.recheck_interval):
-                                emb = embedder.embed(frame_orig, bbox=face_bbox, kps=face.kps)
-                                
-                                if emb is not None and len(gallery_templates) > 0:
-                                    best_idx = -1
-                                    best_score = -1.0
-                                    for idx, t in enumerate(gallery_templates):
-                                        score = float(np.dot(t["embedding"], emb))
-                                        if score > best_score:
-                                            best_score = score
-                                            best_idx = idx
+                        # 1. Detect human bodies
+                        bodies = body_detector.detect(frame_orig)
+                        
+                        # 2. Update body tracker
+                        body_tracker.update(bodies)
+                        
+                        # 3. Detect faces
+                        faces = detector.detect(frame_orig)
+                        
+                        # 4. Associate detected faces to body tracks
+                        for face in faces:
+                            fx1, fy1, fx2, fy2 = [int(v) for v in face.bbox]
+                            fx1 = max(0, min(w - 1, fx1))
+                            fy1 = max(0, min(h - 1, fy1))
+                            fx2 = max(0, min(w, fx2))
+                            fy2 = max(0, min(h, fy2))
+                            face_bbox = (fx1, fy1, fx2, fy2)
+                            
+                            # Find matching body track
+                            matched_track = None
+                            for track in body_tracker.tracks:
+                                if face_belongs_to_body(face_bbox, track.bbox):
+                                    matched_track = track
+                                    break
+                                    
+                            if matched_track is not None:
+                                # Check if we should re-recognize
+                                if matched_track.should_recognize(now, recheck_interval=body_tracker.recheck_interval):
+                                    emb = embedder.embed(frame_orig, bbox=face_bbox, kps=face.kps)
+                                    
+                                    if emb is not None and len(gallery_templates) > 0:
+                                        best_idx = -1
+                                        best_score = -1.0
+                                        for idx, t in enumerate(gallery_templates):
+                                            score = float(np.dot(t["embedding"], emb))
+                                            if score > best_score:
+                                                best_score = score
+                                                best_idx = idx
+                                                
+                                        if best_score >= similarity_threshold:
+                                            matched_track.name = gallery_templates[best_idx]["name"]
+                                            matched_track.score = best_score
                                             
-                                    if best_score >= similarity_threshold:
-                                        matched_track.name = gallery_templates[best_idx]["name"]
-                                        matched_track.score = best_score
-                                        
-                                # Update the last checked timestamp
-                                matched_track.last_recognize_time = now
+                                    # Update the last checked timestamp
+                                    matched_track.last_recognize_time = now
 
-                # Copy frame for annotations
-                frame = frame_orig.copy()
-                
-                # Draw latest recognized/cached body tracks
-                for track in body_tracker.tracks:
-                    bx1, by1, bx2, by2 = track.bbox
-                    matched_name = track.name
-                    match_score = track.score
+                    # Copy frame for annotations
+                    frame = frame_orig.copy()
                     
-                    if matched_name != "Unknown":
-                        color = (220, 180, 0) # Neon Cyan/Teal (BGR)
-                        label = f"{matched_name} ({match_score:.2f})"
-                    else:
-                        color = (180, 190, 30) # Blue-Green/Teal (BGR)
-                        label = "Unknown"
-                    
-                    # Draw slate background & text plate above the head/body (Polygons and boxes are omitted for maximum Jetson Nano performance)
-                    label_sz, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_DUPLEX, 0.55, 1)
-                    y_top = max(by1 - label_sz[1] - 12, 0)
-                    bg_color = (28, 28, 28)
-                    cv2.rectangle(frame, (bx1, y_top), (bx1 + label_sz[0] + 12, y_top + label_sz[1] + 12), bg_color, cv2.FILLED)
-                    cv2.rectangle(frame, (bx1, y_top), (bx1 + label_sz[0] + 12, y_top + label_sz[1] + 12), color, 1)
-                    cv2.putText(frame, label, (bx1 + 6, y_top + label_sz[1] + 6), cv2.FONT_HERSHEY_DUPLEX, 0.55, (255, 255, 255), 1, cv2.LINE_AA)
+                    # Draw latest recognized/cached body tracks
+                    for track in body_tracker.tracks:
+                        bx1, by1, bx2, by2 = track.bbox
+                        matched_name = track.name
+                        match_score = track.score
+                        
+                        if matched_name != "Unknown":
+                            color = (220, 180, 0) # Neon Cyan/Teal (BGR)
+                            label = f"{matched_name} ({match_score:.2f})"
+                        else:
+                            color = (180, 190, 30) # Blue-Green/Teal (BGR)
+                            label = "Unknown"
+                        
+                        # Draw slate background & text plate above the head/body (Polygons and boxes are omitted for maximum Jetson Nano performance)
+                        label_sz, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_DUPLEX, 0.55, 1)
+                        y_top = max(by1 - label_sz[1] - 12, 0)
+                        bg_color = (28, 28, 28)
+                        cv2.rectangle(frame, (bx1, y_top), (bx1 + label_sz[0] + 12, y_top + label_sz[1] + 12), bg_color, cv2.FILLED)
+                        cv2.rectangle(frame, (bx1, y_top), (bx1 + label_sz[0] + 12, y_top + label_sz[1] + 12), color, 1)
+                        cv2.putText(frame, label, (bx1 + 6, y_top + label_sz[1] + 6), cv2.FONT_HERSHEY_DUPLEX, 0.55, (255, 255, 255), 1, cv2.LINE_AA)
 
-                # Add beautiful HUD overlay
-                draw_hud(frame, url, grabber.fps, grabber.connected, len(body_tracker.tracks))
-                cv2.imshow(window_name, frame)
+                    # Add beautiful HUD overlay
+                    draw_hud(frame, url, grabber.fps, grabber.connected, len(body_tracker.tracks))
+                    cv2.imshow(window_name, frame)
             else:
                 # Show connecting screen
                 placeholder = np.zeros((480, 640, 3), dtype=np.uint8)

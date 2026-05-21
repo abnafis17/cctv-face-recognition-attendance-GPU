@@ -166,7 +166,16 @@ def draw_polygon_body_bbox(img: np.ndarray, bbox: Tuple[int, int, int, int], col
     cv2.line(img, (x2 - cl, y2), (x2, y2), color, thickness + 1, cv2.LINE_AA)
     cv2.line(img, (x2, y2), (x2, y2 - cl), color, thickness + 1, cv2.LINE_AA)
 
-    # Semi-transparent overlay inside the body bounding box for visual depth
-    overlay = img.copy()
-    cv2.fillPoly(overlay, [pts], color)
-    cv2.addWeighted(overlay, 0.08, img, 0.92, 0, img)
+    # Semi-transparent overlay inside the body bounding box for visual depth (ROI optimized)
+    ih, iw = img.shape[:2]
+    rx1 = max(0, x1)
+    ry1 = max(0, y1)
+    rx2 = min(iw, x2)
+    ry2 = min(ih, y2)
+    
+    if rx2 > rx1 and ry2 > ry1:
+        sub_roi = img[ry1:ry2, rx1:rx2]
+        overlay = sub_roi.copy()
+        shifted_pts = pts - np.array([rx1, ry1], dtype=np.int32)
+        cv2.fillPoly(overlay, [shifted_pts], color)
+        cv2.addWeighted(overlay, 0.08, sub_roi, 0.92, 0, sub_roi)

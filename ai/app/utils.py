@@ -219,7 +219,7 @@ def open_capture_with_fallback(rtsp_url: str) -> cv2.VideoCapture:
     # 1. Try DeepStream nvurisrcbin pipeline (hardware decode, scale, rate control, auto-reconnection)
     gstreamer_ds = (
         f"nvurisrcbin uri={rtsp_url} rtsp-reconnect-interval=4 rtsp-reconnect-attempts=-1 "
-        f"select-rtp-protocol=4 latency=150 low-latency-mode=true ! "
+        f"select-rtp-protocol=4 latency=50 low-latency-mode=true ! "
         f"nvvidconv ! video/x-raw, width={width}, height={height}, format=BGRx ! "
         f"videorate ! video/x-raw, framerate={fps}/1 ! "
         f"videoconvert ! video/x-raw, format=BGR ! "
@@ -228,7 +228,7 @@ def open_capture_with_fallback(rtsp_url: str) -> cv2.VideoCapture:
 
     # 2. Try standard GStreamer H.264
     gstreamer_h264 = (
-        f"rtspsrc location={rtsp_url} latency=150 protocols=tcp drop-on-latency=true ! "
+        f"rtspsrc location={rtsp_url} latency=50 protocols=tcp drop-on-latency=true ! "
         f"rtph264depay ! h264parse ! nvv4l2decoder enable-max-performance=1 ! "
         f"nvvidconv ! video/x-raw, width={width}, height={height}, format=BGRx ! "
         f"videorate ! video/x-raw, framerate={fps}/1 ! "
@@ -238,7 +238,7 @@ def open_capture_with_fallback(rtsp_url: str) -> cv2.VideoCapture:
     
     # 3. Try standard GStreamer H.265
     gstreamer_h265 = (
-        f"rtspsrc location={rtsp_url} latency=150 protocols=tcp drop-on-latency=true ! "
+        f"rtspsrc location={rtsp_url} latency=50 protocols=tcp drop-on-latency=true ! "
         f"rtph265depay ! h265parse ! nvv4l2decoder enable-max-performance=1 ! "
         f"nvvidconv ! video/x-raw, width={width}, height={height}, format=BGRx ! "
         f"videorate ! video/x-raw, framerate={fps}/1 ! "
