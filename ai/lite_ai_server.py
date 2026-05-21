@@ -1,8 +1,19 @@
 #!/usr/bin/env python3
 import os
 import sys
+
+# Pre-import numpy to prevent system package directory import from loading older system numpy version
+import numpy
+
+# Temporarily inject system package path to load GStreamer-supported system OpenCV
+sys.path.insert(0, '/usr/lib/python3/dist-packages')
+try:
+    import cv2
+finally:
+    if '/usr/lib/python3/dist-packages' in sys.path:
+        sys.path.remove('/usr/lib/python3/dist-packages')
+
 import time
-import cv2
 import json
 import logging
 import threading
@@ -91,6 +102,8 @@ AI_FPS = float(os.getenv("AI_FPS", "3.0"))
 OPENCV_VIEWER_FPS = float(os.getenv("OPENCV_VIEWER_FPS", "15.0"))
 ATTENDANCE_COOLDOWN_S = float(os.getenv("ATTENDANCE_COOLDOWN_SECONDS", "60.0"))
 BODY_PERSISTENCE_ENABLED = os.getenv("BODY_PERSISTENCE_ENABLED", "0").strip() != "0"
+MJPEG_RAW_JPEG_QUALITY = int(os.getenv("MJPEG_RAW_JPEG_QUALITY", "60"))
+MJPEG_RECOGNITION_JPEG_QUALITY = int(os.getenv("MJPEG_RECOGNITION_FALLBACK_JPEG_QUALITY", "60"))
 
 FALLBACK_CAMERAS = {
     "entry_cam": "rtsp://admin:Nokia%4012@10.81.200.21:554/Streaming/Channels/102",
@@ -224,6 +237,8 @@ class LiteCameraStream:
                     time.sleep(0.01)
                 continue
                 
+            if frame is not None and frame.ndim == 3 and frame.shape[2] == 4:
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
             self.latest_raw_frame = frame
             last_frame_time = time.time()
             
@@ -236,19 +251,23 @@ class LiteCameraStream:
         if now - self.last_authorized_fetch < 10.0:
             return
             
-        try:
-            url = f"{BACKEND_BASE_URL}/api/v1/cameras/{self.camera_id}/authorized-employees"
-            headers = {"x-company-id": self.company_id}
-            res = requests.get(url, headers=headers, timeout=2.0)
-            if res.status_code == 200:
-                data = res.json()
-                raw_ids = data.get("authorizedEmployeeIds") or data.get("authorizedEmployeePublicIds") or []
-                self.authorized_employee_ids = set(str(eid) for eid in raw_ids)
-                self.last_authorized_fetch = now
-                logger.info(f"[AUTH] Camera {self.camera_id} loaded {len(self.authorized_employee_ids)} authorized employees.")
-        except Exception as e:
-            logger.error(f"[AUTH] Failed to refresh authorized employees for camera {self.camera_id}: {e}")
-            self.last_authorized_fetch = now
+        # Set timestamp immediately to prevent spawning multiple threads
+        self.last_authorized_fetch = now
+        
+        def _fetch():
+            try:
+                url = f"{BACKEND_BASE_URL}/api/v1/cameras/{self.camera_id}/authorized-employees"
+                headers = {"x-company-id": self.company_id}
+                res = requests.get(url, headers=headers, timeout=5.0)
+                if res.status_code == 200:
+                    data = res.json()
+                    raw_ids = data.get("authorizedEmployeeIds") or data.get("authorizedEmployeePublicIds") or []
+                    self.authorized_employee_ids = set(str(eid) for eid in raw_ids)
+                    logger.info(f"[AUTH] Camera {self.camera_id} loaded {len(self.authorized_employee_ids)} authorized employees.")
+            except Exception as e:
+                logger.error(f"[AUTH] Failed to refresh authorized employees for camera {self.camera_id}: {e}")
+                
+        threading.Thread(target=_fetch, name=f"auth-sync-{self.camera_id}", daemon=True).start()
 
     def _run_process(self):
         logger.info(f"[PROCESS] Dedicated AI loop started for camera: {self.camera_id}")
@@ -626,7 +645,7 @@ def mjpeg_recognition_generator(camera_id: str, company_id: str):
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + placeholder_bytes + b'\r\n')
             else:
-                ret, jpeg = cv2.imencode(".jpg", frame)
+                ret, jpeg = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), MJPEG_RECOGNITION_JPEG_QUALITY])
                 if ret:
                     yield (b'--frame\r\n'
                            b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
@@ -656,7 +675,7 @@ def mjpeg_raw_generator(camera_id: str, company_id: str):
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + placeholder_bytes + b'\r\n')
             else:
-                ret, jpeg = cv2.imencode(".jpg", frame)
+                ret, jpeg = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), MJPEG_RAW_JPEG_QUALITY])
                 if ret:
                     yield (b'--frame\r\n'
                            b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')

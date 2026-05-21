@@ -19,8 +19,16 @@ except ImportError:
 
 # Check if opencv-python is installed
 try:
-    import cv2
+    import sys
+    # Pre-import numpy to prevent system package directory import from loading older system numpy version
     import numpy as np
+    # Temporarily inject system package path to load GStreamer-supported system OpenCV
+    sys.path.insert(0, '/usr/lib/python3/dist-packages')
+    try:
+        import cv2
+    finally:
+        if '/usr/lib/python3/dist-packages' in sys.path:
+            sys.path.remove('/usr/lib/python3/dist-packages')
 except ImportError:
     print("Error: OpenCV (cv2) or NumPy is not installed in the current Python environment.")
     print("Please activate the project's virtual environment or install them:")
@@ -92,6 +100,8 @@ class FrameGrabber(threading.Thread):
                 cap = open_capture_with_fallback(self.rtsp_url)
                 continue
 
+            if frame is not None and frame.ndim == 3 and frame.shape[2] == 4:
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
             with self.lock:
                 self.frame = frame
                 self.has_new_frame = True

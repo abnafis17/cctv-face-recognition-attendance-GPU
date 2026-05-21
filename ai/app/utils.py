@@ -1,11 +1,21 @@
 from __future__ import annotations
 import os
+import sys
+
+# Pre-import numpy to prevent system package directory import from loading older system numpy version
+import numpy as np
+
+# Temporarily inject system package path to load GStreamer-supported system OpenCV
+sys.path.insert(0, '/usr/lib/python3/dist-packages')
+try:
+    import cv2
+finally:
+    if '/usr/lib/python3/dist-packages' in sys.path:
+        sys.path.remove('/usr/lib/python3/dist-packages')
+
 import time
 from datetime import datetime
 from typing import Optional, Tuple
-
-import numpy as np
-import cv2
 
 
 def now_iso() -> str:
@@ -176,14 +186,19 @@ def open_capture_with_fallback(rtsp_url: str) -> cv2.VideoCapture:
         print(f"[Capture] Local file path detected: {rtsp_url}. Opening standard capture...")
         return cv2.VideoCapture(rtsp_url)
 
+    # Load target resolution from environment variables (defaults to 640x360 for high-density, low-latency streaming)
+    width = int(os.getenv("CAMERA_DEFAULT_WIDTH", "640"))
+    height = int(os.getenv("CAMERA_DEFAULT_HEIGHT", "360"))
+
     # 2. Try GStreamer H.264
     gstreamer_h264 = (
-        f"rtspsrc location={rtsp_url} latency=100 ! "
+        f"rtspsrc location={rtsp_url} latency=400 protocols=tcp drop-on-latency=true ! "
         f"rtph264depay ! h264parse ! nvv4l2decoder enable-max-performance=1 ! "
-        f"nvvidconv ! video/x-raw, format=BGRx ! videoconvert ! video/x-raw, format=BGR ! appsink drop=true max-buffers=1 sync=false"
+        f"nvvidconv ! video/x-raw, width={width}, height={height}, format=BGRx ! "
+        f"appsink drop=true max-buffers=1 sync=false"
     )
     
-    print("[Capture] Attempting GStreamer H.264 hardware-accelerated decode pipeline...")
+    print(f"[Capture] Attempting GStreamer H.264 hardware-accelerated decode & scale ({width}x{height}) pipeline...")
     cap = cv2.VideoCapture(gstreamer_h264, cv2.CAP_GSTREAMER)
     if cap.isOpened():
         ret, frame = cap.read()
@@ -196,12 +211,13 @@ def open_capture_with_fallback(rtsp_url: str) -> cv2.VideoCapture:
             
     # 3. Try GStreamer H.265
     gstreamer_h265 = (
-        f"rtspsrc location={rtsp_url} latency=100 ! "
+        f"rtspsrc location={rtsp_url} latency=400 protocols=tcp drop-on-latency=true ! "
         f"rtph265depay ! h265parse ! nvv4l2decoder enable-max-performance=1 ! "
-        f"nvvidconv ! video/x-raw, format=BGRx ! videoconvert ! video/x-raw, format=BGR ! appsink drop=true max-buffers=1 sync=false"
+        f"nvvidconv ! video/x-raw, width={width}, height={height}, format=BGRx ! "
+        f"appsink drop=true max-buffers=1 sync=false"
     )
     
-    print("[Capture] Attempting GStreamer H.265 hardware-accelerated decode pipeline...")
+    print(f"[Capture] Attempting GStreamer H.265 hardware-accelerated decode & scale ({width}x{height}) pipeline...")
     cap = cv2.VideoCapture(gstreamer_h265, cv2.CAP_GSTREAMER)
     if cap.isOpened():
         ret, frame = cap.read()
