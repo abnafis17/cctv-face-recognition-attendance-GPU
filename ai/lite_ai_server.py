@@ -191,6 +191,7 @@ class LiteCameraStream:
         self.latest_annotated_frame = None
         self.active_viewers = 0
         self.stopped = False
+        self.cap = None
         
         # Track cooldowns for marking attendance
         self.attendance_cooldowns = {} # emp_id -> last_log_time
@@ -214,25 +215,28 @@ class LiteCameraStream:
 
     def _run_ingest(self):
         logger.info(f"[INGEST] Dedicated ingestion loop started for camera: {self.camera_id}")
-        cap = open_capture_with_fallback(self.rtsp_url)
+        self.cap = open_capture_with_fallback(self.rtsp_url)
         last_frame_time = time.time()
         
         while not self.stopped:
-            if not cap.isOpened():
-                logger.warning(f"[INGEST] RTSP Stream not open for {self.camera_id}. Retrying in 2.0s...")
-                time.sleep(2.0)
-                cap = open_capture_with_fallback(self.rtsp_url)
-                last_frame_time = time.time()
+            if not self.cap or not self.cap.isOpened():
+                logger.warning(f"[INGEST] RTSP Stream not open for {self.camera_id}. Retrying in 10.0s...")
+                time.sleep(10.0)
+                if not self.stopped:
+                    self.cap = open_capture_with_fallback(self.rtsp_url)
+                    last_frame_time = time.time()
                 continue
                 
-            ret, frame = cap.read()
+            ret, frame = self.cap.read()
             if not ret or frame is None:
                 if time.time() - last_frame_time > 3.0:
                     logger.warning(f"[INGEST] RTSP Stream stale for 3.0s on {self.camera_id}. Reopening...")
-                    cap.release()
+                    if self.cap:
+                        self.cap.release()
                     time.sleep(1.0)
-                    cap = open_capture_with_fallback(self.rtsp_url)
-                    last_frame_time = time.time()
+                    if not self.stopped:
+                        self.cap = open_capture_with_fallback(self.rtsp_url)
+                        last_frame_time = time.time()
                 else:
                     time.sleep(0.01)
                 continue
@@ -242,7 +246,9 @@ class LiteCameraStream:
             self.latest_raw_frame = frame
             last_frame_time = time.time()
             
-        cap.release()
+        if self.cap:
+            self.cap.release()
+            self.cap = None
         logger.info(f"[INGEST] Ingestion thread stopped for camera: {self.camera_id}")
 
     def _refresh_authorized_employees(self):
@@ -476,6 +482,8 @@ class LiteCameraStream:
 
     def stop(self):
         self.stopped = True
+        if hasattr(self, 'cap') and self.cap is not None:
+            self.cap.release()
 
 # 5. Global Camera Stream Manager (With Auto-Sleep)
 streams: Dict[str, LiteCameraStream] = {}

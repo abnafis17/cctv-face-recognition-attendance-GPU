@@ -76,28 +76,32 @@ class FrameGrabber(threading.Thread):
         self.frame_count = 0
         self.prev_time = time.time()
         self.lock = threading.Lock()
+        self.cap = None
 
     def run(self):
         print(f"[{self.rtsp_url}] Thread started. Initializing capture...")
         
-        cap = open_capture_with_fallback(self.rtsp_url)
+        self.cap = open_capture_with_fallback(self.rtsp_url)
 
         while self.running:
-            if not cap.isOpened():
+            if not self.cap or not self.cap.isOpened():
                 self.connected = False
-                print(f"[{self.rtsp_url}] Failed to open stream. Retrying in 3 seconds...")
-                time.sleep(3.0)
-                cap = open_capture_with_fallback(self.rtsp_url)
+                print(f"[{self.rtsp_url}] Failed to open stream. Retrying in 10 seconds...")
+                time.sleep(10.0)
+                if self.running:
+                    self.cap = open_capture_with_fallback(self.rtsp_url)
                 continue
 
             self.connected = True
-            ret, frame = cap.read()
+            ret, frame = self.cap.read()
             if not ret:
                 self.connected = False
                 print(f"[{self.rtsp_url}] Lost stream connection. Reconnecting in 1 second...")
-                cap.release()
+                if self.cap:
+                    self.cap.release()
                 time.sleep(1.0)
-                cap = open_capture_with_fallback(self.rtsp_url)
+                if self.running:
+                    self.cap = open_capture_with_fallback(self.rtsp_url)
                 continue
 
             if frame is not None and frame.ndim == 3 and frame.shape[2] == 4:
@@ -115,7 +119,9 @@ class FrameGrabber(threading.Thread):
                 self.frame_count = 0
                 self.prev_time = curr_time
 
-        cap.release()
+        if self.cap:
+            self.cap.release()
+            self.cap = None
         print(f"[{self.rtsp_url}] Capture released.")
 
     def get_frame(self):
@@ -127,6 +133,8 @@ class FrameGrabber(threading.Thread):
 
     def stop(self):
         self.running = False
+        if hasattr(self, 'cap') and self.cap is not None:
+            self.cap.release()
 
 
 def draw_hud(frame, url, fps, connected, detected_faces):
