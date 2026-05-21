@@ -9,6 +9,7 @@ import threading
 import numpy as np
 import requests
 from typing import Optional, List, Dict
+from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 
 from fastapi import FastAPI, Header, Query, HTTPException, BackgroundTasks
@@ -89,6 +90,7 @@ SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.35"))
 AI_FPS = float(os.getenv("AI_FPS", "3.0"))
 OPENCV_VIEWER_FPS = float(os.getenv("OPENCV_VIEWER_FPS", "15.0"))
 ATTENDANCE_COOLDOWN_S = float(os.getenv("ATTENDANCE_COOLDOWN_SECONDS", "60.0"))
+BODY_PERSISTENCE_ENABLED = os.getenv("BODY_PERSISTENCE_ENABLED", "0").strip() != "0"
 
 FALLBACK_CAMERAS = {
     "entry_cam": "rtsp://admin:Nokia%4012@10.81.200.21:554/Streaming/Channels/102",
@@ -112,13 +114,16 @@ def init_models():
             return
         logger.info("Initializing Face Detection & Embedding models on GPU...")
         from app.vision.insightface_models import FaceDetector, FaceEmbedder
-        from app.vision.body_detector import UniversalBodyDetector
         model_name = os.getenv("INSIGHTFACE_MODEL", "buffalo_m")
         det_model_name = os.getenv("AI_DETECTOR_MODEL", "buffalo_sc")
         detector = FaceDetector(model_name=det_model_name, use_gpu=True)
         embedder = FaceEmbedder(model_name=model_name, use_gpu=True)
-        body_detector = UniversalBodyDetector()
-        logger.info("InsightFace GPU Models & Body Detector initialized successfully.")
+        if BODY_PERSISTENCE_ENABLED:
+            from app.vision.body_detector import UniversalBodyDetector
+            body_detector = UniversalBodyDetector()
+            logger.info("InsightFace GPU Models & Body Detector initialized successfully.")
+        else:
+            logger.info("InsightFace GPU Models initialized successfully. (Body Detector Disabled)")
 
 def get_l2_norm(emb):
     norm = np.linalg.norm(emb)
@@ -197,20 +202,30 @@ class LiteCameraStream:
     def _run_ingest(self):
         logger.info(f"[INGEST] Dedicated ingestion loop started for camera: {self.camera_id}")
         cap = open_capture_with_fallback(self.rtsp_url)
+        last_frame_time = time.time()
         
         while not self.stopped:
             if not cap.isOpened():
-                logger.warning(f"[INGEST] RTSP Stream disconnected for {self.camera_id}. Retrying in 2.0s...")
+                logger.warning(f"[INGEST] RTSP Stream not open for {self.camera_id}. Retrying in 2.0s...")
                 time.sleep(2.0)
                 cap = open_capture_with_fallback(self.rtsp_url)
+                last_frame_time = time.time()
                 continue
                 
             ret, frame = cap.read()
             if not ret or frame is None:
-                time.sleep(0.005)
+                if time.time() - last_frame_time > 3.0:
+                    logger.warning(f"[INGEST] RTSP Stream stale for 3.0s on {self.camera_id}. Reopening...")
+                    cap.release()
+                    time.sleep(1.0)
+                    cap = open_capture_with_fallback(self.rtsp_url)
+                    last_frame_time = time.time()
+                else:
+                    time.sleep(0.01)
                 continue
                 
             self.latest_raw_frame = frame
+            last_frame_time = time.time()
             
         cap.release()
         logger.info(f"[INGEST] Ingestion thread stopped for camera: {self.camera_id}")
@@ -271,73 +286,68 @@ class LiteCameraStream:
                     
                 h, w = frame.shape[:2]
                 
-                # 1. Detect human bodies
-                bodies = body_detector.detect(frame)
-                
-                # 2. Update body tracker
-                self.body_tracker.update(bodies)
-                
-                # 3. Detect faces
+                # Detect faces first
                 faces = detector.detect(frame)
                 
-                # 4. Associate detected faces to body tracks
-                for face in faces:
-                    fx1, fy1, fx2, fy2 = [int(v) for v in face.bbox]
-                    fx1 = max(0, min(w - 1, fx1))
-                    fy1 = max(0, min(h - 1, fy1))
-                    fx2 = max(0, min(w, fx2))
-                    fy2 = max(0, min(h, fy2))
-                    face_bbox = (fx1, fy1, fx2, fy2)
+                if BODY_PERSISTENCE_ENABLED:
+                    # 1. Detect human bodies
+                    bodies = body_detector.detect(frame)
                     
-                    # Find matching body track
-                    matched_track = None
-                    for track in self.body_tracker.tracks:
-                        if face_belongs_to_body(face_bbox, track.bbox):
-                            matched_track = track
-                            break
-                            
-                    if matched_track is not None:
-                        # Check if we should re-recognize
-                        if matched_track.should_recognize(now, recheck_interval=self.body_tracker.recheck_interval):
-                            emb = embedder.embed(frame, bbox=face_bbox, kps=face.kps)
-                            
-                            if emb is not None:
-                                with gallery_lock:
-                                    templates = list(gallery_templates)
-                                    
-                                best_idx = -1
-                                max_score = 0.0
-                                for idx, t in enumerate(templates):
-                                    score = float(np.dot(t["embedding"], emb))
-                                    if score > max_score:
-                                        max_score = score
-                                        best_idx = idx
-                                        
-                                if best_idx != -1 and max_score >= SIMILARITY_THRESHOLD:
-                                    best_name = templates[best_idx]["name"]
-                                    matched_emp_id = templates[best_idx]["employee_id"]
-                                    best_score = max_score
-                                    
-                                    # Update the track details only upon successful recognition match
-                                    matched_track.name = best_name
-                                    matched_track.emp_id = matched_emp_id
-                                    matched_track.score = best_score
-                                    
-                                    # Determine authorization status
-                                    is_authorized = True
-                                    has_auth_list = len(self.authorized_employee_ids) > 0
-                                    if has_auth_list and matched_emp_id not in self.authorized_employee_ids:
-                                        is_authorized = False
-                                    matched_track.is_authorized = is_authorized
-                                    
-                            # Update the last checked timestamp
-                            matched_track.last_recognize_time = now
-                            
-                        # Trigger Non-Blocking Attendance Log if identified and authorized
-                        if matched_track.emp_id and matched_track.is_authorized:
-                            self._trigger_attendance(matched_track.emp_id, matched_track.score)
+                    # 2. Update body tracker
+                    self.body_tracker.update(bodies)
+                    
+                    # 3. Associate detected faces to body tracks
+                    for face in faces:
+                        fx1, fy1, fx2, fy2 = [int(v) for v in face.bbox]
+                        fx1 = max(0, min(w - 1, fx1))
+                        fy1 = max(0, min(h - 1, fy1))
+                        fx2 = max(0, min(w, fx2))
+                        fy2 = max(0, min(h, fy2))
+                        face_bbox = (fx1, fy1, fx2, fy2)
+                        
+                        # Find matching body track
+                        matched_track = None
+                        for track in self.body_tracker.tracks:
+                            if face_belongs_to_body(face_bbox, track.bbox):
+                                matched_track = track
+                                break
+                                
+                        if matched_track is not None:
+                            self._process_recognition(frame, face, face_bbox, matched_track, now)
+                else:
+                    # Face tracking only (saves massive GPU/CPU resources!)
+                    from app.vision.body_detector import BodyDetection
+                    face_dets = []
+                    for face in faces:
+                        fx1, fy1, fx2, fy2 = [int(v) for v in face.bbox]
+                        fx1 = max(0, min(w - 1, fx1))
+                        fy1 = max(0, min(h - 1, fy1))
+                        fx2 = max(0, min(w, fx2))
+                        fy2 = max(0, min(h, fy2))
+                        face_dets.append(BodyDetection(bbox=(fx1, fy1, fx2, fy2), conf=face.det_score))
+                        
+                    # Update tracker with face bounding boxes
+                    self.body_tracker.update(face_dets)
+                    
+                    # Associate detected faces to face tracks using IoU
+                    for face in faces:
+                        fx1, fy1, fx2, fy2 = [int(v) for v in face.bbox]
+                        fx1 = max(0, min(w - 1, fx1))
+                        fy1 = max(0, min(h - 1, fy1))
+                        fx2 = max(0, min(w, fx2))
+                        fy2 = max(0, min(h, fy2))
+                        face_bbox = (fx1, fy1, fx2, fy2)
+                        
+                        matched_track = None
+                        for track in self.body_tracker.tracks:
+                            if compute_iou(face_bbox, track.bbox) > 0.4:
+                                matched_track = track
+                                break
+                                
+                        if matched_track is not None:
+                            self._process_recognition(frame, face, face_bbox, matched_track, now)
 
-                # 5. Draw visual annotations on the body tracks if viewer is active
+                # 5. Draw visual annotations on the tracks if viewer is active
                 if annotated is not None:
                     for track in self.body_tracker.tracks:
                         bx1, by1, bx2, by2 = track.bbox
@@ -354,7 +364,7 @@ class LiteCameraStream:
                             color = (180, 190, 30) # Blue-Green/Teal BGR: (180, 190, 30)
                             label = "Unknown"
                             
-                        # Draw slate background & text plate above the head/body (Polygons and boxes are omitted for maximum Jetson Nano performance)
+                        # Draw slate background & text plate above the track box
                         label_sz, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_DUPLEX, 0.55, 1)
                         y_top = max(by1 - label_sz[1] - 12, 0)
                         bg_color = (28, 28, 28)
@@ -368,6 +378,47 @@ class LiteCameraStream:
             time.sleep(0.002) # Yield CPU
             
         logger.info(f"[PROCESS] AI thread stopped for camera: {self.camera_id}")
+
+    def _process_recognition(self, frame, face, face_bbox, matched_track, now):
+        # Check if we should re-recognize
+        if matched_track.should_recognize(now, recheck_interval=self.body_tracker.recheck_interval):
+            emb = embedder.embed(frame, bbox=face_bbox, kps=face.kps)
+            
+            if emb is not None:
+                with gallery_lock:
+                    templates = list(gallery_templates)
+                    
+                best_idx = -1
+                max_score = 0.0
+                for idx, t in enumerate(templates):
+                    score = float(np.dot(t["embedding"], emb))
+                    if score > max_score:
+                        max_score = score
+                        best_idx = idx
+                        
+                if best_idx != -1 and max_score >= SIMILARITY_THRESHOLD:
+                    best_name = templates[best_idx]["name"]
+                    matched_emp_id = templates[best_idx]["employee_id"]
+                    best_score = max_score
+                    
+                    # Update the track details only upon successful recognition match
+                    matched_track.name = best_name
+                    matched_track.emp_id = matched_emp_id
+                    matched_track.score = best_score
+                    
+                    # Determine authorization status
+                    is_authorized = True
+                    has_auth_list = len(self.authorized_employee_ids) > 0
+                    if has_auth_list and matched_emp_id not in self.authorized_employee_ids:
+                        is_authorized = False
+                    matched_track.is_authorized = is_authorized
+                    
+            # Update the last checked timestamp
+            matched_track.last_recognize_time = now
+            
+        # Trigger Non-Blocking Attendance Log if identified and authorized
+        if matched_track.emp_id and matched_track.is_authorized:
+            self._trigger_attendance(matched_track.emp_id, matched_track.score)
 
     def _trigger_attendance(self, emp_id: str, score: float):
         now = time.time()
@@ -462,8 +513,15 @@ def auto_sleep_inactive_streams():
 
 # threading.Thread(target=auto_sleep_inactive_streams, name="auto-sleep", daemon=True).start()
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.warning("Pre-initializing AI models on startup to prevent GPU context race conditions...")
+    init_models()
+    logger.warning("AI models initialized successfully. Server is ready.")
+    yield
+
 # 6. Unified FastAPI App
-app = FastAPI(title="CCTV Attendance Pro AI Server", version="1.5")
+app = FastAPI(title="CCTV Attendance Pro AI Server", version="1.5", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

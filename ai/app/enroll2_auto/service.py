@@ -9,7 +9,6 @@ from typing import Dict, List, Optional, Tuple, Any
 import numpy as np
 import cv2
 
-from ..runtimes.camera_runtime import CameraRuntime
 from .recognizer_auto import FaceRecognizerAuto as FaceRecognizer
 from ..clients.backend_client import BackendClient
 
@@ -117,7 +116,7 @@ class EnrollmentAutoService2:
 
     def __init__(
         self,
-        camera_rt: CameraRuntime,
+        camera_rt: Any,
         model_name: str = "buffalo_m",
         min_face_size: int = 40,
     ):

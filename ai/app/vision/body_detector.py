@@ -25,16 +25,16 @@ class UniversalBodyDetector:
         self.use_gpu = os.getenv("USE_GPU", "1") == "1"
         self.device = "cuda:0" if self.use_gpu else "cpu"
         
-        # Try loading segmentation model yolov8s-seg.pt first, then yolov8n.pt
+        # Try loading detection model yolov8n.pt first (faster/lighter), then yolov8s-seg.pt
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         seg_path = os.path.join(project_root, "yolov8s-seg.pt")
         yolo_path = os.path.join(project_root, "yolov8n.pt")
         
         target_path = None
-        if os.path.exists(seg_path):
-            target_path = seg_path
-        elif os.path.exists(yolo_path):
+        if os.path.exists(yolo_path):
             target_path = yolo_path
+        elif os.path.exists(seg_path):
+            target_path = seg_path
             
         if target_path:
             try:
