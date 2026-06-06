@@ -5,6 +5,7 @@ import threading
 import cv2
 import numpy as np
 from typing import List, Tuple, Optional
+from app.vision.body_detector import BodyDetection
 
 def compute_iou(box1, box2):
     x1_1, y1_1, x2_1, y2_1 = box1
