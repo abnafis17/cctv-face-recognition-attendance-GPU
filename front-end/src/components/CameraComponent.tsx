@@ -17,12 +17,14 @@ import {
 interface LocalCameraProps {
   userId?: string; // cameraId
   companyId?: string; // for recognition gallery
-  cameraName?: string; // <-- NEW
+  cameraName?: string;
   className?: string;
   isFullscreen?: boolean;
   fillContainer?: boolean;
   onScreenDoubleClick?: () => void;
   onActiveChange?: (active: boolean) => void;
+  active?: boolean;
+  showFooter?: boolean;
 }
 
 const DEFAULT_CAMERA_ID = "cmkdpsq300000j7284bwluxh2";
@@ -36,6 +38,8 @@ const LocalCamera: React.FC<LocalCameraProps> = ({
   fillContainer = false,
   onScreenDoubleClick,
   onActiveChange,
+  active,
+  showFooter = true,
 }) => {
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -120,13 +124,18 @@ const LocalCamera: React.FC<LocalCameraProps> = ({
     prevKeyRef.current = key;
   }, [cameraId, companyId, localActive, stopLocalCamera]);
 
-  const startLocalCamera = async () => {
+  const startLocalCamera = useCallback(async () => {
+    console.log("startLocalCamera execution started: cameraId =", cameraId);
     try {
       setWsError("");
 
       // if already running, restart cleanly
-      if (localActive) stopLocalCamera();
+      if (localStreamRef.current || pcRef.current) {
+        console.log("Webcam stream or RTCPeerConnection already active, stopping first...");
+        stopLocalCamera();
+      }
 
+      console.log("Requesting getUserMedia...");
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           width: { ideal: 1280 },
@@ -134,6 +143,7 @@ const LocalCamera: React.FC<LocalCameraProps> = ({
         },
         audio: false,
       });
+      console.log("getUserMedia successful! Stream ID =", stream.id);
       localStreamRef.current = stream;
 
       if (localVideoRef.current) {
@@ -161,19 +171,23 @@ const LocalCamera: React.FC<LocalCameraProps> = ({
 
       stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
+      console.log("Connecting WebSocket to", wsSignalUrl);
       const ws = new WebSocket(wsSignalUrl);
       wsRef.current = ws;
 
-      ws.onerror = () => {
+      ws.onerror = (e) => {
+        console.error("WebSignal WebSocket error:", e);
         setWsError("WebSocket connection failed");
       };
 
-      ws.onclose = () => {
+      ws.onclose = (e) => {
+        console.log("WebSignal WebSocket closed:", e.code, e.reason);
         // if the user didn't click stop, surface as error
         if (pcRef.current) setWsError("WebSocket connection closed");
       };
 
       ws.onopen = async () => {
+        console.log("WebSignal WebSocket opened. Creating SDP offer...");
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
 
@@ -189,6 +203,7 @@ const LocalCamera: React.FC<LocalCameraProps> = ({
 
       ws.onmessage = async (event) => {
         const data = JSON.parse(event.data);
+        console.log("WebSignal WebSocket message received:", data.type || "ice/sdp");
 
         if (data.sdp && data.cameraId === cameraId) {
           await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
@@ -211,12 +226,26 @@ const LocalCamera: React.FC<LocalCameraProps> = ({
       };
 
       setLocalActive(true);
+      console.log("startLocalCamera completed successfully. localActive set to true.");
     } catch (err) {
-      console.error("Camera start failed", err);
+      console.error("Camera start failed with error:", err);
       setWsError("Camera access failed");
       stopLocalCamera();
     }
-  };
+  }, [cameraId, companyId, stopLocalCamera, wsSignalUrl]);
+
+  useEffect(() => {
+    console.log("LocalCamera active effect triggered:", { active, localActive, cameraId });
+    if (active !== undefined) {
+      if (active && !localActive) {
+        console.log("Calling startLocalCamera from active effect");
+        void startLocalCamera();
+      } else if (!active && localActive) {
+        console.log("Calling stopLocalCamera from active effect");
+        stopLocalCamera();
+      }
+    }
+  }, [active, localActive, startLocalCamera, stopLocalCamera, cameraId]);
 
   const shouldFillFrame = isFullscreen || fillContainer;
 
@@ -281,7 +310,7 @@ const LocalCamera: React.FC<LocalCameraProps> = ({
         ) : null}
       </div>
 
-      {!isFullscreen ? (
+      {!isFullscreen && showFooter ? (
         <div className="flex items-center justify-between gap-2 px-2.5 py-2">
           <div className="min-w-0">
             <div className="truncate text-sm font-semibold text-zinc-900">

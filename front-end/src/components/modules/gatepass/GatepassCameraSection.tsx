@@ -1,6 +1,8 @@
 import { Camera, Clock3, LoaderCircle } from "lucide-react";
 
 import CameraMonitorCard from "@/components/modules/cameras-live/CameraMonitorCard";
+import LocalCamera from "@/components/CameraComponent";
+import { getCompanyIdFromToken } from "@/lib/authStorage";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -47,6 +49,12 @@ export default function GatepassCameraSection({
   onStart,
   onStop,
 }: Props) {
+  const companyId = getCompanyIdFromToken() || undefined;
+  const isLaptop =
+    previewCamera &&
+    (previewCamera.id.startsWith("laptop-") ||
+      previewCamera.id === "cmkdpsq300000j7284bwluxh2");
+
   return (
     <section className="flex min-h-0 min-w-0 flex-col border-b border-zinc-100 xl:overflow-y-auto xl:border-b-0 xl:border-r xl:border-r-zinc-100">
       <div className="flex min-h-0 flex-1 flex-col gap-2.5 p-3">
@@ -82,22 +90,34 @@ export default function GatepassCameraSection({
         <div className="min-h-[220px] w-full flex-1 sm:min-h-[240px] xl:min-h-0">
           {previewCamera ? (
             <div className="h-full w-full overflow-hidden rounded-2xl border border-zinc-100 bg-zinc-50/40 p-1.5">
-              <CameraMonitorCard
-                camera={previewCamera}
-                streamUrl={recognitionStreamUrl}
-                busy={cameraAction !== null}
-                attendanceEnabled={Boolean(previewCamera.attendance)}
-                attendanceBusy={false}
-                showActionMenu={false}
-                showAttendanceActions={false}
-                showFooter={false}
-                fillContainer
-                className="h-full w-full rounded-[14px] border-zinc-200 shadow-none"
-                onStart={() => onStart()}
-                onStop={() => onStop()}
-                onEnableAttendance={async () => undefined}
-                onDisableAttendance={async () => undefined}
-              />
+              {isLaptop ? (
+                <LocalCamera
+                  userId={previewCamera.id}
+                  companyId={companyId}
+                  cameraName={previewCamera.name}
+                  active={previewCamera.isActive}
+                  showFooter={false}
+                  fillContainer
+                  className="h-full w-full rounded-[14px] border-zinc-200 shadow-none"
+                />
+              ) : (
+                <CameraMonitorCard
+                  camera={previewCamera}
+                  streamUrl={recognitionStreamUrl}
+                  busy={cameraAction !== null}
+                  attendanceEnabled={Boolean(previewCamera.attendance)}
+                  attendanceBusy={false}
+                  showActionMenu={false}
+                  showAttendanceActions={false}
+                  showFooter={false}
+                  fillContainer
+                  className="h-full w-full rounded-[14px] border-zinc-200 shadow-none"
+                  onStart={() => onStart()}
+                  onStop={() => onStop()}
+                  onEnableAttendance={async () => undefined}
+                  onDisableAttendance={async () => undefined}
+                />
+              )}
             </div>
           ) : (
             <div className="flex h-full min-h-[220px] w-full items-center justify-center rounded-2xl border border-dashed border-zinc-200 bg-zinc-50/60 px-4 text-center text-sm text-zinc-500 xl:min-h-0">

@@ -17,16 +17,20 @@ import time
 import json
 import logging
 import threading
+import asyncio
 import numpy as np
 import requests
 from typing import Optional, List, Dict
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 
-from fastapi import FastAPI, Header, Query, HTTPException, BackgroundTasks
+from fastapi import FastAPI, Header, Query, HTTPException, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+
+from aiortc import RTCPeerConnection, RTCSessionDescription
+from aiortc.sdp import candidate_from_sdp
 
 # Set low-delay environment variables for OpenCV FFmpeg backend globally
 os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp|fflags;nobuffer|flags;low_delay"
@@ -216,6 +220,10 @@ class LiteCameraStream:
         logger.info(f"Background stream & processing threads started for camera: {camera_id}")
 
     def _run_ingest(self):
+        if self.camera_id.startswith("laptop-") or self.camera_id == "laptop_camera" or self.rtsp_url == "webrtc":
+            logger.info(f"[INGEST] WebRTC/Laptop frame source detected. Skipping RTSP capture for {self.camera_id}")
+            return
+            
         logger.info(f"[INGEST] Dedicated ingestion loop started for camera: {self.camera_id}")
         self.cap = open_capture_with_fallback(self.rtsp_url)
         last_frame_time = time.time()
@@ -500,6 +508,49 @@ class LiteCameraStream:
         if hasattr(self, 'cap') and self.cap is not None:
             self.cap.release()
 
+    def inject_frame(self, frame):
+        if frame is not None and frame.ndim == 3 and frame.shape[2] == 4:
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
+        self.latest_raw_frame = frame
+        
+        now = time.time()
+        is_viewer_active = (now - last_active_times.get(self.camera_id, 0.0) < 5.0)
+        if self.active_viewers > 0 or is_viewer_active:
+            ret_jpeg, jpeg_bytes = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), MJPEG_RAW_JPEG_QUALITY])
+            if ret_jpeg:
+                self.latest_raw_jpeg = jpeg_bytes.tobytes()
+                
+            annotated = frame.copy()
+            with self.body_tracker.lock:
+                tracks_copy = list(self.body_tracker.tracks)
+                
+            for track in tracks_copy:
+                bx1, by1, bx2, by2 = track.bbox
+                if track.name != "Unknown":
+                    if track.is_authorized:
+                        color = (220, 180, 0)
+                        label = f"{track.name} ({track.score:.2f})"
+                    else:
+                        color = (60, 60, 240)
+                        label = f"Unauthorized: {track.name}"
+                else:
+                    color = (180, 190, 30)
+                    label = "Unknown"
+                    
+                draw_polygon_body_bbox(annotated, track.bbox, color, 1)
+                
+                label_sz, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_DUPLEX, 0.55, 1)
+                y_top = max(by1 - label_sz[1] - 12, 0)
+                bg_color = (28, 28, 28)
+                
+                cv2.rectangle(annotated, (bx1, y_top), (bx1 + label_sz[0] + 12, y_top + label_sz[1] + 12), bg_color, cv2.FILLED)
+                cv2.rectangle(annotated, (bx1, y_top), (bx1 + label_sz[0] + 12, y_top + label_sz[1] + 12), color, 1)
+                cv2.putText(annotated, label, (bx1 + 6, y_top + label_sz[1] + 6), cv2.FONT_HERSHEY_DUPLEX, 0.55, (255, 255, 255), 1, cv2.LINE_AA)
+                
+            ret_jpeg, jpeg_bytes = cv2.imencode(".jpg", annotated, [int(cv2.IMWRITE_JPEG_QUALITY), MJPEG_RECOGNITION_JPEG_QUALITY])
+            if ret_jpeg:
+                self.latest_annotated_jpeg = jpeg_bytes.tobytes()
+
 # 5. Global Camera Stream Manager (With Auto-Sleep)
 streams: Dict[str, LiteCameraStream] = {}
 streams_lock = threading.Lock()
@@ -583,6 +634,134 @@ def make_dark_placeholder(name: str) -> bytes:
     cv2.putText(frame, "Connecting to camera stream...", (40, 255), cv2.FONT_HERSHEY_DUPLEX, 0.5, (0, 165, 255), 1, cv2.LINE_AA)
     ret, jpeg = cv2.imencode(".jpg", frame)
     return jpeg.tobytes()
+
+@app.websocket("/webrtc/signal")
+async def webrtc_signal(ws: WebSocket):
+    await ws.accept()
+    logger.warning("[WebRTC] Signal WebSocket connection accepted.")
+
+    pc: Optional[RTCPeerConnection] = None
+    camera_id: Optional[str] = None
+    max_ingest_fps = max(1.0, float(os.getenv("WEBRTC_INGEST_MAX_FPS", "15.0")))
+    ingest_min_interval = 1.0 / max_ingest_fps
+
+    try:
+        while True:
+            try:
+                msg = await ws.receive_json()
+                logger.warning(f"[WebRTC] Signal message received keys: {list(msg.keys())}")
+
+                # Persistence: only update camera_id if present in message
+                msg_cam_id = msg.get("cameraId")
+                if msg_cam_id:
+                    camera_id = str(msg_cam_id)
+
+                if not camera_id:
+                    # Ignore messages that don't tell us which camera they are for
+                    continue
+
+                company_from_msg = str(msg.get("companyId") or msg.get("company_id") or "").strip() or None
+                comp_id = company_from_msg or DEFAULT_COMPANY_ID
+
+                purpose = str(msg.get("purpose") or msg.get("intent") or "").strip().lower()
+                ingest_only = False
+                if purpose in {"enroll", "enrollment", "enroll2", "enroll2-auto", "presence"}:
+                    ingest_only = True
+
+                stream_type = msg.get("type") or msg.get("streamType") or msg.get("mode") or "attendance"
+
+                # Ensure stream is instantiated
+                stream = get_stream_for_camera(camera_id, comp_id, rtsp_url="webrtc")
+                stream.stream_type = stream_type.strip().lower()
+                stream.attendance_enabled = not ingest_only
+
+                # SDP OFFER
+                if "sdp" in msg:
+                    try:
+                        camera_id_for_connection = str(camera_id)
+                        if pc:
+                            try: await pc.close()
+                            except: pass
+
+                        pc = RTCPeerConnection()
+
+                        @pc.on("track")
+                        def on_track(track):
+                            if track.kind != "video": return
+                            logger.warning("[WebRTC] Video track received. Starting track loop...")
+
+                            async def track_loop():
+                                last_t = 0.0
+                                while True:
+                                    try:
+                                        frame = await track.recv()
+                                        now = time.monotonic()
+                                        if (now - last_t) < ingest_min_interval:
+                                            continue
+                                        last_t = now
+
+                                        img = frame.to_ndarray(format="bgr24")
+                                        
+                                        with streams_lock:
+                                            if camera_id_for_connection in streams:
+                                                streams[camera_id_for_connection].inject_frame(img)
+                                    except Exception as e:
+                                        logger.warning(f"[WebRTC] Track loop exited: {e}")
+                                        break
+
+                            asyncio.create_task(track_loop())
+
+                        offer = RTCSessionDescription(sdp=msg["sdp"]["sdp"], type=msg["sdp"]["type"])
+                        await pc.setRemoteDescription(offer)
+                        answer = await pc.createAnswer()
+                        await pc.setLocalDescription(answer)
+
+                        await ws.send_json({
+                            "sdp": {"type": pc.localDescription.type, "sdp": pc.localDescription.sdp},
+                            "cameraId": camera_id
+                        })
+                        logger.warning("[WebRTC] Sent SDP answer to client.")
+                    except Exception as e:
+                        logger.error(f"[WebRTC] SDP Error: {e}", exc_info=True)
+
+                # ICE CANDIDATE
+                elif "ice" in msg and pc:
+                    try:
+                        ice = msg["ice"]
+                        if ice and ice.get("candidate"):
+                            cand_str = ice["candidate"]
+                            if cand_str.startswith("candidate:"):
+                                cand_str = cand_str.split(":", 1)[1]
+                            candidate = candidate_from_sdp(cand_str)
+                            candidate.sdpMid = ice.get("sdpMid")
+                            candidate.sdpMLineIndex = ice.get("sdpMLineIndex")
+                            await pc.addIceCandidate(candidate)
+                    except Exception as e:
+                        logger.warning(f"[WebRTC] ICE Candidate Error: {e}")
+            except WebSocketDisconnect:
+                raise
+            except Exception as e:
+                if "disconnect" in str(e).lower():
+                    logger.warning(f"[WebRTC] Signal WebSocket disconnected during loop: {e}")
+                    break
+                logger.error(f"[WebRTC] Signal Loop Error: {e}")
+                continue
+
+    except WebSocketDisconnect:
+        logger.warning("[WebRTC] Signal WebSocket disconnected.")
+    except Exception as e:
+        logger.error(f"[WebRTC] Fatal WebSocket Connection Error: {e}")
+    finally:
+        if pc:
+            try: await pc.close()
+            except: pass
+        if camera_id:
+            with streams_lock:
+                if camera_id in streams:
+                    streams[camera_id].stop()
+                    del streams[camera_id]
+                    if camera_id in last_active_times:
+                        del last_active_times[camera_id]
 
 @app.get("/health")
 def health():

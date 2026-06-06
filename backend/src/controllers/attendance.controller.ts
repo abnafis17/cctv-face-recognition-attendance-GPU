@@ -164,7 +164,7 @@ export async function createAttendance(req: Request, res: Response) {
       attendanceId: row.id,
       employeeId: employeePublicId(employee),
       timestamp: row.timestamp.toISOString(),
-      cameraId: row.cameraId,
+      cameraId: cam ? (cam.camId || cam.id) : normalizedCameraId,
     });
 
     res.json({
