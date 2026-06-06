@@ -13,6 +13,8 @@ export const API = {
   DAILY_ATTENDANCE_LIST: "/attendance/daily",
 
   UNKNOWN_RECOGNITIONS: "/unknown-recognitions",
+  GATEPASS_TABLE: "/gatepass",
+  GATEPASS_TYPES: "/gatepass/types",
   SETTINGS_RELAY: "/settings/relay",
   SETTINGS_ERP: "/settings/erp",
 };

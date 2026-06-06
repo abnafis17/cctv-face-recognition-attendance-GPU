@@ -203,7 +203,8 @@ class LiteCameraStream:
         
         # Body Tracker
         self.body_tracker = BodyTracker(recheck_interval=4.0)
-        
+        self.attendance_enabled = True
+        self.stream_type = "attendance"
         
         # Start Ingest thread (continuously drains RTSP frames to prevent OpenCV buffer build-up/latency)
         self.ingest_thread = threading.Thread(target=self._run_ingest, name=f"lite-ingest-{camera_id}", daemon=True)
@@ -456,7 +457,7 @@ class LiteCameraStream:
             matched_track.last_recognize_time = now
             
         # Trigger Non-Blocking Attendance Log if identified and authorized
-        if matched_track.emp_id and matched_track.is_authorized:
+        if matched_track.emp_id and matched_track.is_authorized and self.attendance_enabled:
             self._trigger_attendance(matched_track.emp_id, matched_track.score)
 
     def _trigger_attendance(self, emp_id: str, score: float):
@@ -482,7 +483,7 @@ class LiteCameraStream:
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "cameraId": self.camera_id,
             "confidence": score,
-            "type": "attendance"
+            "type": getattr(self, "stream_type", "attendance")
         }
         try:
             logger.info(f"[ATTENDANCE] Pushing event to backend for employee: {emp_id} (conf: {score:.2f})")
@@ -595,12 +596,15 @@ def start_camera(
     ai_fps: Optional[float] = None,
     company_id: Optional[str] = Query(default=None, alias="companyId"),
     x_company_id: Optional[str] = Header(default=None, alias="x-company-id"),
+    stream_type: Optional[str] = Query(default=None, alias="stream_type"),
 ):
     comp_id = company_id or x_company_id or DEFAULT_COMPANY_ID
-    logger.info(f"Received start camera request: {camera_id} -> {rtsp_url}")
+    logger.info(f"Received start camera request: {camera_id} -> {rtsp_url} (type: {stream_type})")
     
     # Initialize the camera background stream immediately
     stream = get_stream_for_camera(camera_id, comp_id, rtsp_url=rtsp_url)
+    if stream_type:
+        stream.stream_type = stream_type.strip().lower()
     
     return {
         "ok": True,
@@ -866,6 +870,34 @@ def camera_enroll2_auto_stream(camera_id: str):
             "Connection": "keep-alive"
         }
     )
+
+@app.post("/attendance/enable")
+def enable_attendance(camera_id: str):
+    logger.info(f"Enabling attendance for camera {camera_id}")
+    with streams_lock:
+        if camera_id in streams:
+            streams[camera_id].attendance_enabled = True
+            return {"ok": True, "enabled": True, "camera_id": camera_id}
+        else:
+            return {"ok": False, "error": f"Camera stream {camera_id} not running", "camera_id": camera_id}
+
+@app.post("/attendance/disable")
+def disable_attendance(camera_id: str):
+    logger.info(f"Disabling attendance for camera {camera_id}")
+    with streams_lock:
+        if camera_id in streams:
+            streams[camera_id].attendance_enabled = False
+            return {"ok": True, "enabled": False, "camera_id": camera_id}
+        else:
+            return {"ok": False, "error": f"Camera stream {camera_id} not running", "camera_id": camera_id}
+
+@app.get("/attendance/enabled")
+def get_attendance_enabled(camera_id: str):
+    with streams_lock:
+        if camera_id in streams:
+            return {"ok": True, "enabled": streams[camera_id].attendance_enabled, "camera_id": camera_id}
+        else:
+            return {"ok": True, "enabled": False, "camera_id": camera_id}
 
 if __name__ == "__main__":
     import uvicorn

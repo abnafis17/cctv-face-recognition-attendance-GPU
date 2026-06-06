@@ -13,6 +13,7 @@ import { authRouter } from "./auth.routes";
 import { requireCompany } from "../middleware/company";
 import settingsRoutes from "./settings.routes";
 import unknownRecognitionRoutes from "./unknownRecognition.routes";
+import gatepassRoutes from "./gatepass.routes";
 
 const router = Router();
 
@@ -41,5 +42,6 @@ router.use("/enroll2-auto", requireCompany, enroll2AutoRoutes);
 // settings
 router.use("/settings", requireCompany, settingsRoutes);
 router.use("/unknown-recognitions", requireCompany, unknownRecognitionRoutes);
+router.use("/gatepass", requireCompany, gatepassRoutes);
 
 export default router;

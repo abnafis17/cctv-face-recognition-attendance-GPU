@@ -18,7 +18,14 @@ export function clampInt(value: number, min: number, max: number) {
 }
 
 function normalizeCameraTask(value: unknown): string {
-  return DEFAULT_CAMERA_TASK;
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_");
+
+  if (!normalized) return DEFAULT_CAMERA_TASK;
+  if (normalized === "gatepass") return "gate_pass";
+  return normalized;
 }
 
 export function normalizeCameraRow(input: Camera): CameraRow {
