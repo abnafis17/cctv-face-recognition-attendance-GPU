@@ -415,15 +415,29 @@ export function useGatepassPage() {
 
   const recognizedRows = useMemo<RecognizedGatepassRow[]>(
     () =>
-      recognizedPeople.map((person) => ({
-        ...person,
-        latestRecord:
-          latestRecordByEmployeeKey.get(person.employee.employeeCode) ??
-          latestRecordByEmployeeKey.get(person.employee.id) ??
-          null,
-      })),
+      recognizedPeople
+        .map((person) => ({
+          ...person,
+          latestRecord:
+            latestRecordByEmployeeKey.get(person.employee.employeeCode) ??
+            latestRecordByEmployeeKey.get(person.employee.id) ??
+            null,
+        }))
+        .filter((row) => !hasOpenOutRecord(row.latestRecord)),
     [latestRecordByEmployeeKey, recognizedPeople],
   );
+
+  useEffect(() => {
+    console.log(
+      "[Gatepass Frontend] Recognised persons list:",
+      recognizedRows.map((r) => ({
+        employeeId: r.employee.id,
+        employeeCode: r.employee.employeeCode,
+        name: r.employee.name,
+        timestamp: r.recognizedAt.toISOString(),
+      }))
+    );
+  }, [recognizedRows]);
 
   const historyRows = useMemo(
     () => [...historyRecords].reverse(),
@@ -1095,6 +1109,8 @@ export function useGatepassPage() {
     returnSyncSignatureRef.current = "";
   }, []);
 
+
+
   const resetGatepassForm = useCallback(() => {
     setLeaveTypeId("");
     setDestination("");
@@ -1147,7 +1163,6 @@ export function useGatepassPage() {
         // best effort
       }
 
-      clearRecognizedList();
       resetGatepassForm();
 
       try {
@@ -1245,7 +1260,6 @@ export function useGatepassPage() {
     try {
       await stopCurrentCamera(targetId, true);
       setRecognitionActive(false);
-      clearRecognizedList();
       resetGatepassForm();
       toast.success("Gate pass camera stopped");
     } catch (error: unknown) {

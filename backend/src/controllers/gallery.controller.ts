@@ -2,7 +2,7 @@ import { Request, Response } from "express";
 import { prisma } from "../prisma";
 import {
   employeePublicId,
-  getOrCreateEmployeeByAnyId,
+  findEmployeeByAnyId,
   normalizeEmployeeIdentifier,
 } from "../utils/employee";
 
@@ -47,9 +47,10 @@ export async function upsertTemplate(req: Request, res: Response) {
       });
     }
 
-    const employee = await getOrCreateEmployeeByAnyId(identifier, companyId, {
-      nameIfCreate: "Unknown",
-    });
+    const employee = await findEmployeeByAnyId(identifier, companyId);
+    if (!employee) {
+      return res.status(404).json({ error: "Employee not found" });
+    }
 
     const tpl = await prisma.faceTemplate.upsert({
       where: { employeeId_angle: { employeeId: employee.id, angle } },

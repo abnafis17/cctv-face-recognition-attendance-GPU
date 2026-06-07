@@ -101,8 +101,12 @@ export function useMjpegStream({
   }, []);
 
   // When disabled, clear any pending retries to avoid background timers updating state.
+  // When enabled, increment streamAttempt to bypass any browser/HTTP caching for a clean start.
   useEffect(() => {
-    if (enabled) return;
+    if (enabled) {
+      setStreamAttempt((a) => a + 1);
+      return;
+    }
     if (streamRetryTimerRef.current) window.clearTimeout(streamRetryTimerRef.current);
     streamRetryTimerRef.current = null;
     streamRetryCountRef.current = 0;

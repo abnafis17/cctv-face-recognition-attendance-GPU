@@ -29,7 +29,10 @@ from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+# pyrefly: ignore [missing-import]
 from aiortc import RTCPeerConnection, RTCSessionDescription
+
+# pyrefly: ignore [missing-import]
 from aiortc.sdp import candidate_from_sdp
 
 # Set low-delay environment variables for OpenCV FFmpeg backend globally
@@ -201,6 +204,10 @@ class LiteCameraStream:
         # Track cooldowns for marking attendance
         self.attendance_cooldowns = {} # emp_id -> last_log_time
         
+        # Track recognized persons list
+        self.recognized_persons = []
+        self.last_logged_recognized_str = ""
+        
         # Camera Authorized Employee cache
         self.authorized_employee_ids = set()
         self.last_authorized_fetch = 0.0
@@ -337,15 +344,21 @@ class LiteCameraStream:
         last_ai_time = 0.0
         ai_period = 1.0 / AI_FPS
         last_gallery_sync = time.time()
+        last_gp_sync = 0.0
         
         while not self.stopped:
+            now = time.time()
+            
+            # Periodically sync gatepass status to console (every 2s) in a non-blocking thread
+            if now - last_gp_sync >= 2.0:
+                last_gp_sync = now
+                threading.Thread(target=self._sync_and_log_recognized_persons, daemon=True).start()
+                
             frame = self.latest_raw_frame
             if frame is None:
                 time.sleep(0.01)
                 continue
                 
-            now = time.time()
-            
             # Periodically sync gallery templates (every 60s) in a non-blocking background thread
             if now - last_gallery_sync >= 60.0:
                 last_gallery_sync = now
@@ -468,6 +481,57 @@ class LiteCameraStream:
         if matched_track.emp_id and matched_track.is_authorized and self.attendance_enabled:
             self._trigger_attendance(matched_track.emp_id, matched_track.score)
 
+
+
+    def _sync_and_log_recognized_persons(self):
+        try:
+            url = f"{BACKEND_BASE_URL}/api/v1/gatepass"
+            headers = {
+                "x-company-id": self.company_id
+            }
+            res = requests.get(url, headers=headers, timeout=2.0)
+            if res.status_code == 200:
+                gp_records = res.json()
+                checked_out_ids = set()
+                for gp in gp_records:
+                    status = gp.get("status")
+                    emp_pk = gp.get("employeePkId")
+                    emp_code = gp.get("employeeId")
+                    if status == "out":
+                        if emp_pk: checked_out_ids.add(emp_pk)
+                        if emp_code: checked_out_ids.add(emp_code)
+                
+                # Filter recognized_persons
+                filtered = []
+                for p in self.recognized_persons:
+                    emp_id = p["employeeId"]
+                    if emp_id not in checked_out_ids:
+                        filtered.append(p)
+                
+                self.recognized_persons = filtered
+                
+                # Look up names from gallery_templates
+                with gallery_lock:
+                    id_to_name = {t["employee_id"]: t["name"] for t in gallery_templates}
+                
+                output_list = []
+                for p in self.recognized_persons:
+                    emp_id = p["employeeId"]
+                    name = id_to_name.get(emp_id, emp_id)
+                    output_list.append({
+                        "employeeId": emp_id,
+                        "name": name,
+                        "timestamp": p["timestamp"]
+                    })
+                
+                # Log list to console if changed
+                current_str = str(output_list)
+                if current_str != getattr(self, "last_logged_recognized_str", ""):
+                    self.last_logged_recognized_str = current_str
+                    logger.warning(f"[AI Server] Recognised persons list: {output_list}")
+        except Exception as e:
+            pass
+
     def _trigger_attendance(self, emp_id: str, score: float):
         now = time.time()
         last_logged = self.attendance_cooldowns.get(emp_id, 0.0)
@@ -498,6 +562,20 @@ class LiteCameraStream:
             res = requests.post(url, headers=headers, json=payload, timeout=3.0)
             if res.status_code == 200 or res.status_code == 201:
                 logger.info(f"[ATTENDANCE] Logged successfully: {emp_id}")
+                
+                # Update recognized_persons list
+                emp_exists = False
+                for item in self.recognized_persons:
+                    if item["employeeId"] == emp_id:
+                        item["timestamp"] = payload["timestamp"]
+                        emp_exists = True
+                        break
+                if not emp_exists:
+                    self.recognized_persons.append({
+                        "employeeId": emp_id,
+                        "timestamp": payload["timestamp"]
+                    })
+                self._sync_and_log_recognized_persons()
             else:
                 logger.error(f"[ATTENDANCE] Failed to log. Code: {res.status_code}, Msg: {res.text}")
         except Exception as e:
@@ -507,6 +585,10 @@ class LiteCameraStream:
         self.stopped = True
         if hasattr(self, 'cap') and self.cap is not None:
             self.cap.release()
+            self.cap = None
+        self.latest_raw_frame = None
+        self.latest_raw_jpeg = None
+        self.latest_annotated_jpeg = None
 
     def inject_frame(self, frame):
         if frame is not None and frame.ndim == 3 and frame.shape[2] == 4:
@@ -584,7 +666,16 @@ def get_stream_for_camera(camera_id: str, company_id: str, rtsp_url: Optional[st
     with streams_lock:
         last_active_times[camera_id] = time.time()
         if camera_id not in streams or streams[camera_id].stopped:
-            streams[camera_id] = LiteCameraStream(camera_id, rtsp_url, company_id)
+            old_persons = []
+            old_logged_str = ""
+            if camera_id in streams:
+                old_persons = getattr(streams[camera_id], "recognized_persons", [])
+                old_logged_str = getattr(streams[camera_id], "last_logged_recognized_str", "")
+            
+            new_stream = LiteCameraStream(camera_id, rtsp_url, company_id)
+            new_stream.recognized_persons = old_persons
+            new_stream.last_logged_recognized_str = old_logged_str
+            streams[camera_id] = new_stream
         return streams[camera_id]
 
 # Auto-sleep background cleaner (Stops streams inactive for more than 60 seconds)
@@ -840,6 +931,9 @@ def mjpeg_recognition_generator(camera_id: str, company_id: str):
     stream.active_viewers += 1
     try:
         while True:
+            if stream.stopped:
+                logger.info(f"Stream stopped, exiting recognition generator: {camera_id}")
+                break
             t_start = time.time()
             last_active_times[camera_id] = t_start
             
@@ -872,6 +966,9 @@ def mjpeg_raw_generator(camera_id: str, company_id: str):
     stream.active_viewers += 1
     try:
         while True:
+            if stream.stopped:
+                logger.info(f"Stream stopped, exiting raw generator: {camera_id}")
+                break
             t_start = time.time()
             last_active_times[camera_id] = t_start
             
@@ -944,6 +1041,9 @@ def mjpeg_enroll_generator(camera_id: str):
         enroller = get_enroller2_auto()
         
         while True:
+            if stream.stopped:
+                logger.info(f"Stream stopped, exiting enroll generator: {camera_id}")
+                break
             t_start = time.time()
             last_active_times[camera_id] = t_start
             

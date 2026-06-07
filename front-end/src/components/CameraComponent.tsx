@@ -47,6 +47,7 @@ const LocalCamera: React.FC<LocalCameraProps> = ({
   const pcRef = useRef<RTCPeerConnection | null>(null);
 
   const [localActive, setLocalActive] = useState(false);
+  const [localActiveCount, setLocalActiveCount] = useState(0);
   const [wsError, setWsError] = useState<string>("");
   const [actionsOpen, setActionsOpen] = useState(false);
 
@@ -67,11 +68,11 @@ const LocalCamera: React.FC<LocalCameraProps> = ({
   const streamType = "attendance";
 
   const recUrl = useMemo(() => {
-    // camera name + id must reflect current selection
+    const sep = recQuery.includes("?") ? "&" : "?";
     return `${AI_HOST}/camera/recognition/stream/${encodeURIComponent(
       cameraId,
-    )}/${encodeURIComponent(cameraName)}${recQuery}`;
-  }, [cameraId, cameraName, recQuery]);
+    )}/${encodeURIComponent(cameraName)}${recQuery}${sep}t=${localActiveCount}`;
+  }, [cameraId, cameraName, recQuery, localActiveCount]);
 
   const wsSignalUrl = useMemo(() => {
     // keep WS host consistent with AI_HOST (avoid hard-coding)
@@ -128,6 +129,7 @@ const LocalCamera: React.FC<LocalCameraProps> = ({
     console.log("startLocalCamera execution started: cameraId =", cameraId);
     try {
       setWsError("");
+      setLocalActiveCount((c) => c + 1);
 
       // if already running, restart cleanly
       if (localStreamRef.current || pcRef.current) {
