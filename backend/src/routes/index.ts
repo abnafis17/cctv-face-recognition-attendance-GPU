@@ -16,6 +16,7 @@ import headcountRoutes from "./headcount.routes";
 import settingsRoutes from "./settings.routes";
 import unknownRecognitionRoutes from "./unknownRecognition.routes";
 import gatepassRoutes from "./gatepass.routes";
+import visitorRoutes from "./visitors.routes";
 
 const router = Router();
 
@@ -49,5 +50,6 @@ router.use("/headcount", requireCompany, headcountRoutes);
 router.use("/settings", requireCompany, settingsRoutes);
 router.use("/unknown-recognitions", requireCompany, unknownRecognitionRoutes);
 router.use("/gatepass", requireCompany, gatepassRoutes);
+router.use("/visitors", requireCompany, visitorRoutes);
 
 export default router;

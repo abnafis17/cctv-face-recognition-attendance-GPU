@@ -39,6 +39,7 @@ model Company {
   headcounts Headcount[]
   otRequisitions OtRequisition[]
   gatepassRows    GatepassTable[]
+  visitors        Visitor[]
 }
 
 model User {
@@ -481,4 +482,37 @@ model GatepassTable {
   @@index([requestCameraId])
   @@index([returnCameraId])
   @@map("GatepassTable")
+}
+
+model Visitor {
+  id                String   @id @default(cuid())
+  companyId         String
+  company           Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  visitorName       String
+  contactNumber     String
+  emailAddress      String?
+  companyAddress    String
+  visitorType       String
+  purposeOfVisit    String
+  department        String
+  hostEmployeeId    String
+  idProofType       String
+  idProofNumber     String?
+  vehicleNumber     String?
+  extraGuest        String?
+  visitorPassNo     String
+  dateOfVisit       String
+  timeIn            String
+  entryAuthorizedBy String?
+  remarks           String?
+  visitorPhoto      String?  @db.Text
+
+  status            String   @default("checked_in")
+  timeOut           String?
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([contactNumber])
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
@@ -37,16 +37,19 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import toast from "react-hot-toast";
+import { useErpEmployees } from "@/hooks/useErpEmployees";
+import { SearchableSelect } from "@/components/reusable/SearchableSelect";
+import axiosInstance from "@/config/axiosInstance";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import Webcam from "react-webcam";
 
 const visitorTypes = ["Guest", "Contractor", "Official", "Interviewee", "Other"];
 const purposes = ["Meeting", "Interview", "Delivery", "Audit", "Maintenance", "Other"];
-const departments = ["HR & Admin", "Information Technology", "Accounts & Finance", "Production", "Quality Assurance", "Store & Logistics"];
-const employees = [
-  { id: "emp1", name: "Jane Doe (HR Manager)" },
-  { id: "emp2", name: "John Smith (IT Specialist)" },
-  { id: "emp3", name: "Alice Johnson (Finance Head)" },
-  { id: "emp4", name: "Bob Brown (Production Supervisor)" },
-];
 const idProofTypes = ["NID", "Passport", "Driving License", "Employee Card", "Other"];
 const extraGuestsOptions = Array.from({ length: 15 }, (_, i) => String(i + 1));
 
@@ -54,6 +57,18 @@ export default function AddVisitorPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [isLookupEmployee, setIsLookupEmployee] = useState(false);
+  const [lookupPhone, setLookupPhone] = useState("");
+  const [isPhoneReadOnly, setIsPhoneReadOnly] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const webcamRef = useRef<Webcam>(null);
+
+  const [capturedFile, setCapturedFile] = useState<File | null>(null);
+  const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   const today = new Date();
   const dateString = today.toLocaleDateString("en-GB").split("/").reverse().join("-"); // YYYY-MM-DD
@@ -83,6 +98,60 @@ export default function AddVisitorPage() {
     },
   });
 
+  const {
+    employees: erpEmployees,
+    loading: erpLoading,
+  } = useErpEmployees({ debounceMs: 350, initialSearch: "", autoFetch: true });
+
+  const derivedDepartments = useMemo(() => {
+    const depts = erpEmployees
+      .map((e) => e.department)
+      .filter(Boolean)
+      .map((d) => d.trim());
+    return Array.from(new Set(depts)).sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: "base" })
+    );
+  }, [erpEmployees]);
+
+  const [hostSearch, setHostSearch] = useState("");
+
+  const selectedDepartment = form.watch("department");
+  const selectedHostId = form.watch("hostEmployeeId");
+
+  useEffect(() => {
+    if (!selectedDepartment || !selectedHostId) return;
+    const currentHost = erpEmployees.find((e) => e.employeeId === selectedHostId);
+    if (!currentHost || currentHost.department.toLowerCase() !== selectedDepartment.toLowerCase()) {
+      form.setValue("hostEmployeeId", "");
+    }
+  }, [selectedDepartment, selectedHostId, erpEmployees, form]);
+
+  const filteredHostEmployees = useMemo(() => {
+    let list = erpEmployees;
+    if (selectedDepartment) {
+      list = list.filter(
+        (e) => e.department.toLowerCase() === selectedDepartment.toLowerCase()
+      );
+    }
+    const q = hostSearch.trim().toLowerCase();
+    if (q) {
+      list = list.filter(
+        (e) =>
+          e.employeeName.toLowerCase().includes(q) ||
+          e.employeeId.toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [erpEmployees, selectedDepartment, hostSearch]);
+
+  const hostOptions = useMemo(() => {
+    return filteredHostEmployees.map((e) => ({
+      value: e.employeeId,
+      label: `${e.employeeName} (${e.employeeId})`,
+      keywords: `${e.employeeName} ${e.employeeId}`,
+    }));
+  }, [filteredHostEmployees]);
+
   const extraGuestValue = form.watch("extraGuest");
   const extraGuestsCount = extraGuestValue ? parseInt(extraGuestValue, 10) : 0;
 
@@ -90,28 +159,129 @@ export default function AddVisitorPage() {
     ? `e.g. PASS123, ${Array.from({ length: extraGuestsCount }, (_, i) => `PASS${124 + i}`).join(", ")} (1 self + ${extraGuestsCount} extra guest${extraGuestsCount > 1 ? "s" : ""})`
     : "Pass / badge number";
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setCapturedFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64 = reader.result as string;
+        setPhotoPreview(base64);
+        form.setValue("visitorPhoto", base64);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleLookup = async () => {
+    const queryVal = lookupPhone.trim();
+    if (!queryVal) {
+      toast.error(isLookupEmployee ? "Please enter an employee ID to search" : "Please enter a phone number to search");
+      return;
+    }
+    if (!isLookupEmployee && !/^(\+88)?01[3-9]\d{8}$/.test(queryVal)) {
+      toast.error("Invalid mobile number format");
+      return;
+    }
+
+    const toastId = toast.loading("Searching for visitor/employee record...");
+    try {
+      const response = await axiosInstance.get(`/visitors/lookup`, {
+        params: { phone: queryVal, isEmployee: isLookupEmployee },
+      });
+      toast.dismiss(toastId);
+
+      if (response.data?.found && response.data?.data) {
+        const row = response.data.data;
+        form.setValue("visitorName", row.visitorName || "");
+        
+        // Ensure contactNumber is only pre-filled if it is a valid mobile format, otherwise leave empty for user entry
+        let returnedContact = row.contactNumber || "";
+        if (!isLookupEmployee && !returnedContact) {
+          returnedContact = queryVal;
+        }
+        const isValidMobile = /^(\+88)?01[3-9]\d{8}$/.test(returnedContact);
+        form.setValue("contactNumber", isValidMobile ? returnedContact : "");
+
+        form.setValue("emailAddress", row.emailAddress || "");
+        form.setValue("companyAddress", row.companyAddress || "");
+        if (row.visitorPhoto) {
+          form.setValue("visitorPhoto", row.visitorPhoto);
+          setPhotoPreview(row.visitorPhoto);
+          setCapturedFile(null);
+        } else {
+          form.setValue("visitorPhoto", "");
+          setPhotoPreview(null);
+          setCapturedFile(null);
+        }
+        setIsPhoneReadOnly(true);
+        toast.success(`${response.data.type === "employee" ? "Employee" : "Visitor"} record loaded successfully!`);
+      } else {
+        toast.error(isLookupEmployee ? "No employee record found matching this ID" : "No visitor record found matching this phone number");
+      }
+    } catch (error: any) {
+      toast.dismiss(toastId);
+      toast.error(error?.response?.data?.error || "Lookup search failed");
+    }
+  };
+
+  const capturePhoto = useCallback(async () => {
+    const imageSrc = webcamRef.current?.getScreenshot();
+    if (imageSrc) {
+      setPhotoPreview(imageSrc);
+      try {
+        const response = await fetch(imageSrc);
+        const blob = await response.blob();
+        const file = new File([blob], "visitor_photo.jpg", { type: "image/jpeg" });
+        setCapturedFile(file);
+        form.setValue("visitorPhoto", imageSrc);
+        setIsCameraModalOpen(false);
+        toast.success("Photo captured successfully!");
+      } catch (error) {
+        console.error("Failed to parse captured photo", error);
+        toast.error("Failed to parse captured photo");
+      }
+    } else {
+      toast.error("Failed to capture screenshot from camera");
+    }
+  }, [webcamRef, form]);
+
   const onSubmit = async (data: VisitorFormValues) => {
     setIsSubmitting(true);
     try {
-      // Form template submission display
-      console.log("Visitor Form Data:", data);
-      toast.success(
-        <div>
-          <span className="font-semibold">Form Validated Successfully!</span>
-          <pre className="mt-1 max-h-40 overflow-y-auto text-[10px] bg-slate-100 p-2 rounded">
-            {JSON.stringify(data, null, 2)}
-          </pre>
-        </div>,
-        { duration: 5000 }
-      );
-    } catch (error) {
-      toast.error("Submission failed");
+      const formData = new FormData();
+      Object.entries(data).forEach(([key, val]) => {
+        if (key === "visitorPhoto") {
+          if (capturedFile) {
+            formData.append("visitorPhoto", capturedFile);
+          } else if (val) {
+            formData.append("visitorPhoto", val);
+          }
+        } else {
+          formData.append(key, val || "");
+        }
+      });
+
+      const response = await axiosInstance.post("/visitors", formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      });
+
+      if (response.data?.ok) {
+        toast.success("Visitor registered successfully!");
+        handleReset(false);
+      } else {
+        toast.error(response.data?.error || "Registration failed");
+      }
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error || "Submission failed");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleReset = () => {
+  const handleReset = (showToast = true) => {
     form.reset({
       visitorName: "",
       contactNumber: "",
@@ -133,11 +303,17 @@ export default function AddVisitorPage() {
       visitorPhoto: "",
     });
     setPhotoPreview(null);
-    toast.success("Form cleared");
+    setLookupPhone("");
+    setCapturedFile(null);
+    setIsCameraModalOpen(false);
+    setIsPhoneReadOnly(false);
+    if (showToast) {
+      toast.success("Form cleared");
+    }
   };
 
   const handleCameraOpen = () => {
-    toast.success("Camera integration triggered (Visual placeholder)");
+    setIsCameraModalOpen(true);
   };
 
   return (
@@ -165,6 +341,13 @@ export default function AddVisitorPage() {
           <div className="space-y-6 lg:col-span-3">
             {/* Quick Lookup Card */}
             <div className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileChange}
+                className="hidden"
+                accept="image/*"
+              />
               <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-[#0c1b33]">
                 <ArrowRightLeft className="h-4 w-4" />
                 Quick Lookup — Returning Visitor
@@ -173,7 +356,9 @@ export default function AddVisitorPage() {
                 <div className="relative flex-1">
                   <Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
                   <Input
-                    placeholder="Enter phone number to search..."
+                    placeholder="Enter phone number or employee id"
+                    value={lookupPhone}
+                    onChange={(e) => setLookupPhone(e.target.value)}
                     className="h-10 pl-10 rounded-xl border-zinc-200 bg-slate-50/50"
                   />
                 </div>
@@ -191,7 +376,7 @@ export default function AddVisitorPage() {
                 </div>
                 <Button
                   type="button"
-                  onClick={() => toast.success(`Searching record (Is Employee: ${isLookupEmployee ? 'Yes' : 'No'})...`)}
+                  onClick={handleLookup}
                   className="h-10 rounded-xl bg-[#0c1b33] px-6 text-white hover:bg-[#11274c] cursor-pointer flex items-center justify-center"
                 >
                   <Search className="mr-2 h-4 w-4" />
@@ -233,7 +418,8 @@ export default function AddVisitorPage() {
                     <Input
                       {...form.register("contactNumber")}
                       placeholder="e.g. 01711234567"
-                      className="h-10 pl-10 rounded-xl border-zinc-200"
+                      className="h-10 pl-10 rounded-xl border-zinc-200 bg-slate-50/50 read-only:bg-zinc-100 read-only:text-zinc-500 read-only:cursor-not-allowed"
+                      readOnly={isPhoneReadOnly}
                     />
                   </div>
                   {form.formState.errors.contactNumber && (
@@ -355,11 +541,21 @@ export default function AddVisitorPage() {
                           <SelectValue placeholder="Select department" />
                         </SelectTrigger>
                         <SelectContent>
-                          {departments.map((d) => (
-                            <SelectItem key={d} value={d}>
-                              {d}
+                          {erpLoading ? (
+                            <SelectItem value="loading-depts" disabled>
+                              Loading departments...
                             </SelectItem>
-                          ))}
+                          ) : derivedDepartments.length === 0 ? (
+                            <SelectItem value="no-depts" disabled>
+                              No departments found
+                            </SelectItem>
+                          ) : (
+                            derivedDepartments.map((d) => (
+                              <SelectItem key={d} value={d}>
+                                {d}
+                              </SelectItem>
+                            ))
+                          )}
                         </SelectContent>
                       </Select>
                     )}
@@ -377,19 +573,19 @@ export default function AddVisitorPage() {
                     control={form.control}
                     name="hostEmployeeId"
                     render={({ field }) => (
-                      <Select value={field.value} onValueChange={field.onChange}>
-                        <SelectTrigger className="relative h-10 w-full rounded-xl border-zinc-200 bg-white pl-10">
-                          <UserCheck className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
-                          <SelectValue placeholder="Select host / employee" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {employees.map((emp) => (
-                            <SelectItem key={emp.id} value={emp.id}>
-                              {emp.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <div className="relative w-full">
+                        <UserCheck className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+                        <SearchableSelect
+                          value={field.value}
+                          onChange={field.onChange}
+                          items={hostOptions}
+                          placeholder="Select host / employee"
+                          searchPlaceholder="Search name or ID..."
+                          loading={erpLoading}
+                          onSearchChange={(q) => setHostSearch(q)}
+                          className="h-10 rounded-xl border-zinc-200 bg-white pl-10 text-left font-normal shadow-none hover:bg-zinc-50"
+                        />
+                      </div>
                     )}
                   />
                   {form.formState.errors.hostEmployeeId && (
@@ -641,7 +837,7 @@ export default function AddVisitorPage() {
           <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
             <Button
               type="button"
-              onClick={handleReset}
+              onClick={() => handleReset()}
               className="h-11 rounded-xl border border-zinc-200 bg-white px-5 text-sm font-semibold text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900 flex items-center justify-center gap-2"
             >
               <RotateCcw className="h-4 w-4" />
@@ -658,6 +854,60 @@ export default function AddVisitorPage() {
           </div>
         </div>
       </form>
+
+      {isMounted && isCameraModalOpen && (
+        <Dialog open={isCameraModalOpen} onOpenChange={setIsCameraModalOpen}>
+          <DialogContent className="sm:max-w-md bg-white rounded-2xl border border-zinc-200">
+            <DialogHeader>
+              <DialogTitle className="text-zinc-900">Capture Visitor Photo</DialogTitle>
+            </DialogHeader>
+            <div className="flex flex-col items-center gap-4 py-4">
+              <div className="overflow-hidden rounded-xl border border-zinc-200 bg-zinc-950 aspect-video w-full relative">
+                <Webcam
+                  audio={false}
+                  ref={webcamRef}
+                  screenshotFormat="image/jpeg"
+                  videoConstraints={{
+                    width: 640,
+                    height: 480,
+                    facingMode: "user"
+                  }}
+                  className="h-full w-full object-cover"
+                />
+              </div>
+              <div className="flex justify-between items-center w-full">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCameraModalOpen(false);
+                    fileInputRef.current?.click();
+                  }}
+                  className="text-xs font-semibold text-[#0c1b33] hover:underline cursor-pointer"
+                >
+                  Or Upload File
+                </button>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setIsCameraModalOpen(false)}
+                    className="rounded-xl border-zinc-200 text-zinc-700"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={capturePhoto}
+                    className="rounded-xl bg-[#0c1b33] text-white hover:bg-[#11274c]"
+                  >
+                    Capture Photo
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }
