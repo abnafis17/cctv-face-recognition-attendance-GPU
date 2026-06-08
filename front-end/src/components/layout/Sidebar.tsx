@@ -18,14 +18,32 @@ import {
   Menu,
   X,
   Settings,
+  Home,
+  ChevronDown,
+  ChevronUp,
+  List,
+  BarChart3,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { clearAccessToken, getAccessToken } from "@/lib/authStorage";
 import { cn } from "@/lib/utils";
 import axiosInstance from "@/config/axiosInstance";
 
-const nav = [
-  // { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+interface SubNavItem {
+  href: string;
+  label: string;
+  icon: any;
+}
+
+interface NavItem {
+  href?: string;
+  label: string;
+  icon: any;
+  subItems?: SubNavItem[];
+}
+
+const nav: NavItem[] = [
+  { href: "/dashboard", label: "Home", icon: Home },
   { href: "/cameras", label: "Cameras (Live)", icon: Cctv },
   { href: "/camera-list", label: "Camera List", icon: ListVideo },
   { href: "/headcount", label: "Headcount Camera", icon: Video },
@@ -37,11 +55,22 @@ const nav = [
   { href: "/unknown-recognition", label: "Unknown History", icon: UserX },
   { href: "/settings", label: "Settings", icon: Settings },
   { href: "/gatepass", label: "Gate Pass", icon: Mail },
+  {
+    label: "Visitor",
+    icon: UserPlus,
+    subItems: [
+      { href: "/visitors/add", label: "Add Visitor", icon: UserPlus },
+      { href: "/visitors", label: "Visitor List", icon: List },
+      { href: "/visitors/employee-wise-visit", label: "Employee Wise Visit Report", icon: BarChart3 },
+      { href: "/visitors/visitor-wise-visit", label: "Visitor Wise Visit Report", icon: BarChart3 },
+    ],
+  },
   { href: "/bounding-box", label: "Bounding Box", icon: Video },
 ];
 
 function isActive(pathname: string, href: string) {
   if (href === "/dashboard") return pathname === "/dashboard";
+  if (href === "/visitors") return pathname === "/visitors";
   return pathname === href || pathname.startsWith(href + "/");
 }
 
@@ -121,6 +150,21 @@ function SidebarContent({
     readSidebarIdentity(),
   );
   const syncedTokenRef = useRef<string>("");
+
+  const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    if (pathname.startsWith("/visitors")) {
+      setOpenMenus((prev) => ({ ...prev, Visitor: true }));
+    }
+  }, [pathname]);
+
+  const toggleMenu = (label: string) => {
+    setOpenMenus((prev) => ({
+      ...prev,
+      [label]: !prev[label],
+    }));
+  };
 
   useEffect(() => {
     const localIdentity = readSidebarIdentity();
@@ -229,13 +273,93 @@ function SidebarContent({
 
         <div className="space-y-1">
           {nav.map((n) => {
-            const active = isActive(pathname, n.href);
+            const hasSubItems = !!n.subItems && n.subItems.length > 0;
+
+            if (hasSubItems) {
+              const isOpen = openMenus[n.label] ?? false;
+              const Icon = n.icon;
+
+              return (
+                <div key={n.label} className="space-y-1">
+                  <button
+                    onClick={() => toggleMenu(n.label)}
+                    title={compact ? n.label : undefined}
+                    className={cn(
+                      "group flex w-full items-center justify-between rounded-2xl transition-all duration-200 cursor-pointer text-left",
+                      compact ? "justify-center px-2 py-3" : "px-3 py-2.5",
+                      "text-zinc-300 hover:bg-white/10 hover:text-white",
+                    )}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Icon
+                        className={cn(
+                          compact ? "h-5 w-5" : "h-4 w-4",
+                          "text-zinc-400 group-hover:text-zinc-100",
+                        )}
+                      />
+                      {!compact && <span className="truncate text-sm">{n.label}</span>}
+                    </div>
+                    {!compact && (
+                      isOpen ? (
+                        <ChevronUp className="h-4 w-4 text-zinc-400 group-hover:text-zinc-100" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4 text-zinc-400 group-hover:text-zinc-100" />
+                      )
+                    )}
+                  </button>
+
+                  {isOpen && (
+                    <div
+                      className={cn(
+                        "space-y-1 relative transition-all duration-200",
+                        !compact && "ml-5 pl-3 border-l border-white/10"
+                      )}
+                    >
+                      {n.subItems!.map((sub) => {
+                        const subActive = isActive(pathname, sub.href);
+                        const SubIcon = sub.icon;
+
+                        return (
+                          <Link
+                            key={sub.href}
+                            href={sub.href}
+                            onClick={onNavigate}
+                            title={compact ? sub.label : undefined}
+                            className={cn(
+                              "group flex items-center rounded-xl transition-all duration-200",
+                              compact ? "justify-center px-2 py-2" : "gap-3 px-3 py-2",
+                              subActive
+                                ? "bg-white/10 text-white font-medium"
+                                : "text-zinc-400 hover:bg-white/5 hover:text-white",
+                            )}
+                          >
+                            <SubIcon
+                              className={cn(
+                                compact ? "h-4 w-4" : "h-4 w-4",
+                                subActive
+                                  ? "text-white"
+                                  : "text-zinc-500 group-hover:text-zinc-300",
+                              )}
+                            />
+                            {!compact && (
+                              <span className="truncate text-sm">{sub.label}</span>
+                            )}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            const active = n.href ? isActive(pathname, n.href) : false;
             const Icon = n.icon;
 
             return (
               <Link
                 key={n.href}
-                href={n.href}
+                href={n.href || "#"}
                 onClick={onNavigate}
                 title={compact ? n.label : undefined}
                 className={cn(
