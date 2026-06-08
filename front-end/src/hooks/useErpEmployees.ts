@@ -3,9 +3,55 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
-import { erpAxios } from "@/config/axiosInstance";
+import axiosInstance, { erpAxios } from "@/config/axiosInstance";
 import { ERP_HOST } from "@/constant";
 import { normalizeHierarchyValue } from "@/lib/employeeHierarchy";
+
+function isHttpUrl(value: unknown): boolean {
+  const text = String(value ?? "").trim().toLowerCase();
+  return text.startsWith("http://") || text.startsWith("https://");
+}
+
+function normalizeBaseUrl(value: unknown): string | null {
+  const text = String(value ?? "").trim();
+  if (!text || !isHttpUrl(text)) return null;
+  return text.replace(/\/+$/, "");
+}
+
+function normalizePath(value: unknown): string | null {
+  const text = String(value ?? "").trim();
+  if (!text) return null;
+  if (isHttpUrl(text)) return text;
+  const collapsed = text.replace(/\/+/g, "/");
+  return collapsed.startsWith("/") ? collapsed : `/${collapsed}`;
+}
+
+function joinUrlPath(...parts: Array<string | null | undefined>): string {
+  const normalized = parts
+    .map((part) => String(part ?? "").trim())
+    .filter(Boolean)
+    .map((part) => part.replace(/^\/+|\/+$/g, ""));
+  if (!normalized.length) return "/";
+  return `/${normalized.join("/")}`;
+}
+
+function resolveConfiguredErpUrl(input: {
+  erpBaseUrl?: string | null;
+  erpPrefix?: string | null;
+  erpAttendanceEndpoint?: string | null;
+}): string | null {
+  const baseUrl = normalizeBaseUrl(input.erpBaseUrl);
+  const prefix = normalizePath(input.erpPrefix);
+  const endpoint = normalizePath(input.erpAttendanceEndpoint);
+
+  if (endpoint && isHttpUrl(endpoint)) {
+    return endpoint;
+  }
+  if (!baseUrl || !endpoint) {
+    return null;
+  }
+  return new URL(joinUrlPath(prefix, endpoint), `${baseUrl}/`).toString();
+}
 
 export type ErpEmployee = {
   employeeId: string; // e.g. "2024052410"
@@ -129,19 +175,46 @@ export function useErpEmployees(options?: {
     setLoading(true);
     setError("");
 
-    const erpBase = String(ERP_HOST || "").trim();
-    if (!erpBase) {
-      setEmployees([]);
-      setLoading(false);
-      setError("ERP URL not configured (set NEXT_PUBLIC_ERP_URL).");
-      return;
-    }
-
     // Cancel previous inflight request
     if (abortRef.current) abortRef.current.abort();
     abortRef.current = new AbortController();
 
     try {
+      // 1) Attempt to load company-wise dynamic ERP settings
+      let resolvedUrl: string | null = null;
+      try {
+        const erpSettingsRes = await axiosInstance.get<any[]>("/settings/erp", {
+          params: { all: true },
+          signal: abortRef.current.signal,
+        });
+        const rows = erpSettingsRes.data || [];
+        // Match urlType variations (case-insensitive)
+        const match = rows.find((r) => {
+          const type = String(r.urlType || "").trim().toLowerCase();
+          return (
+            type === "employeelist" ||
+            type === "employees" ||
+            type === "employee" ||
+            type === "employee_info" ||
+            type === "employeeinfo" ||
+            type === "employee_list"
+          );
+        });
+        if (match) {
+          resolvedUrl = resolveConfiguredErpUrl(match);
+        }
+      } catch (err) {
+        console.warn("Failed to fetch company-wise ERP settings:", err);
+      }
+
+      // 2) If no company-wise settings found, do not fetch
+      if (!resolvedUrl) {
+        setEmployees([]);
+        setLoading(false);
+        setError("ERP employee URL not configured for this company. Please configure it in Settings.");
+        return;
+      }
+
       const payload = {
         pageNumber: 0,
         pageSize: 0,
@@ -150,7 +223,7 @@ export function useErpEmployees(options?: {
       };
 
       const res = await erpAxios.post(
-        "/api/v2/Employee/GetAllEMployeelists",
+        resolvedUrl,
         payload,
         {
           headers: {

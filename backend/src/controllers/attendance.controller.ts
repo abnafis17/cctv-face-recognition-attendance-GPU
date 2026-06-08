@@ -13,6 +13,7 @@ import {
   pushAttendanceEvent,
 } from "../services/attendanceEvents";
 import { pushHeadcountEvent } from "../services/headcountEvents";
+import { getCompanyErpSettings, resolveConfiguredErpUrl } from "../services/erpSettings.service";
 
 const cameraHasAttendanceField = Prisma.dmmf.datamodel.models
   .find((m) => m.name === "Camera")
@@ -396,6 +397,9 @@ export async function dataSync(req: Request, res: Response) {
     let failedCount = 0;
     let skippedCount = 0;
 
+    const settings = await getCompanyErpSettings(companyId, "attendance");
+    const erpUrl = resolveConfiguredErpUrl(settings) || "http://172.20.60.101:7001/api/v2/Attendance/manual-attendance";
+
     for (const row of attendanceRows) {
       const empId = row.employee?.empId;
       if (!empId) {
@@ -412,7 +416,7 @@ export async function dataSync(req: Request, res: Response) {
         };
 
         await axios.post(
-          "http://172.20.60.101:7001/api/v2/Attendance/manual-attendance",
+          erpUrl,
           payload,
           {
             headers: {

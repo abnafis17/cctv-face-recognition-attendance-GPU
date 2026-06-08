@@ -78,7 +78,7 @@ export function buildErpColumns({
       id: "erpAttendanceEndpoint",
       header: () => (
         <div className="w-full px-1 py-2 text-left font-bold">
-          ERP Attendance Endpoint
+          ERP Endpoint
         </div>
       ),
       cell: ({ row }) => (

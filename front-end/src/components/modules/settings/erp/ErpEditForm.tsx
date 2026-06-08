@@ -85,14 +85,28 @@ export function ErpEditForm({
           htmlFor="edit-erp-endpoint"
           className="text-sm font-medium text-zinc-900"
         >
-          ERP Attendance Endpoint
+          {!editErpUrlType
+            ? "ERP Attendance Endpoint"
+            : editErpUrlType.toLowerCase().includes("employee")
+            ? "ERP Employee Endpoint"
+            : editErpUrlType.toLowerCase().includes("gatepass")
+            ? `ERP ${editErpUrlType.toUpperCase()} Endpoint`
+            : `ERP ${editErpUrlType} Endpoint`}
         </label>
         <input
           id="edit-erp-endpoint"
           value={editErpAttendanceEndpoint}
           onChange={(event) => setEditErpAttendanceEndpoint(event.target.value)}
           className="w-full rounded-lg border px-3 py-2 text-sm"
-          placeholder="/Attendance/manual-attendance"
+          placeholder={
+            !editErpUrlType
+              ? "/Attendance/manual-attendance"
+              : editErpUrlType.toLowerCase().includes("employee")
+              ? "/Employee/GetAllEMployeelists"
+              : editErpUrlType.toLowerCase().includes("gatepass")
+              ? "/GatePass/SaveAPGatePass"
+              : "/endpoint-path"
+          }
           disabled={saving}
         />
       </div>

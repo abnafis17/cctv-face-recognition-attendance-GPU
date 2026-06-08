@@ -1,5 +1,5 @@
 import axios from "axios";
-import { getCompanyErpSettings } from "./erpSettings.service";
+import { getCompanyErpSettings, resolveConfiguredErpUrl } from "./erpSettings.service";
 
 const GATEPASS_UPDATE_ERP_URL_TYPE = "updategatepass";
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -62,56 +62,6 @@ function normalizeDateDDMMYYYY(value: unknown): string | null {
   if (!text) return null;
   if (!/^\d{2}\/\d{2}\/\d{4}$/.test(text)) return null;
   return text;
-}
-
-function isHttpUrl(value: unknown): boolean {
-  const text = String(value ?? "").trim().toLowerCase();
-  return text.startsWith("http://") || text.startsWith("https://");
-}
-
-function normalizeBaseUrl(value: unknown): string | null {
-  const text = String(value ?? "").trim();
-  if (!text || !isHttpUrl(text)) return null;
-  return text.replace(/\/+$/, "");
-}
-
-function normalizePath(value: unknown): string | null {
-  const text = String(value ?? "").trim();
-  if (!text) return null;
-  if (isHttpUrl(text)) return text;
-
-  const collapsed = text.replace(/\/+/g, "/");
-  return collapsed.startsWith("/") ? collapsed : `/${collapsed}`;
-}
-
-function joinUrlPath(...parts: Array<string | null | undefined>): string {
-  const normalized = parts
-    .map((part) => String(part ?? "").trim())
-    .filter(Boolean)
-    .map((part) => part.replace(/^\/+|\/+$/g, ""));
-
-  if (!normalized.length) return "/";
-  return `/${normalized.join("/")}`;
-}
-
-function resolveConfiguredErpUrl(input: {
-  erpBaseUrl?: string | null;
-  erpPrefix?: string | null;
-  erpAttendanceEndpoint?: string | null;
-}): string | null {
-  const baseUrl = normalizeBaseUrl(input.erpBaseUrl);
-  const prefix = normalizePath(input.erpPrefix);
-  const endpoint = normalizePath(input.erpAttendanceEndpoint);
-
-  if (endpoint && isHttpUrl(endpoint)) {
-    return endpoint;
-  }
-
-  if (!baseUrl || !endpoint) {
-    return null;
-  }
-
-  return new URL(joinUrlPath(prefix, endpoint), `${baseUrl}/`).toString();
 }
 
 function toDhakaTimeHHMMSS(value: Date): string {
