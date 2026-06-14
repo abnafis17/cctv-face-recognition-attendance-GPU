@@ -39,7 +39,7 @@ import {
 import toast from "react-hot-toast";
 import { useErpEmployees } from "@/hooks/useErpEmployees";
 import { SearchableSelect } from "@/components/reusable/SearchableSelect";
-import axiosInstance from "@/config/axiosInstance";
+import axiosInstance, { API } from "@/config/axiosInstance";
 import {
   Dialog,
   DialogContent,
@@ -48,13 +48,42 @@ import {
 } from "@/components/ui/dialog";
 import Webcam from "react-webcam";
 
-const visitorTypes = ["Guest", "Contractor", "Official", "Interviewee", "Other"];
-const purposes = ["Meeting", "Interview", "Delivery", "Audit", "Maintenance", "Other"];
+const fallbackVisitorTypes = ["Guest", "Contractor", "Official", "Interviewee", "Other"];
+const fallbackPurposes = ["Meeting", "Interview", "Delivery", "Audit", "Maintenance", "Other"];
 const idProofTypes = ["NID", "Passport", "Driving License", "Employee Card", "Other"];
 const extraGuestsOptions = Array.from({ length: 15 }, (_, i) => String(i + 1));
 
 export default function AddVisitorPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [visitorTypesList, setVisitorTypesList] = useState<string[]>([]);
+  const [purposesList, setPurposesList] = useState<string[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    async function loadMasterData() {
+      try {
+        const [vtRes, povRes] = await Promise.all([
+          axiosInstance.get(API.MASTER_DATA_VISITOR_TYPES, { params: { limit: 1000 } }),
+          axiosInstance.get(API.MASTER_DATA_PURPOSES_OF_VISIT, { params: { limit: 1000 } }),
+        ]);
+        if (!active) return;
+        const vtNames = (vtRes.data?.items || []).map((x: any) => x.name);
+        const povNames = (povRes.data?.items || []).map((x: any) => x.name);
+        setVisitorTypesList(vtNames);
+        setPurposesList(povNames);
+      } catch (error) {
+        console.error("Failed to load visitor master data options", error);
+      }
+    }
+    void loadMasterData();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const activeVisitorTypes = visitorTypesList.length > 0 ? visitorTypesList : fallbackVisitorTypes;
+  const activePurposes = purposesList.length > 0 ? purposesList : fallbackPurposes;
+
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [isLookupEmployee, setIsLookupEmployee] = useState(false);
   const [lookupPhone, setLookupPhone] = useState("");
@@ -487,7 +516,7 @@ export default function AddVisitorPage() {
                           <SelectValue placeholder="Select type" />
                         </SelectTrigger>
                         <SelectContent>
-                          {visitorTypes.map((t) => (
+                          {activeVisitorTypes.map((t) => (
                             <SelectItem key={t} value={t}>
                               {t}
                             </SelectItem>
@@ -515,7 +544,7 @@ export default function AddVisitorPage() {
                           <SelectValue placeholder="Select purpose" />
                         </SelectTrigger>
                         <SelectContent>
-                          {purposes.map((p) => (
+                          {activePurposes.map((p) => (
                             <SelectItem key={p} value={p}>
                               {p}
                             </SelectItem>

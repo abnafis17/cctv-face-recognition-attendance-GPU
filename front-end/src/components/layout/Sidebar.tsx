@@ -23,6 +23,7 @@ import {
   ChevronUp,
   List,
   BarChart3,
+  Database,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { clearAccessToken, getAccessToken } from "@/lib/authStorage";
@@ -43,7 +44,7 @@ interface NavItem {
 }
 
 const nav: NavItem[] = [
-  { href: "/dashboard", label: "Home", icon: Home },
+  // { href: "/dashboard", label: "Home", icon: Home },
   { href: "/cameras", label: "Cameras (Live)", icon: Cctv },
   { href: "/camera-list", label: "Camera List", icon: ListVideo },
   { href: "/headcount", label: "Headcount Camera", icon: Video },
@@ -65,6 +66,7 @@ const nav: NavItem[] = [
     ],
   },
   { href: "/bounding-box", label: "Bounding Box", icon: Video },
+  { href: "/master-data", label: "Master Data", icon: Database },
   { href: "/settings", label: "Settings", icon: Settings }
 ];
 

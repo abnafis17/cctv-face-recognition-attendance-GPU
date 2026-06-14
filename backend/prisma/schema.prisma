@@ -40,6 +40,8 @@ model Company {
   otRequisitions OtRequisition[]
   gatepassRows    GatepassTable[]
   visitors        Visitor[]
+  visitorTypes    VisitorType[]
+  purposeOfVisits PurposeOfVisit[]
 }
 
 model User {
@@ -515,4 +517,30 @@ model Visitor {
 
   @@index([companyId])
   @@index([contactNumber])
+}
+
+model VisitorType {
+  id        String   @id @default(cuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name      String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, name])
+  @@index([companyId])
+}
+
+model PurposeOfVisit {
+  id        String   @id @default(cuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name      String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, name])
+  @@index([companyId])
 }
