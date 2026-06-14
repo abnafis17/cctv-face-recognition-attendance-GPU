@@ -18,7 +18,7 @@ export default function GatepassPage() {
       />
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto">
-        <div className="grid min-h-0 min-w-0 flex-none grid-cols-1 xl:h-[clamp(320px,40vh,500px)] xl:grid-cols-[minmax(0,0.78fr)_minmax(0,1.22fr)] xl:overflow-hidden">
+        <div className="grid min-h-0 min-w-0 flex-none grid-cols-1 xl:h-[620px] xl:grid-cols-[minmax(0,0.78fr)_minmax(0,1.22fr)] xl:overflow-hidden">
           <GatepassCameraSection
             selectedGatepassCameraId={gatepass.selectedGatepassCameraId}
             gatepassCameras={gatepass.gatepassCameras}
