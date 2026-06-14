@@ -189,7 +189,6 @@ export default function AddVisitorPage() {
       const response = await axiosInstance.get(`/visitors/lookup`, {
         params: { phone: queryVal, isEmployee: isLookupEmployee },
       });
-      toast.dismiss(toastId);
 
       if (response.data?.found && response.data?.data) {
         const row = response.data.data;
@@ -215,13 +214,16 @@ export default function AddVisitorPage() {
           setCapturedFile(null);
         }
         setIsPhoneReadOnly(true);
-        toast.success(`${response.data.type === "employee" ? "Employee" : "Visitor"} record loaded successfully!`);
+        toast.success(`${response.data.type === "employee" ? "Employee" : "Visitor"} record loaded successfully!`, { id: toastId });
       } else {
-        toast.error(isLookupEmployee ? "No employee record found matching this ID" : "No visitor record found matching this phone number");
+        toast.error(isLookupEmployee ? "No employee record found matching this ID" : "No visitor record found matching this phone number", { id: toastId });
+        if (!isLookupEmployee) {
+          form.setValue("contactNumber", queryVal);
+          setIsPhoneReadOnly(true);
+        }
       }
     } catch (error: any) {
-      toast.dismiss(toastId);
-      toast.error(error?.response?.data?.error || "Lookup search failed");
+      toast.error(error?.response?.data?.error || "Lookup search failed", { id: toastId });
     }
   };
 

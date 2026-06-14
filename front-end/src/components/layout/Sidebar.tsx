@@ -53,7 +53,6 @@ const nav: NavItem[] = [
   { href: "/daily-attendance", label: "Daily Attendance", icon: CalendarClock },
   { href: "/attendance", label: "Recognition History", icon: History },
   { href: "/unknown-recognition", label: "Unknown History", icon: UserX },
-  { href: "/settings", label: "Settings", icon: Settings },
   { href: "/gatepass", label: "Gate Pass", icon: Mail },
   {
     label: "Visitor",
@@ -66,6 +65,7 @@ const nav: NavItem[] = [
     ],
   },
   { href: "/bounding-box", label: "Bounding Box", icon: Video },
+  { href: "/settings", label: "Settings", icon: Settings }
 ];
 
 function isActive(pathname: string, href: string) {
@@ -396,7 +396,7 @@ function SidebarContent({
         )}
       >
         {!compact && (
-          <div className="mb-3 rounded-xl border border-white/15 bg-white/[0.05] px-3 py-2.5">
+          <div className="mb-3 rounded-xl border border-white/15 bg-white/5 px-3 py-2.5">
             <div className="text-[10px] font-medium uppercase tracking-[0.14em] text-zinc-500">
               Account
             </div>

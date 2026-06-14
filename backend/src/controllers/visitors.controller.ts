@@ -187,7 +187,37 @@ export async function listVisitorRecords(req: Request, res: Response) {
       take: limit,
     });
 
-    return res.json(visitors);
+    // Resolve employee host names
+    const uniqueHostIds = Array.from(new Set(visitors.map((v) => v.hostEmployeeId).filter(Boolean)));
+    const empMap = new Map<string, string>();
+
+    if (uniqueHostIds.length > 0) {
+      const employees = await prisma.employee.findMany({
+        where: {
+          companyId,
+          empId: { in: uniqueHostIds },
+        },
+        select: {
+          empId: true,
+          name: true,
+        },
+      });
+      for (const emp of employees) {
+        if (emp.empId) {
+          empMap.set(emp.empId, emp.name);
+        }
+      }
+    }
+
+    const visitorsWithHostName = visitors.map((visitor) => {
+      const hostName = visitor.hostEmployeeId ? empMap.get(visitor.hostEmployeeId) : null;
+      return {
+        ...visitor,
+        hostName,
+      };
+    });
+
+    return res.json(visitorsWithHostName);
   } catch (error: unknown) {
     if (error instanceof ZodError) return respondValidationError(res, error);
     return res.status(500).json({
@@ -374,4 +404,314 @@ export async function checkOutVisitor(req: Request, res: Response) {
     });
   }
 }
+
+export async function getEmployeeWiseReport(req: Request, res: Response) {
+  try {
+    const companyId = getCompanyId(req);
+    if (!companyId) return res.status(400).json({ error: "Missing company ID" });
+
+    const { fromDate, toDate, q } = req.query;
+
+    const whereClauses: any = {
+      companyId,
+    };
+
+    if (fromDate || toDate) {
+      whereClauses.dateOfVisit = {};
+      if (fromDate) {
+        whereClauses.dateOfVisit.gte = String(fromDate);
+      }
+      if (toDate) {
+        whereClauses.dateOfVisit.lte = String(toDate);
+      }
+    }
+
+    // Fetch matching visitors
+    const visitors = await prisma.visitor.findMany({
+      where: whereClauses,
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
+    // Extract all unique hostEmployeeId values
+    const uniqueHostIds = Array.from(new Set(visitors.map((v) => v.hostEmployeeId).filter(Boolean)));
+
+    if (uniqueHostIds.length === 0) {
+      return res.json([]);
+    }
+
+    // Fetch matching local employees
+    const employeeQuery: any = {
+      companyId,
+      empId: { in: uniqueHostIds },
+    };
+
+    let employees = await prisma.employee.findMany({
+      where: employeeQuery,
+    });
+
+    // If q is provided, filter employees by name/ID
+    if (q) {
+      const searchStr = String(q).trim().toLowerCase();
+      employees = employees.filter((e) =>
+        e.name.toLowerCase().includes(searchStr) ||
+        (e.empId && e.empId.toLowerCase().includes(searchStr))
+      );
+    }
+
+    // Map of employee info for quick lookup
+    const empMap = new Map<string, typeof employees[0]>();
+    for (const emp of employees) {
+      if (emp.empId) {
+        empMap.set(emp.empId, emp);
+      }
+    }
+
+    // Group visitors by hostEmployeeId
+    const reportMap = new Map<string, any>();
+
+    for (const visitor of visitors) {
+      const hostId = visitor.hostEmployeeId;
+      // Filter out if q filter is active and host is not in the matched employees map
+      if (q && !empMap.has(hostId)) {
+        continue;
+      }
+
+      // If no employee search filter was active, we may display employee name even if not found in db
+      const emp = empMap.get(hostId);
+      const employeeName = emp?.name || `Employee (${hostId})`;
+      const department = emp?.department || visitor.department || "N/A";
+
+      if (!reportMap.has(hostId)) {
+        reportMap.set(hostId, {
+          employeeId: hostId,
+          employeeName,
+          department,
+          visits: [],
+        });
+      }
+
+      reportMap.get(hostId).visits.push(visitor);
+    }
+
+    // Build the reporting array
+    const reportList = Array.from(reportMap.values()).map((group) => {
+      const visits = group.visits;
+      const totalVisits = visits.length;
+
+      const visitorMap = new Map<string, any>();
+      for (const visit of visits) {
+        const contact = visit.contactNumber;
+        if (!visitorMap.has(contact)) {
+          visitorMap.set(contact, {
+            visitorName: visit.visitorName,
+            contactNumber: visit.contactNumber,
+            companyAddress: visit.companyAddress,
+            visitorPhoto: visit.visitorPhoto ?? null,
+            visitCount: 0,
+            lastVisit: visit.dateOfVisit,
+            purposes: new Set<string>(),
+            history: [],
+          });
+        }
+
+        const vData = visitorMap.get(contact);
+        vData.visitCount += 1;
+        if (!vData.visitorPhoto && visit.visitorPhoto) {
+          vData.visitorPhoto = visit.visitorPhoto;
+        }
+        if (vData.history.length === 0) {
+          vData.lastVisit = visit.dateOfVisit;
+        }
+        if (visit.purposeOfVisit) {
+          vData.purposes.add(visit.purposeOfVisit);
+        }
+        vData.history.push({
+          id: visit.id,
+          date: visit.dateOfVisit,
+          timeIn: visit.timeIn,
+          timeOut: visit.timeOut,
+          purpose: visit.purposeOfVisit,
+          status: visit.status,
+          visitorPassNo: visit.visitorPassNo,
+        });
+      }
+
+      const visitorList = Array.from(visitorMap.values()).map((v) => ({
+        ...v,
+        purposes: Array.from(v.purposes),
+      }));
+
+      // Sort visitors by their lastVisit date descending
+      visitorList.sort((a, b) => b.lastVisit.localeCompare(a.lastVisit));
+
+      const lastVisit = visits.length > 0 ? visits[0].dateOfVisit : "";
+      const uniqueVisitors = visitorMap.size;
+
+      return {
+        employeeId: group.employeeId,
+        employeeName: group.employeeName,
+        department: group.department,
+        totalVisits,
+        uniqueVisitors,
+        lastVisit,
+        visitors: visitorList,
+      };
+    });
+
+    // Sort report list by totalVisits descending
+    reportList.sort((a, b) => b.totalVisits - a.totalVisits);
+
+    return res.json(reportList);
+  } catch (error: unknown) {
+    return res.status(500).json({
+      error: "Failed to generate employee-wise report",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+export async function getVisitorWiseReport(req: Request, res: Response) {
+  try {
+    const companyId = getCompanyId(req);
+    if (!companyId) return res.status(400).json({ error: "Missing company ID" });
+
+    const { fromDate, toDate, q } = req.query;
+
+    const whereClauses: any = {
+      companyId,
+    };
+
+    if (fromDate || toDate) {
+      whereClauses.dateOfVisit = {};
+      if (fromDate) {
+        whereClauses.dateOfVisit.gte = String(fromDate);
+      }
+      if (toDate) {
+        whereClauses.dateOfVisit.lte = String(toDate);
+      }
+    }
+
+    if (q) {
+      const searchStr = String(q).trim().toLowerCase();
+      whereClauses.OR = [
+        { visitorName: { contains: searchStr, mode: "insensitive" } },
+        { contactNumber: { contains: searchStr, mode: "insensitive" } },
+        { companyAddress: { contains: searchStr, mode: "insensitive" } },
+      ];
+    }
+
+    const visitors = await prisma.visitor.findMany({
+      where: whereClauses,
+      orderBy: {
+        dateOfVisit: "desc",
+      },
+    });
+
+    if (visitors.length === 0) {
+      return res.json([]);
+    }
+
+    // Extract all unique hostEmployeeId values to map employee info
+    const uniqueHostIds = Array.from(new Set(visitors.map((v) => v.hostEmployeeId).filter(Boolean)));
+
+    const empMap = new Map<string, { name: string; department: string }>();
+
+    if (uniqueHostIds.length > 0) {
+      const employees = await prisma.employee.findMany({
+        where: {
+          companyId,
+          empId: { in: uniqueHostIds },
+        },
+        select: {
+          empId: true,
+          name: true,
+          department: true,
+        },
+      });
+      for (const emp of employees) {
+        if (emp.empId) {
+          empMap.set(emp.empId, {
+            name: emp.name,
+            department: emp.department || "",
+          });
+        }
+      }
+    }
+
+    // Group visitor records by contactNumber
+    const visitorMap = new Map<string, any>();
+
+    for (const visit of visitors) {
+      const contact = visit.contactNumber;
+      if (!visitorMap.has(contact)) {
+        visitorMap.set(contact, {
+          visitorName: visit.visitorName,
+          contactNumber: visit.contactNumber,
+          companyAddress: visit.companyAddress,
+          visitorPhoto: visit.visitorPhoto ?? null,
+          totalVisits: 0,
+          hostsMetSet: new Set<string>(),
+          lastVisit: visit.dateOfVisit,
+          history: [],
+        });
+      }
+
+      const vData = visitorMap.get(contact);
+      vData.totalVisits += 1;
+      
+      if (!vData.visitorPhoto && visit.visitorPhoto) {
+        vData.visitorPhoto = visit.visitorPhoto;
+      }
+
+      if (visit.dateOfVisit > vData.lastVisit) {
+        vData.lastVisit = visit.dateOfVisit;
+      }
+
+      if (visit.hostEmployeeId) {
+        vData.hostsMetSet.add(visit.hostEmployeeId);
+      }
+
+      const hostInfo = visit.hostEmployeeId ? empMap.get(visit.hostEmployeeId) : null;
+      const hostName = hostInfo?.name || `Employee (${visit.hostEmployeeId || "N/A"})`;
+      const hostDepartment = hostInfo?.department || visit.department || "N/A";
+
+      vData.history.push({
+        id: visit.id,
+        date: visit.dateOfVisit,
+        timeIn: visit.timeIn,
+        timeOut: visit.timeOut,
+        purpose: visit.purposeOfVisit,
+        status: visit.status,
+        visitorPassNo: visit.visitorPassNo,
+        hostName,
+        hostDepartment,
+      });
+    }
+
+    const reportList = Array.from(visitorMap.values()).map((v) => {
+      const { hostsMetSet, ...rest } = v;
+      rest.history.sort((a: any, b: any) => {
+        const dateCompare = b.date.localeCompare(a.date);
+        if (dateCompare !== 0) return dateCompare;
+        return (b.timeIn || "").localeCompare(a.timeIn || "");
+      });
+      return {
+        ...rest,
+        hostsMet: hostsMetSet.size,
+      };
+    });
+
+    reportList.sort((a, b) => b.totalVisits - a.totalVisits);
+
+    return res.json(reportList);
+  } catch (error: unknown) {
+    return res.status(500).json({
+      error: "Failed to generate visitor-wise report",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 
