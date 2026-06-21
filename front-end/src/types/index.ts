@@ -36,3 +36,5 @@ export type Camera = {
   createdAt?: string;
   updatedAt?: string;
 };
+
+export * from './visitor-types';

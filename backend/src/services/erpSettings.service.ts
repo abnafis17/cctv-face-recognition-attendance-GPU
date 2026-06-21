@@ -7,6 +7,56 @@ import {
 
 export const ERP_DEFAULT_URL_TYPE = DEFAULT_ERP_URL_TYPE;
 
+function isHttpUrl(value: unknown): boolean {
+  const text = String(value ?? "").trim().toLowerCase();
+  return text.startsWith("http://") || text.startsWith("https://");
+}
+
+function normalizeBaseUrl(value: unknown): string | null {
+  const text = String(value ?? "").trim();
+  if (!text || !isHttpUrl(text)) return null;
+  return text.replace(/\/+$/, "");
+}
+
+function normalizePath(value: unknown): string | null {
+  const text = String(value ?? "").trim();
+  if (!text) return null;
+  if (isHttpUrl(text)) return text;
+
+  const collapsed = text.replace(/\/+/g, "/");
+  return collapsed.startsWith("/") ? collapsed : `/${collapsed}`;
+}
+
+function joinUrlPath(...parts: Array<string | null | undefined>): string {
+  const normalized = parts
+    .map((part) => String(part ?? "").trim())
+    .filter(Boolean)
+    .map((part) => part.replace(/^\/+|\/+$/g, ""));
+
+  if (!normalized.length) return "/";
+  return `/${normalized.join("/")}`;
+}
+
+export function resolveConfiguredErpUrl(input: {
+  erpBaseUrl?: string | null;
+  erpPrefix?: string | null;
+  erpAttendanceEndpoint?: string | null;
+}): string | null {
+  const baseUrl = normalizeBaseUrl(input.erpBaseUrl);
+  const prefix = normalizePath(input.erpPrefix);
+  const endpoint = normalizePath(input.erpAttendanceEndpoint);
+
+  if (endpoint && isHttpUrl(endpoint)) {
+    return endpoint;
+  }
+
+  if (!baseUrl || !endpoint) {
+    return null;
+  }
+
+  return new URL(joinUrlPath(prefix, endpoint), `${baseUrl}/`).toString();
+}
+
 export type ErpSettingsDto = {
   id: string | null;
   urlType: string | null;
