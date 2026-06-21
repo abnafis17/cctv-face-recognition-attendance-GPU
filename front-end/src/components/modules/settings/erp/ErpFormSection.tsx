@@ -62,7 +62,15 @@ export function ErpFormSection({
               setAddErpAttendanceEndpoint(event.target.value)
             }
             className="rounded-lg border px-3 py-2 text-sm"
-            placeholder="ERP Attendance Endpoint"
+            placeholder={
+              !addErpUrlType
+                ? "ERP Attendance Endpoint"
+                : addErpUrlType.toLowerCase().includes("employee")
+                ? "ERP Employee Endpoint (e.g. /Employee/GetAllEMployeelists)"
+                : addErpUrlType.toLowerCase().includes("gatepass")
+                ? `ERP ${addErpUrlType.toUpperCase()} Endpoint`
+                : `ERP ${addErpUrlType} Endpoint`
+            }
             disabled={loading || saving}
           />
         </div>

@@ -58,7 +58,7 @@ export const getRecognizedColumns = (
         {info.row.index + 1}
       </div>
     ),
-    size: 56,
+    size: 45,
   },
   {
     id: "employeeName",
@@ -67,12 +67,12 @@ export const getRecognizedColumns = (
     ),
     cell: ({ row }) => (
       <div className="px-1 py-2">
-        <div className="truncate font-medium text-zinc-900">
+        <div className="truncate font-medium text-zinc-900" title={row.original.employee.name}>
           {row.original.employee.name}
         </div>
       </div>
     ),
-    size: 260,
+    size: 150,
   },
   {
     id: "employeeCode",
@@ -84,7 +84,7 @@ export const getRecognizedColumns = (
         {row.original.employee.employeeCode}
       </div>
     ),
-    size: 130,
+    size: 90,
   },
   {
     id: "department",
@@ -92,11 +92,11 @@ export const getRecognizedColumns = (
       <div className="w-full px-1 py-2 text-left font-bold">Department</div>
     ),
     cell: ({ row }) => (
-      <div className="px-1 py-2 text-zinc-700">
+      <div className="truncate px-1 py-2 text-zinc-700" title={row.original.employee.department}>
         {row.original.employee.department}
       </div>
     ),
-    size: 170,
+    size: 120,
   },
   {
     id: "section",
@@ -104,11 +104,11 @@ export const getRecognizedColumns = (
       <div className="w-full px-1 py-2 text-left font-bold">Section</div>
     ),
     cell: ({ row }) => (
-      <div className="px-1 py-2 text-zinc-700">
+      <div className="truncate px-1 py-2 text-zinc-700" title={row.original.employee.section || "N/A"}>
         {row.original.employee.section || "N/A"}
       </div>
     ),
-    size: 170,
+    size: 100,
   },
   {
     id: "outTime",
@@ -124,7 +124,7 @@ export const getRecognizedColumns = (
         </div>
       );
     },
-    size: 120,
+    size: 85,
   },
   {
     id: "inTime",
@@ -139,7 +139,7 @@ export const getRecognizedColumns = (
         </div>
       );
     },
-    size: 120,
+    size: 85,
   },
   {
     id: "status",
@@ -166,7 +166,7 @@ export const getRecognizedColumns = (
         </div>
       );
     },
-    size: 130,
+    size: 100,
   },
   {
     id: "recognizedAt",
@@ -178,7 +178,7 @@ export const getRecognizedColumns = (
         {formatRecognizedAt(row.original.recognizedAt)}
       </div>
     ),
-    size: 130,
+    size: 100,
   },
   {
     id: "action",

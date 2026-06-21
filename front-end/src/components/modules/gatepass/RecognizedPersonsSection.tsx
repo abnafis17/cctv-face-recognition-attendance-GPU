@@ -31,7 +31,7 @@ export default function RecognizedPersonsSection({
       ) : null}
 
       <div className="pb-3">
-        <div className="min-h-[210px] overflow-hidden rounded-2xl border border-zinc-100 bg-white sm:min-h-[230px]">
+        <div className="min-h-[160px] overflow-hidden rounded-2xl border border-zinc-100 bg-white sm:min-h-[170px]">
           <TanstackDataTable
             data={rows}
             columns={columns}
