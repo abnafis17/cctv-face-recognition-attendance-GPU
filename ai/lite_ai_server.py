@@ -589,6 +589,9 @@ class LiteCameraStream:
         self.latest_raw_frame = None
         self.latest_raw_jpeg = None
         self.latest_annotated_jpeg = None
+        self.recognized_persons = []
+        self.attendance_cooldowns = {}
+        self.last_logged_recognized_str = ""
 
     def inject_frame(self, frame):
         if frame is not None and frame.ndim == 3 and frame.shape[2] == 4:
@@ -666,15 +669,7 @@ def get_stream_for_camera(camera_id: str, company_id: str, rtsp_url: Optional[st
     with streams_lock:
         last_active_times[camera_id] = time.time()
         if camera_id not in streams or streams[camera_id].stopped:
-            old_persons = []
-            old_logged_str = ""
-            if camera_id in streams:
-                old_persons = getattr(streams[camera_id], "recognized_persons", [])
-                old_logged_str = getattr(streams[camera_id], "last_logged_recognized_str", "")
-            
             new_stream = LiteCameraStream(camera_id, rtsp_url, company_id)
-            new_stream.recognized_persons = old_persons
-            new_stream.last_logged_recognized_str = old_logged_str
             streams[camera_id] = new_stream
         return streams[camera_id]
 
@@ -1156,6 +1151,9 @@ def enable_attendance(camera_id: str):
     with streams_lock:
         if camera_id in streams:
             streams[camera_id].attendance_enabled = True
+            streams[camera_id].recognized_persons = []
+            streams[camera_id].attendance_cooldowns = {}
+            streams[camera_id].last_logged_recognized_str = ""
             return {"ok": True, "enabled": True, "camera_id": camera_id}
         else:
             return {"ok": False, "error": f"Camera stream {camera_id} not running", "camera_id": camera_id}
@@ -1166,6 +1164,9 @@ def disable_attendance(camera_id: str):
     with streams_lock:
         if camera_id in streams:
             streams[camera_id].attendance_enabled = False
+            streams[camera_id].recognized_persons = []
+            streams[camera_id].attendance_cooldowns = {}
+            streams[camera_id].last_logged_recognized_str = ""
             return {"ok": True, "enabled": False, "camera_id": camera_id}
         else:
             return {"ok": False, "error": f"Camera stream {camera_id} not running", "camera_id": camera_id}

@@ -1,6 +1,8 @@
 import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { X } from "lucide-react";
 
 import type {
   GatepassStatus,
@@ -43,7 +45,9 @@ function getDisplayRecord(record: GatepassRecord | null) {
   return record;
 }
 
-export const recognizedColumns: ColumnDef<RecognizedGatepassRow>[] = [
+export const getRecognizedColumns = (
+  onRemove: (key: string) => void,
+): ColumnDef<RecognizedGatepassRow>[] => [
   {
     id: "sl",
     header: () => (
@@ -116,7 +120,7 @@ export const recognizedColumns: ColumnDef<RecognizedGatepassRow>[] = [
       return (
         <div className="px-1 py-2 text-center font-medium text-zinc-900">
           {displayRecord?.outTime ||
-            formatRecognitionAsOutTime(row.original.recognizedAt)}
+             formatRecognitionAsOutTime(row.original.recognizedAt)}
         </div>
       );
     },
@@ -175,5 +179,25 @@ export const recognizedColumns: ColumnDef<RecognizedGatepassRow>[] = [
       </div>
     ),
     size: 130,
+  },
+  {
+    id: "action",
+    header: () => (
+      <div className="w-full px-1 py-2 text-center font-bold">Action</div>
+    ),
+    cell: ({ row }) => (
+      <div className="flex justify-center px-1 py-2">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="h-8 w-8 text-zinc-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+          onClick={() => onRemove(row.original.key)}
+          title="Remove"
+        >
+          <X className="h-4 w-4" />
+        </Button>
+      </div>
+    ),
+    size: 80,
   },
 ];

@@ -8,7 +8,7 @@ import { useAttendanceEvents } from "@/hooks/useAttendanceEvents";
 import { getCompanyIdFromToken } from "@/lib/authStorage";
 import type { Camera as CameraOption, Employee } from "@/types";
 
-import { recognizedColumns } from "@/components/modules/gatepass/recognizedColumns";
+import { getRecognizedColumns } from "@/components/modules/gatepass/recognizedColumns";
 import { getHistoryColumns } from "@/components/modules/gatepass/historyColumns";
 import type {
   AttendanceEventPayload,
@@ -425,6 +425,15 @@ export function useGatepassPage() {
         }))
         .filter((row) => !hasOpenOutRecord(row.latestRecord)),
     [latestRecordByEmployeeKey, recognizedPeople],
+  );
+
+  const removeRecognizedPerson = useCallback((key: string) => {
+    setRecognizedPeople((current) => current.filter((row) => row.key !== key));
+  }, []);
+
+  const recognizedColumns = useMemo(
+    () => getRecognizedColumns(removeRecognizedPerson),
+    [removeRecognizedPerson],
   );
 
   useEffect(() => {
@@ -996,8 +1005,6 @@ export function useGatepassPage() {
       if (!selectedGatepassCamera || !recognitionActive) return false;
 
       const candidateSeq = Number(candidate.seq ?? 0) || 0;
-      if (candidateSeq <= recognitionStartSeq) return false;
-
       const eventEmployeeId = String(candidate.employeeId ?? "").trim();
       if (!eventEmployeeId) return false;
 
@@ -1009,6 +1016,12 @@ export function useGatepassPage() {
 
       const eventTime = new Date(eventTimeRaw);
       if (Number.isNaN(eventTime.getTime())) return false;
+
+      if (candidateSeq <= recognitionStartSeq) {
+        // Accept events that occurred within the last 60 seconds (to handle startup/cooldown race conditions)
+        const isRecent = (Date.now() - eventTime.getTime()) < 60000;
+        if (!isRecent) return false;
+      }
 
       const candidateAttendanceId = String(candidate.attendanceId ?? "").trim();
       const signature = [
@@ -1067,27 +1080,22 @@ export function useGatepassPage() {
     (events: AttendanceEventPayload[]) => {
       if (!selectedGatepassCamera || !recognitionActive) return;
 
-      const reversed = [...events].reverse();
-      const latestScopedMatch = reversed.find((event) =>
-        matchesSelectedCamera(event.cameraId),
-      );
-
       const allEventsUnscoped =
-        reversed.length > 0 &&
-        reversed.every(
+        events.length > 0 &&
+        events.every(
           (event) => String(event.cameraId ?? "").trim().length === 0,
         );
 
-      const latestUnscopedMatch = allEventsUnscoped
-        ? reversed.find(
-            (event) => String(event.employeeId ?? "").trim().length > 0,
-          )
-        : undefined;
+      const matchingEvents = events.filter((event) => {
+        if (allEventsUnscoped) {
+          return String(event.employeeId ?? "").trim().length > 0;
+        }
+        return matchesSelectedCamera(event.cameraId);
+      });
 
-      const latestMatch = latestScopedMatch ?? latestUnscopedMatch;
-      if (!latestMatch) return;
-
-      applyRecognitionCandidate(latestMatch);
+      for (const event of matchingEvents) {
+        applyRecognitionCandidate(event);
+      }
     },
     [
       applyRecognitionCandidate,
@@ -1260,6 +1268,7 @@ export function useGatepassPage() {
     try {
       await stopCurrentCamera(targetId, true);
       setRecognitionActive(false);
+      clearRecognizedList();
       resetGatepassForm();
       toast.success("Gate pass camera stopped");
     } catch (error: unknown) {
