@@ -39,6 +39,7 @@ type Props = {
   onStop: (camera: Camera) => void;
   onEnableAttendance?: (camera: Camera) => Promise<void> | void;
   onDisableAttendance?: (camera: Camera) => Promise<void> | void;
+  objectFit?: "cover" | "contain";
 };
 
 const CameraMonitorCard: React.FC<Props> = ({
@@ -59,6 +60,7 @@ const CameraMonitorCard: React.FC<Props> = ({
   onStop,
   onEnableAttendance,
   onDisableAttendance,
+  objectFit = "cover",
 }) => {
   const active = Boolean(camera.isActive);
   const streamEnabled = active;
@@ -171,7 +173,12 @@ const CameraMonitorCard: React.FC<Props> = ({
                 ref={imgRef}
                 src={streamSrc}
                 alt={`Camera ${camera.name} Stream`}
-                className="h-full w-full object-cover object-left-top"
+                className={cn(
+                  "h-full w-full",
+                  objectFit === "contain"
+                    ? "object-contain object-center"
+                    : "object-cover object-left-top"
+                )}
                 width={1280}
                 height={720}
                 onLoad={onFrame}

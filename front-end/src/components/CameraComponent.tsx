@@ -25,6 +25,7 @@ interface LocalCameraProps {
   onActiveChange?: (active: boolean) => void;
   active?: boolean;
   showFooter?: boolean;
+  objectFit?: "cover" | "contain";
 }
 
 const DEFAULT_CAMERA_ID = "cmkdpsq300000j7284bwluxh2";
@@ -40,6 +41,7 @@ const LocalCamera: React.FC<LocalCameraProps> = ({
   onActiveChange,
   active,
   showFooter = true,
+  objectFit = "cover",
 }) => {
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -284,7 +286,12 @@ const LocalCamera: React.FC<LocalCameraProps> = ({
             <img
               src={recUrl}
               alt="Recognition stream"
-              className="h-full w-full object-cover object-top-left"
+              className={cn(
+                "h-full w-full",
+                objectFit === "contain"
+                  ? "object-contain object-center"
+                  : "object-cover object-top-left"
+              )}
               width={1280}
               height={720}
             />

@@ -57,7 +57,7 @@ export default function GatepassCameraSection({
 
   return (
     <section className="flex min-h-0 min-w-0 flex-col border-b border-zinc-100 xl:overflow-y-auto xl:border-b-0 xl:border-r xl:border-r-zinc-100">
-      <div className="flex min-h-0 flex-1 flex-col gap-2.5 p-3">
+      <div className="flex min-h-0 flex-1 flex-col gap-4 p-4">
         <Select
           value={selectedGatepassCameraId}
           onValueChange={(value) => {
@@ -87,9 +87,9 @@ export default function GatepassCameraSection({
           </SelectContent>
         </Select>
 
-        <div className="min-h-[220px] w-full flex-1 sm:min-h-[240px] xl:min-h-0">
+        <div className="w-full">
           {previewCamera ? (
-            <div className="h-full w-full overflow-hidden rounded-2xl border border-zinc-100 bg-zinc-50/40 p-1.5">
+            <div className="w-full aspect-video overflow-hidden rounded-2xl border border-zinc-100 bg-zinc-50/40 p-1.5">
               {isLaptop ? (
                 <LocalCamera
                   userId={previewCamera.id}
@@ -98,6 +98,7 @@ export default function GatepassCameraSection({
                   active={previewCamera.isActive}
                   showFooter={false}
                   fillContainer
+                  objectFit="contain"
                   className="h-full w-full rounded-[14px] border-zinc-200 shadow-none"
                 />
               ) : (
@@ -111,6 +112,7 @@ export default function GatepassCameraSection({
                   showAttendanceActions={false}
                   showFooter={false}
                   fillContainer
+                  objectFit="contain"
                   className="h-full w-full rounded-[14px] border-zinc-200 shadow-none"
                   onStart={() => onStart()}
                   onStop={() => onStop()}
@@ -120,13 +122,13 @@ export default function GatepassCameraSection({
               )}
             </div>
           ) : (
-            <div className="flex h-full min-h-[220px] w-full items-center justify-center rounded-2xl border border-dashed border-zinc-200 bg-zinc-50/60 px-4 text-center text-sm text-zinc-500 xl:min-h-0">
+            <div className="flex aspect-video w-full items-center justify-center rounded-2xl border border-dashed border-zinc-200 bg-zinc-50/60 px-4 text-center text-sm text-zinc-500">
               No gatepass camera found.
             </div>
           )}
         </div>
 
-        <div className="grid w-full grid-cols-2 gap-2">
+        <div className="grid w-full grid-cols-2 gap-2 mt-auto">
           <Button
             type="button"
             className="h-10 flex-1 rounded-xl bg-zinc-900 text-white hover:bg-zinc-800 xl:h-9"
