@@ -32,6 +32,7 @@ type Props = {
   setPurpose: React.Dispatch<React.SetStateAction<string>>;
   setFormErrors: React.Dispatch<React.SetStateAction<FormErrors>>;
   onSubmit: () => Promise<void>;
+  onCancel: () => Promise<void>;
 };
 
 export default function GatepassSubmissionSection({
@@ -49,6 +50,7 @@ export default function GatepassSubmissionSection({
   setPurpose,
   setFormErrors,
   onSubmit,
+  onCancel,
 }: Props) {
   return (
     <div className="flex min-h-0 min-w-0 flex-none flex-col border-b border-zinc-100 bg-white p-3 md:px-5 md:py-3">
@@ -177,8 +179,8 @@ export default function GatepassSubmissionSection({
           </div>
         </div>
 
-        {/* Submit button on the right */}
-        <div className="shrink-0 lg:pl-4">
+        {/* Actions container on the right */}
+        <div className="shrink-0 lg:pl-4 flex flex-col sm:flex-row items-center gap-2 w-full lg:w-auto">
           <Button
             type="button"
             className="h-9 w-full rounded-xl bg-zinc-900 px-5 text-white hover:bg-zinc-800 sm:w-[180px] text-xs font-semibold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5"
@@ -198,6 +200,18 @@ export default function GatepassSubmissionSection({
                 Submit Gatepass
               </>
             )}
+          </Button>
+
+          <Button
+            type="button"
+            variant="outline"
+            className="h-9 w-full rounded-xl border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 sm:w-[100px] text-xs font-semibold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5"
+            onClick={() => {
+              void onCancel();
+            }}
+            disabled={submitting}
+          >
+            Cancel
           </Button>
         </div>
 

@@ -1287,8 +1287,6 @@ export function useGatepassPage() {
     try {
       await stopCurrentCamera(targetId, true);
       setRecognitionActive(false);
-      clearRecognizedList();
-      resetGatepassForm();
       toast.success("Gate pass camera stopped");
     } catch (error: unknown) {
       const message = normalizeApiError(error, "Failed to stop camera");
@@ -1299,11 +1297,44 @@ export function useGatepassPage() {
     }
   }, [
     cameraAction,
-    clearRecognizedList,
-    resetGatepassForm,
     selectedGatepassCamera,
     stopCurrentCamera,
     submitting,
+  ]);
+
+  const cancelGatepassFlow = useCallback(async () => {
+    const targetId =
+      String(activeCameraIdRef.current ?? "").trim() ||
+      String(selectedGatepassCamera?.id ?? "").trim();
+
+    setPanelError("");
+    clearRecognizedList();
+    resetGatepassForm();
+
+    if (!targetId || (!activeCameraIdRef.current && !recognitionActive)) {
+      toast.success("Gate pass cleared");
+      return;
+    }
+
+    setCameraAction("stop");
+
+    try {
+      await stopCurrentCamera(targetId, true);
+      setRecognitionActive(false);
+      toast.success("Gate pass cancelled and camera stopped");
+    } catch (error: unknown) {
+      const message = normalizeApiError(error, "Failed to stop camera");
+      setPanelError(message);
+      toast.error(message);
+    } finally {
+      setCameraAction(null);
+    }
+  }, [
+    clearRecognizedList,
+    recognitionActive,
+    resetGatepassForm,
+    selectedGatepassCamera,
+    stopCurrentCamera,
   ]);
 
   const stopAndResetGatepassFlow = useCallback(
@@ -1581,6 +1612,7 @@ export function useGatepassPage() {
     handleCameraChange,
     startSelectedCamera,
     stopSelectedCamera,
+    cancelGatepassFlow,
     submitRequest,
     resetHistoryFilters,
     fetchHistoryRecords,

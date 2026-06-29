@@ -51,6 +51,7 @@ export default function GatepassPage() {
           setPurpose={gatepass.setPurpose}
           setFormErrors={gatepass.setFormErrors}
           onSubmit={gatepass.submitRequest}
+          onCancel={gatepass.cancelGatepassFlow}
         />
 
         <RecognizedPersonsSection
