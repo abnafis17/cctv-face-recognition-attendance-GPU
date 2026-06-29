@@ -1,5 +1,6 @@
+import { useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Rows3 } from "lucide-react";
+import { Rows3, ChevronDown, ChevronUp } from "lucide-react";
 
 import Pagination from "@/components/reusable/Pagination";
 import { TanstackDataTable } from "@/components/reusable/TanstackDataTable";
@@ -58,13 +59,23 @@ export default function GatepassHistorySection({
   fetchHistoryRecords,
   pageLimit,
 }: Props) {
+  const [isCollapsed, setIsCollapsed] = useState(false);
+
   return (
     <section className="flex min-w-0 flex-none flex-col border-t border-zinc-100 bg-white xl:min-h-0 xl:flex-1">
-      <div className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
+      <div
+        onClick={() => setIsCollapsed(!isCollapsed)}
+        className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between cursor-pointer select-none hover:bg-zinc-50/50 transition-colors"
+      >
+        <div className="min-w-0 flex items-center gap-2">
           <div className="text-base font-semibold text-zinc-900">
             Gatepass History
           </div>
+          {isCollapsed ? (
+            <ChevronDown className="h-4.5 w-4.5 text-zinc-500" />
+          ) : (
+            <ChevronUp className="h-4.5 w-4.5 text-zinc-500" />
+          )}
         </div>
 
         <Badge
@@ -76,46 +87,50 @@ export default function GatepassHistorySection({
         </Badge>
       </div>
 
-      <GatepassHistoryFilters
-        historySearch={historySearch}
-        historyFromDate={historyFromDate}
-        historyToDate={historyToDate}
-        historyLeaveTypeCategory={historyLeaveTypeCategory}
-        historyPurposeId={historyPurposeId}
-        gatepassLeaveTypes={gatepassLeaveTypes}
-        historyError={historyError}
-        setHistorySearch={setHistorySearch}
-        setHistoryFromDate={setHistoryFromDate}
-        setHistoryToDate={setHistoryToDate}
-        setHistoryLeaveTypeCategory={setHistoryLeaveTypeCategory}
-        setHistoryPurposeId={setHistoryPurposeId}
-        resetHistoryFilters={resetHistoryFilters}
-        fetchHistoryRecords={fetchHistoryRecords}
-      />
-
-      <div className="min-w-0 px-4 pt-3 pb-4">
-        <div className="min-h-[220px] w-full max-w-full overflow-hidden rounded-2xl border border-zinc-100 bg-white">
-          <TanstackDataTable
-            data={paginatedHistoryRows}
-            columns={historyColumns}
-            loading={historyLoading}
-            className="w-full"
-            freezeClassName="w-full max-w-full overflow-x-auto overflow-y-hidden rounded-none"
-            emptyState="No gatepass records found in the database."
+      {!isCollapsed && (
+        <>
+          <GatepassHistoryFilters
+            historySearch={historySearch}
+            historyFromDate={historyFromDate}
+            historyToDate={historyToDate}
+            historyLeaveTypeCategory={historyLeaveTypeCategory}
+            historyPurposeId={historyPurposeId}
+            gatepassLeaveTypes={gatepassLeaveTypes}
+            historyError={historyError}
+            setHistorySearch={setHistorySearch}
+            setHistoryFromDate={setHistoryFromDate}
+            setHistoryToDate={setHistoryToDate}
+            setHistoryLeaveTypeCategory={setHistoryLeaveTypeCategory}
+            setHistoryPurposeId={setHistoryPurposeId}
+            resetHistoryFilters={resetHistoryFilters}
+            fetchHistoryRecords={fetchHistoryRecords}
           />
-        </div>
-      </div>
 
-      {historyRows.length ? (
-        <div className="shrink-0 border-t border-zinc-100 bg-white px-4 py-3">
-          <Pagination
-            numberOfData={historyRows.length}
-            limits={pageLimit}
-            getCurrentPage={setHistoryPage}
-            activeTab2={historyPaginationResetKey}
-          />
-        </div>
-      ) : null}
+          <div className="min-w-0 px-4 pt-3 pb-4">
+            <div className="min-h-[220px] w-full max-w-full overflow-hidden rounded-2xl border border-zinc-100 bg-white">
+              <TanstackDataTable
+                data={paginatedHistoryRows}
+                columns={historyColumns}
+                loading={historyLoading}
+                className="w-full"
+                freezeClassName="w-full max-w-full overflow-x-auto overflow-y-hidden rounded-none"
+                emptyState="No gatepass records found in the database."
+              />
+            </div>
+          </div>
+
+          {historyRows.length ? (
+            <div className="shrink-0 border-t border-zinc-100 bg-white px-4 py-3">
+              <Pagination
+                numberOfData={historyRows.length}
+                limits={pageLimit}
+                getCurrentPage={setHistoryPage}
+                activeTab2={historyPaginationResetKey}
+              />
+            </div>
+          ) : null}
+        </>
+      )}
     </section>
   );
 }

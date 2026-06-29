@@ -729,6 +729,7 @@ export function useGatepassPage() {
               toDate: historyToDate,
               leaveTypeId: resolvedLeaveTypeId,
               q: debouncedHistorySearch || undefined,
+              status: "out",
               limit: 500,
             },
           },

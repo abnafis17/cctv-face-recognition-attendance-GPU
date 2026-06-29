@@ -34,9 +34,11 @@ export function getHistoryColumns(
           <div className="truncate font-medium text-zinc-900">
             {row.original.employee.name}
           </div>
-          <div className="truncate text-xs text-zinc-500">
-            {row.original.note}
-          </div>
+          {row.original.destination && (
+            <div className="truncate text-xs text-zinc-500">
+              Destination: {row.original.destination}
+            </div>
+          )}
         </div>
       ),
       size: 260,
