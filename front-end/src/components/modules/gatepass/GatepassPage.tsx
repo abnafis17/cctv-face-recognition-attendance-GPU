@@ -11,13 +11,13 @@ export default function GatepassPage() {
   const gatepass = useGatepassPage();
 
   return (
-    <div className="ui-readable flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden rounded-[24px] border border-zinc-100 bg-white shadow-[0_12px_36px_rgba(15,23,42,0.06)] md:rounded-[28px]">
+    <div className="ui-readable flex h-auto lg:h-full min-h-0 min-w-0 w-full flex-col overflow-visible lg:overflow-hidden rounded-[24px] border border-zinc-100 bg-white shadow-[0_12px_36px_rgba(15,23,42,0.06)] md:rounded-[28px]">
       <GatepassHeader
         recognizedCount={gatepass.summaryCounts.recognized}
         recordsCount={gatepass.summaryCounts.records}
       />
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-visible lg:overflow-y-auto">
         <GatepassCameraSection
           selectedGatepassCameraId={gatepass.selectedGatepassCameraId}
           gatepassCameras={gatepass.gatepassCameras}

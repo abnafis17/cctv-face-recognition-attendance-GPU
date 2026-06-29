@@ -63,11 +63,11 @@ export default function GatepassCameraSection({
         <div className="flex w-full justify-center">
           <div className="flex flex-col w-full max-w-[588px]">
             
-            {/* Row with controls left and video preview right */}
-            <div className="flex items-end gap-3 w-full">
+            {/* Responsive Row: columns stack vertically on mobile, sit horizontally on sm+ screens */}
+            <div className="flex flex-col sm:flex-row sm:items-end gap-3 w-full">
               
               {/* Left Portion: Dropdown + Camera Preview */}
-              <div className="flex-1 flex flex-col gap-2 min-w-0">
+              <div className="flex-1 flex flex-col gap-2 min-w-0 w-full">
                 {/* Camera Selection */}
                 <div className="space-y-1">
                   <label className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">
@@ -106,7 +106,7 @@ export default function GatepassCameraSection({
                 {/* Camera Video Preview */}
                 <div className="w-full">
                   {previewCamera ? (
-                    <div className="w-full aspect-video overflow-hidden rounded-2xl border border-zinc-100 bg-zinc-50/40 p-1.5">
+                    <div className="relative w-full aspect-video overflow-hidden rounded-2xl border border-zinc-100 bg-zinc-50/40 p-1.5">
                       {isLaptop ? (
                         <LocalCamera
                           userId={previewCamera.id}
@@ -116,7 +116,7 @@ export default function GatepassCameraSection({
                           showFooter={false}
                           fillContainer
                           objectFit="contain"
-                          className="h-full w-full rounded-[14px] border-zinc-200 shadow-none"
+                          className="absolute inset-1.5 rounded-[14px] border-zinc-200 shadow-none"
                         />
                       ) : (
                         <CameraMonitorCard
@@ -130,7 +130,7 @@ export default function GatepassCameraSection({
                           showFooter={false}
                           fillContainer
                           objectFit="contain"
-                          className="h-full w-full rounded-[14px] border-zinc-200 shadow-none"
+                          className="absolute inset-1.5 rounded-[14px] border-zinc-200 shadow-none"
                           onStart={() => onStart()}
                           onStop={() => onStop()}
                           onEnableAttendance={async () => undefined}
@@ -146,11 +146,11 @@ export default function GatepassCameraSection({
                 </div>
               </div>
 
-              {/* Right Portion: Start & Stop buttons stacked vertically, bottom aligned */}
-              <div className="flex flex-col gap-2 shrink-0 pb-1.5">
+              {/* Right Portion: Start & Stop buttons stacked vertically on sm+ screens, side-by-side on mobile */}
+              <div className="flex flex-row sm:flex-col gap-2 shrink-0 pb-0 sm:pb-1.5 w-full sm:w-auto">
                 <Button
                   type="button"
-                  className="h-9 w-24 rounded-xl bg-zinc-900 text-white hover:bg-zinc-800 flex items-center justify-center gap-1.5 text-xs font-semibold uppercase tracking-wider transition-all"
+                  className="h-9 flex-1 sm:flex-none sm:w-24 rounded-xl bg-zinc-900 text-white hover:bg-zinc-800 flex items-center justify-center gap-1.5 text-xs font-semibold uppercase tracking-wider transition-all"
                   onClick={() => {
                     void onStart();
                   }}
@@ -172,7 +172,7 @@ export default function GatepassCameraSection({
                 <Button
                   type="button"
                   variant="outline"
-                  className="h-9 w-24 rounded-xl border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 flex items-center justify-center gap-1.5 text-xs font-semibold uppercase tracking-wider transition-all"
+                  className="h-9 flex-1 sm:flex-none sm:w-24 rounded-xl border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 flex items-center justify-center gap-1.5 text-xs font-semibold uppercase tracking-wider transition-all"
                   onClick={() => {
                     void onStop();
                   }}

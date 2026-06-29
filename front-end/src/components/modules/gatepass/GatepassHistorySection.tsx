@@ -59,10 +59,10 @@ export default function GatepassHistorySection({
   fetchHistoryRecords,
   pageLimit,
 }: Props) {
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(true);
 
   return (
-    <section className="flex min-w-0 flex-none flex-col border-t border-zinc-100 bg-white xl:min-h-0 xl:flex-1">
+    <section className="flex min-w-0 flex-none flex-col border-t border-zinc-100 bg-white lg:min-h-0 lg:flex-1">
       <div
         onClick={() => setIsCollapsed(!isCollapsed)}
         className="flex w-full cursor-pointer select-none hover:bg-zinc-50/50 transition-colors border-b border-zinc-100/60"
