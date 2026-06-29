@@ -20,13 +20,15 @@ type Props = {
   historySearch: string;
   historyFromDate: string;
   historyToDate: string;
-  historyLeaveTypeId: string;
+  historyLeaveTypeCategory: "all" | "short" | "long";
+  historyPurposeId: string;
   gatepassLeaveTypes: GatepassLeaveTypeOption[];
   historyError: string;
   setHistorySearch: React.Dispatch<React.SetStateAction<string>>;
   setHistoryFromDate: React.Dispatch<React.SetStateAction<string>>;
   setHistoryToDate: React.Dispatch<React.SetStateAction<string>>;
-  setHistoryLeaveTypeId: React.Dispatch<React.SetStateAction<string>>;
+  setHistoryLeaveTypeCategory: React.Dispatch<React.SetStateAction<"all" | "short" | "long">>;
+  setHistoryPurposeId: React.Dispatch<React.SetStateAction<string>>;
   setHistoryPage: React.Dispatch<React.SetStateAction<number>>;
   resetHistoryFilters: () => void;
   fetchHistoryRecords: (silent?: boolean) => Promise<void>;
@@ -42,13 +44,15 @@ export default function GatepassHistorySection({
   historySearch,
   historyFromDate,
   historyToDate,
-  historyLeaveTypeId,
+  historyLeaveTypeCategory,
+  historyPurposeId,
   gatepassLeaveTypes,
   historyError,
   setHistorySearch,
   setHistoryFromDate,
   setHistoryToDate,
-  setHistoryLeaveTypeId,
+  setHistoryLeaveTypeCategory,
+  setHistoryPurposeId,
   setHistoryPage,
   resetHistoryFilters,
   fetchHistoryRecords,
@@ -76,13 +80,15 @@ export default function GatepassHistorySection({
         historySearch={historySearch}
         historyFromDate={historyFromDate}
         historyToDate={historyToDate}
-        historyLeaveTypeId={historyLeaveTypeId}
+        historyLeaveTypeCategory={historyLeaveTypeCategory}
+        historyPurposeId={historyPurposeId}
         gatepassLeaveTypes={gatepassLeaveTypes}
         historyError={historyError}
         setHistorySearch={setHistorySearch}
         setHistoryFromDate={setHistoryFromDate}
         setHistoryToDate={setHistoryToDate}
-        setHistoryLeaveTypeId={setHistoryLeaveTypeId}
+        setHistoryLeaveTypeCategory={setHistoryLeaveTypeCategory}
+        setHistoryPurposeId={setHistoryPurposeId}
         resetHistoryFilters={resetHistoryFilters}
         fetchHistoryRecords={fetchHistoryRecords}
       />

@@ -17,10 +17,15 @@ import gatepassRoutes from "./gatepass.routes";
 import visitorRoutes from "./visitors.routes";
 import masterDataRoutes from "./masterData.routes";
 
+import { updateGatepassErpStatus } from "../controllers/gatepass.controller";
+
 const router = Router();
 
 // system
 router.use("/health", healthRoutes);
+
+// ERP Status webhook callback
+router.post("/gatepass-erp-status", updateGatepassErpStatus);
 
 //authentication
 router.use("/auth", authRouter);

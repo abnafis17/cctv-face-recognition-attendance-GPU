@@ -36,6 +36,8 @@ export const gatepassCreateSchema = z.object({
   destination: optionalTrimmedString(255).optional(),
   cameraId: optionalTrimmedString(191).optional(),
   recognizedAt: z.string().trim().min(1).max(64).optional(),
+  passType: optionalTrimmedString(191).optional(),
+  remarks: optionalTrimmedString(1000).optional(),
 });
 
 export const gatepassReturnSchema = z.object({

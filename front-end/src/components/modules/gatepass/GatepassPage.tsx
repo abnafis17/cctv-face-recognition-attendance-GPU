@@ -73,13 +73,15 @@ export default function GatepassPage() {
           historySearch={gatepass.historySearch}
           historyFromDate={gatepass.historyFromDate}
           historyToDate={gatepass.historyToDate}
-          historyLeaveTypeId={gatepass.historyLeaveTypeId}
+          historyLeaveTypeCategory={gatepass.historyLeaveTypeCategory}
+          historyPurposeId={gatepass.historyPurposeId}
           gatepassLeaveTypes={gatepass.gatepassLeaveTypes}
           historyError={gatepass.historyError}
           setHistorySearch={gatepass.setHistorySearch}
           setHistoryFromDate={gatepass.setHistoryFromDate}
           setHistoryToDate={gatepass.setHistoryToDate}
-          setHistoryLeaveTypeId={gatepass.setHistoryLeaveTypeId}
+          setHistoryLeaveTypeCategory={gatepass.setHistoryLeaveTypeCategory}
+          setHistoryPurposeId={gatepass.setHistoryPurposeId}
           setHistoryPage={gatepass.setHistoryPage}
           resetHistoryFilters={gatepass.resetHistoryFilters}
           fetchHistoryRecords={gatepass.fetchHistoryRecords}

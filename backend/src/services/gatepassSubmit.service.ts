@@ -19,16 +19,19 @@ export type GatepassSubmitSyncResult = {
   ackAt: Date | null;
   payload: Record<string, unknown>;
   errorMessage: string | null;
+  gatePassId?: string | null;
 };
 
 type ErpGatepassPayloadRow = {
   empId: string;
-  passTitle: string;
-  passTitleId: string;
+  passTitle?: string;
+  passTitleId?: string;
   destination: string;
   timeStart: string;
+  date: string;
+  timeEnd: string;
   remarks: string;
-  isApp: string;
+  passType: string;
 };
 
 function toDhakaTimeHHMMSS(value: Date): string {
@@ -57,20 +60,67 @@ function toJsonSafeValue(value: unknown): unknown {
   }
 }
 
+function toDhakaDateDDMMYYYY(value: Date): string {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Dhaka",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).formatToParts(value);
+
+  const dd = parts.find((part) => part.type === "day")?.value ?? "01";
+  const mm = parts.find((part) => part.type === "month")?.value ?? "01";
+  const yyyy = parts.find((part) => part.type === "year")?.value ?? "1970";
+
+  return `${dd}/${mm}/${yyyy}`;
+}
+
+function addHours(date: Date, hours: number): Date {
+  const next = new Date(date.getTime());
+  next.setTime(next.getTime() + hours * 60 * 60 * 1000);
+  return next;
+}
+
 function buildRequestBody(
   input: GatepassSubmitSyncInput,
 ): ErpGatepassPayloadRow[] {
-  return [
-    {
-      empId: String(input.empId ?? "").trim(),
-      passTitle: String(input.passTitle ?? "").trim(),
-      passTitleId: String(input.passTitleId ?? "").trim(),
-      destination: String(input.destination ?? "").trim(),
-      timeStart: toDhakaTimeHHMMSS(input.outTime),
-      remarks: String(input.remarks ?? "").trim(),
-      isApp: "1",
-    },
-  ];
+  const isShortLeave =
+    input.passTitleId !== "Long Leave" &&
+    input.passTitle !== "Long Leave";
+  const timeStart = toDhakaTimeHHMMSS(input.outTime);
+  const date = toDhakaDateDDMMYYYY(input.outTime);
+
+  if (isShortLeave) {
+    const end = addHours(input.outTime, 2);
+    const timeEnd = toDhakaTimeHHMMSS(end);
+    return [
+      {
+        empId: String(input.empId ?? "").trim(),
+        passTitle: String(input.passTitle ?? "").trim(),
+        passTitleId: String(input.passTitleId ?? "").trim(),
+        destination: String(input.destination ?? "").trim(),
+        timeStart,
+        date,
+        timeEnd,
+        remarks: "okay",
+        passType: "short leave",
+      },
+    ];
+  } else {
+    const end = addHours(input.outTime, 1);
+    const timeEnd = toDhakaTimeHHMMSS(end);
+    return [
+      {
+        empId: String(input.empId ?? "").trim(),
+        destination: String(input.destination ?? "").trim(),
+        timeStart,
+        date,
+        timeEnd,
+        remarks: "ok",
+        passType: "Long Leave",
+      },
+    ];
+  }
 }
 
 function buildFailureResult(
@@ -121,6 +171,7 @@ export async function submitGatepassToErp(
       );
     }
 
+    console.log(`[ERP GATEPASS SYNC] Sending request to ${url} with body:`, JSON.stringify(requestBody, null, 2));
     const response = await axios.post(url, requestBody, {
       headers: {
         Accept: "*/*",
@@ -130,15 +181,31 @@ export async function submitGatepassToErp(
       timeout: DEFAULT_TIMEOUT_MS,
       validateStatus: () => true,
     });
+    console.log(`[ERP GATEPASS SYNC] Received response: Status ${response.status}`, JSON.stringify(response.data, null, 2));
 
     if (response.status >= 200 && response.status < 300) {
       const ackAt = new Date();
+      let gatePassId: string | null = null;
+      const respData = response.data;
+      if (respData && Array.isArray(respData.data)) {
+        const matching = respData.data.find(
+          (item: any) => String(item.empId) === String(input.empId)
+        );
+        if (matching && matching.gatePassId) {
+          gatePassId = String(matching.gatePassId);
+        } else if (respData.data[0] && respData.data[0].gatePassId) {
+          gatePassId = String(respData.data[0].gatePassId);
+        }
+      } else if (respData && respData.gatePassId) {
+        gatePassId = String(respData.gatePassId);
+      }
 
       return {
         attempted: true,
         acknowledged: true,
         ackAt,
         errorMessage: null,
+        gatePassId,
         payload: {
           ok: true,
           url,
@@ -168,6 +235,7 @@ export async function submitGatepassToErp(
       },
     };
   } catch (error: unknown) {
+    console.error(`[ERP GATEPASS SYNC] Error occurred:`, error);
     const detail =
       error instanceof Error
         ? error.message

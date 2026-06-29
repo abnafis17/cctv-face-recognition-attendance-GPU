@@ -34,6 +34,10 @@ type GatepassJoinedRow = {
   externalReturnAckAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  passType: string | null;
+  remarks: string | null;
+  externalGatepassId: string | null;
+  erpStatus: string | null;
   employeePkId: string;
   employeeEmpId: string | null;
   employeeName: string;
@@ -103,6 +107,10 @@ SELECT
   gp."externalReturnAckAt",
   gp."createdAt",
   gp."updatedAt",
+  gp."passType",
+  gp."remarks",
+  gp."externalGatepassId",
+  gp."erpStatus",
   e."id" AS "employeePkId",
   e."emp_id" AS "employeeEmpId",
   e."name" AS "employeeName",
@@ -174,6 +182,10 @@ function serializeGatepass(row: GatepassJoinedRow) {
     externalReturnAckAt: row.externalReturnAckAt
       ? row.externalReturnAckAt.toISOString()
       : null,
+    passType: row.passType,
+    remarks: row.remarks,
+    externalGatepassId: row.externalGatepassId,
+    erpStatus: row.erpStatus,
   };
 }
 
@@ -196,6 +208,8 @@ function normalizeCreateInput(req: Request): GatepassCreateInput {
     destination: req.body?.destination,
     cameraId: req.body?.cameraId,
     recognizedAt: req.body?.recognizedAt,
+    passType: req.body?.passType,
+    remarks: req.body?.remarks,
   });
 }
 
@@ -263,7 +277,17 @@ export async function listGatepassRecords(req: Request, res: Response) {
     ];
 
     if (query.leaveTypeId) {
-      whereClauses.push(Prisma.sql`gp."leaveTypeId" = ${query.leaveTypeId}`);
+      if (query.leaveTypeId === "Long Leave") {
+        whereClauses.push(
+          Prisma.sql`(gp."leaveTypeId" = 'Long Leave' OR gp."leaveType" ILIKE 'long%' OR gp."leaveType" = 'Long Leave')`
+        );
+      } else if (query.leaveTypeId === "short leave") {
+        whereClauses.push(
+          Prisma.sql`(gp."leaveTypeId" IS NULL OR (gp."leaveTypeId" <> 'Long Leave' AND gp."leaveType" NOT ILIKE 'long%' AND gp."leaveType" <> 'Long Leave'))`
+        );
+      } else {
+        whereClauses.push(Prisma.sql`gp."leaveTypeId" = ${query.leaveTypeId}`);
+      }
     } else if (query.leaveType) {
       whereClauses.push(Prisma.sql`gp."leaveType" = ${query.leaveType}`);
     }
@@ -350,7 +374,9 @@ export async function createGatepassRecord(req: Request, res: Response) {
         "requestCameraId",
         "returnCameraId",
         "createdAt",
-        "updatedAt"
+        "updatedAt",
+        "passType",
+        "remarks"
       ) VALUES (
         ${gatepassId},
         ${companyId},
@@ -365,7 +391,9 @@ export async function createGatepassRecord(req: Request, res: Response) {
         ${camera?.id ?? null},
         ${null},
         ${createdAt},
-        ${createdAt}
+        ${createdAt},
+        ${payload.passType ?? null},
+        ${payload.remarks ?? null}
       )`,
     );
 
@@ -385,6 +413,8 @@ export async function createGatepassRecord(req: Request, res: Response) {
           SET
             "externalSubmitAckAt" = ${erpSubmit.ackAt},
             "externalSubmitPayload" = CAST(${JSON.stringify(erpSubmit.payload)} AS jsonb),
+            "externalGatepassId" = ${erpSubmit.gatePassId ?? null},
+            "erpStatus" = ${erpSubmit.acknowledged ? "pending" : "failed"},
             "updatedAt" = ${new Date()}
           WHERE "id" = ${gatepassId}
             AND "companyId" = ${companyId}
@@ -558,6 +588,47 @@ export async function markGatepassReturn(req: Request, res: Response) {
     }
     return res.status(500).json({
       error: "Failed to mark gatepass return",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+export async function updateGatepassErpStatus(req: Request, res: Response) {
+  try {
+    const { refid, status } = req.body;
+    if (!refid) {
+      return res.status(400).json({ error: "Missing refid parameter" });
+    }
+    if (!status) {
+      return res.status(400).json({ error: "Missing status parameter" });
+    }
+
+    const normalizedRefId = String(refid).trim();
+    const normalizedStatus = String(status).trim().toLowerCase();
+
+    const record = await prisma.gatepassTable.findFirst({
+      where: { externalGatepassId: normalizedRefId },
+    });
+
+    if (!record) {
+      return res.status(404).json({ error: `Gatepass record with refid ${refid} not found` });
+    }
+
+    await prisma.gatepassTable.update({
+      where: { id: record.id },
+      data: {
+        erpStatus: normalizedStatus,
+        updatedAt: new Date(),
+      },
+    });
+
+    return res.status(200).json({
+      ok: true,
+      message: `Status updated to ${normalizedStatus} for refid ${refid}`,
+    });
+  } catch (error: unknown) {
+    return res.status(500).json({
+      error: "Failed to update gatepass ERP status",
       detail: error instanceof Error ? error.message : String(error),
     });
   }

@@ -71,47 +71,29 @@ export default function GatepassSubmissionSection({
           <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 xl:gap-2.5">
             <div className="min-w-0 space-y-2">
               <div className="text-[11px] font-medium text-zinc-500">
-                Leave Type
+                Leave Type <span className="text-rose-500">*</span>
               </div>
               <Select
                 value={leaveTypeId || undefined}
-                disabled={
-                  submitting ||
-                  gatepassLeaveTypesLoading ||
-                  gatepassLeaveTypes.length === 0
-                }
+                disabled={submitting}
                 onValueChange={(value) => {
                   setLeaveTypeId(value);
+                  setPurpose("");
                   setFormErrors((current) => ({
                     ...current,
                     leaveType: undefined,
+                    purpose: undefined,
                   }));
                 }}
               >
                 <SelectTrigger className="h-10 w-full rounded-xl border-zinc-100 bg-white text-sm text-zinc-900">
-                  <SelectValue
-                    placeholder={
-                      gatepassLeaveTypesLoading
-                        ? "Loading leave types..."
-                        : gatepassLeaveTypes.length > 0
-                          ? "Select leave type"
-                          : "No leave types available"
-                    }
-                  />
+                  <SelectValue placeholder="Select leave type" />
                 </SelectTrigger>
                 <SelectContent align="start">
-                  {gatepassLeaveTypes.map((leaveType) => (
-                    <SelectItem key={leaveType.id} value={leaveType.id}>
-                      {leaveType.label}
-                    </SelectItem>
-                  ))}
+                  <SelectItem value="short leave">Short Leave</SelectItem>
+                  <SelectItem value="Long Leave">Long Leave</SelectItem>
                 </SelectContent>
               </Select>
-              {gatepassLeaveTypesError ? (
-                <div className="text-sm font-medium text-rose-600">
-                  {gatepassLeaveTypesError}
-                </div>
-              ) : null}
               {formErrors.leaveType ? (
                 <div className="text-sm font-medium text-rose-600">
                   {formErrors.leaveType}
@@ -119,44 +101,74 @@ export default function GatepassSubmissionSection({
               ) : null}
             </div>
 
-            <div className="min-w-0 space-y-2">
-              <div className="text-[11px] font-medium text-zinc-500">
-                Destination
-              </div>
-              <Input
-                value={destination}
-                onChange={(event) => setDestination(event.target.value)}
-                placeholder="Enter destination"
-                className="h-10 rounded-xl border-zinc-100 bg-white"
-              />
-            </div>
-
-            <div className="min-w-0 space-y-2 sm:col-span-2 xl:col-span-1">
-              <div className="text-[11px] font-medium text-zinc-500">
-                Purpose
-              </div>
-              <Input
-                value={purpose}
-                onChange={(event) => {
-                  setPurpose(event.target.value);
-                  if (event.target.value.trim()) {
+            {leaveTypeId === "short leave" && (
+              <div className="min-w-0 space-y-2">
+                <div className="text-[11px] font-medium text-zinc-500">
+                  Purpose <span className="text-rose-500">*</span>
+                </div>
+                <Select
+                  value={purpose || undefined}
+                  disabled={submitting || gatepassLeaveTypesLoading || gatepassLeaveTypes.length === 0}
+                  onValueChange={(value) => {
+                    setPurpose(value);
                     setFormErrors((current) => ({
                       ...current,
                       purpose: undefined,
                     }));
-                  }
-                }}
-                placeholder="Enter purpose"
-                className={cn(
-                  "h-10 rounded-xl bg-white",
-                  formErrors.purpose ? "border-rose-300" : "border-zinc-100",
-                )}
+                  }}
+                >
+                  <SelectTrigger
+                    className={cn(
+                      "h-10 w-full rounded-xl bg-white text-sm text-zinc-900",
+                      formErrors.purpose ? "border-rose-300" : "border-zinc-100",
+                    )}
+                  >
+                    <SelectValue
+                      placeholder={
+                        gatepassLeaveTypesLoading
+                          ? "Loading purposes..."
+                          : gatepassLeaveTypes.length > 0
+                            ? "Select purpose"
+                            : "No purposes available"
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent align="start">
+                    {gatepassLeaveTypes.map((leaveType) => (
+                      <SelectItem key={leaveType.id} value={leaveType.id}>
+                        {leaveType.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {gatepassLeaveTypesError ? (
+                  <div className="text-sm font-medium text-rose-600">
+                    {gatepassLeaveTypesError}
+                  </div>
+                ) : null}
+                {formErrors.purpose ? (
+                  <div className="text-sm font-medium text-rose-600">
+                    {formErrors.purpose}
+                  </div>
+                ) : null}
+              </div>
+            )}
+
+            <div className={cn(
+              "min-w-0 space-y-2",
+              leaveTypeId === "short leave"
+                ? "sm:col-span-2 xl:col-span-1"
+                : "sm:col-span-1"
+            )}>
+              <div className="text-[11px] font-medium text-zinc-500">
+                Destination (Optional)
+              </div>
+              <Input
+                value={destination}
+                onChange={(event) => setDestination(event.target.value)}
+                placeholder="Enter destination (optional)"
+                className="h-10 rounded-xl border-zinc-100 bg-white"
               />
-              {formErrors.purpose ? (
-                <div className="text-sm font-medium text-rose-600">
-                  {formErrors.purpose}
-                </div>
-              ) : null}
             </div>
           </div>
 

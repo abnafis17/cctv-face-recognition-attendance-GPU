@@ -476,6 +476,12 @@ model GatepassTable {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  passType String?
+  remarks  String?
+
+  externalGatepassId String?
+  erpStatus          String?   @default("pending")
+
   @@index([companyId, outTime])
   @@index([companyId, status, outTime])
   @@index([companyId, leaveTypeId, status])

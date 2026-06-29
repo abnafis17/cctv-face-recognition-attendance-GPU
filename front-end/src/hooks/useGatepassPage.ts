@@ -230,6 +230,12 @@ function mapGatepassApiRecordToViewRecord(
     status: row.status === "returned" ? "returned" : "out",
     note: toRecordNote(row.purpose, row.destination),
     requestedAt: formatGatepassDateTime(row.requestedAt ?? row.outTime),
+    passType: row.passType,
+    remarks: row.remarks,
+    purpose: row.purpose,
+    destination: row.destination,
+    externalGatepassId: row.externalGatepassId,
+    erpStatus: row.erpStatus,
   };
 }
 
@@ -295,7 +301,8 @@ export function useGatepassPage() {
   const [historyToDate, setHistoryToDate] = useState(() =>
     dhakaTodayYYYYMMDD(),
   );
-  const [historyLeaveTypeId, setHistoryLeaveTypeId] = useState("");
+  const [historyLeaveTypeCategory, setHistoryLeaveTypeCategory] = useState<"all" | "short" | "long">("all");
+  const [historyPurposeId, setHistoryPurposeId] = useState("all");
   const [recognizedPeople, setRecognizedPeople] = useState<RecognizedPerson[]>(
     [],
   );
@@ -465,11 +472,12 @@ export function useGatepassPage() {
   );
 
   const historyPaginationResetKey = useMemo(() => {
-    return `${historyFromDate}|${historyToDate}|${historyLeaveTypeId}|${debouncedHistorySearch}|${historyRows.length}`;
+    return `${historyFromDate}|${historyToDate}|${historyLeaveTypeCategory}|${historyPurposeId}|${debouncedHistorySearch}|${historyRows.length}`;
   }, [
     debouncedHistorySearch,
     historyFromDate,
-    historyLeaveTypeId,
+    historyLeaveTypeCategory,
+    historyPurposeId,
     historyRows.length,
     historyToDate,
   ]);
@@ -479,7 +487,8 @@ export function useGatepassPage() {
   }, [
     debouncedHistorySearch,
     historyFromDate,
-    historyLeaveTypeId,
+    historyLeaveTypeCategory,
+    historyPurposeId,
     historyToDate,
   ]);
 
@@ -517,14 +526,14 @@ export function useGatepassPage() {
         current.map((camera) =>
           camera.id === normalized
             ? {
-                ...camera,
-                ...(next.isActive !== undefined
-                  ? { isActive: next.isActive }
-                  : {}),
-                ...(next.attendance !== undefined
-                  ? { attendance: next.attendance }
-                  : {}),
-              }
+              ...camera,
+              ...(next.isActive !== undefined
+                ? { isActive: next.isActive }
+                : {}),
+              ...(next.attendance !== undefined
+                ? { attendance: next.attendance }
+                : {}),
+            }
             : camera,
         ),
       );
@@ -631,10 +640,10 @@ export function useGatepassPage() {
 
       const rows = Array.isArray(response.data)
         ? response.data
-            .map(normalizeGatepassLeaveTypeOption)
-            .filter(
-              (row): row is GatepassLeaveTypeOption => Boolean(row),
-            )
+          .map(normalizeGatepassLeaveTypeOption)
+          .filter(
+            (row): row is GatepassLeaveTypeOption => Boolean(row),
+          )
         : [];
 
       setGatepassLeaveTypes(rows);
@@ -656,16 +665,9 @@ export function useGatepassPage() {
   }, [fetchGatepassLeaveTypes]);
 
   useEffect(() => {
-    setLeaveTypeId((current) => {
-      if (!current) return "";
-      return gatepassLeaveTypeById.has(current) ? current : "";
-    });
-  }, [gatepassLeaveTypeById]);
-
-  useEffect(() => {
-    setHistoryLeaveTypeId((current) => {
-      if (!current) return "";
-      return gatepassLeaveTypeById.has(current) ? current : "";
+    setHistoryPurposeId((current) => {
+      if (current === "all") return "all";
+      return gatepassLeaveTypeById.has(current) ? current : "all";
     });
   }, [gatepassLeaveTypeById]);
 
@@ -710,13 +712,22 @@ export function useGatepassPage() {
         if (!silent) setHistoryLoading(true);
         setHistoryError("");
 
+        const resolvedLeaveTypeId =
+          historyLeaveTypeCategory === "all"
+            ? undefined
+            : historyLeaveTypeCategory === "long"
+            ? "Long Leave"
+            : historyPurposeId === "all"
+            ? "short leave"
+            : historyPurposeId;
+
         const response = await axiosInstance.get<GatepassApiRecord[]>(
           API.GATEPASS_TABLE,
           {
             params: {
               fromDate: historyFromDate,
               toDate: historyToDate,
-              leaveTypeId: historyLeaveTypeId || undefined,
+              leaveTypeId: resolvedLeaveTypeId,
               q: debouncedHistorySearch || undefined,
               limit: 500,
             },
@@ -736,7 +747,13 @@ export function useGatepassPage() {
         if (!silent) setHistoryLoading(false);
       }
     },
-    [debouncedHistorySearch, historyFromDate, historyLeaveTypeId, historyToDate],
+    [
+      debouncedHistorySearch,
+      historyFromDate,
+      historyLeaveTypeCategory,
+      historyPurposeId,
+      historyToDate,
+    ],
   );
 
   useEffect(() => {
@@ -1038,13 +1055,13 @@ export function useGatepassPage() {
       const directoryEmployee = employeeDirectoryByKey.get(eventEmployeeId);
       const matchedEmployee = directoryEmployee
         ? mapEmployeeToGatepassEmployee(
-            directoryEmployee,
-            selectedGatepassCamera.name,
-          )
+          directoryEmployee,
+          selectedGatepassCamera.name,
+        )
         : fallbackGatepassEmployee(
-            eventEmployeeId,
-            selectedGatepassCamera.name,
-          );
+          eventEmployeeId,
+          selectedGatepassCamera.name,
+        );
 
       const latestRecord =
         latestRecordByEmployeeKey.get(matchedEmployee.employeeCode) ??
@@ -1132,7 +1149,8 @@ export function useGatepassPage() {
     setDebouncedHistorySearch("");
     setHistoryFromDate(today);
     setHistoryToDate(today);
-    setHistoryLeaveTypeId("");
+    setHistoryLeaveTypeCategory("all");
+    setHistoryPurposeId("all");
     setHistoryPage(1);
   }, []);
 
@@ -1354,10 +1372,6 @@ export function useGatepassPage() {
       return;
     }
 
-    const trimmedPurpose = purpose.trim();
-    const selectedLeaveType = leaveTypeId
-      ? gatepassLeaveTypeById.get(leaveTypeId) ?? null
-      : null;
     const nextErrors: FormErrors = {};
     const rowsNeedingOutSubmission = recognizedRows.filter(
       (row) => !hasOpenOutRecord(row.latestRecord),
@@ -1368,13 +1382,14 @@ export function useGatepassPage() {
       return;
     }
 
-    if (rowsNeedingOutSubmission.length > 0 && !selectedLeaveType) {
-      nextErrors.leaveType = gatepassLeaveTypes.length
-        ? "Select leave type"
-        : "No gatepass leave type available";
+    const isShortLeave = leaveTypeId === "short leave";
+    const isLongLeave = leaveTypeId === "Long Leave";
+
+    if (rowsNeedingOutSubmission.length > 0 && !leaveTypeId) {
+      nextErrors.leaveType = "Select leave type";
     }
 
-    if (rowsNeedingOutSubmission.length > 0 && !trimmedPurpose) {
+    if (rowsNeedingOutSubmission.length > 0 && isShortLeave && !purpose) {
       nextErrors.purpose = "Purpose is required";
     }
 
@@ -1390,6 +1405,10 @@ export function useGatepassPage() {
     let firstSuccessfulName = "";
     const successfulKeys = new Set<string>();
     const failedNames: string[] = [];
+
+    const selectedPurpose = isShortLeave && purpose
+      ? gatepassLeaveTypes.find((lt) => lt.id === purpose) ?? null
+      : null;
 
     try {
       for (const row of recognizedRows) {
@@ -1433,11 +1452,13 @@ export function useGatepassPage() {
           await axiosInstance.post(API.GATEPASS_TABLE, {
             employeeId,
             cameraId: selectedGatepassCamera.id,
-            leaveTypeId: selectedLeaveType?.id,
-            leaveType: selectedLeaveType?.label,
+            leaveTypeId: isShortLeave ? (selectedPurpose?.id ?? "") : "Long Leave",
+            leaveType: isShortLeave ? (selectedPurpose?.label ?? "") : "Long Leave",
             destination: destination.trim() || null,
-            purpose: trimmedPurpose,
+            purpose: isShortLeave ? (selectedPurpose?.label ?? "") : "Long Leave",
             recognizedAt: row.recognizedAt.toISOString(),
+            passType: isShortLeave ? "short leave" : "Long Leave",
+            remarks: isShortLeave ? "okay" : "ok",
           });
 
           successCount += 1;
@@ -1491,8 +1512,7 @@ export function useGatepassPage() {
     destination,
     fetchGatepassRecords,
     fetchHistoryRecords,
-    gatepassLeaveTypeById,
-    gatepassLeaveTypes.length,
+    gatepassLeaveTypes,
     leaveTypeId,
     purpose,
     recognizedRows,
@@ -1524,7 +1544,8 @@ export function useGatepassPage() {
     historySearch,
     historyFromDate,
     historyToDate,
-    historyLeaveTypeId,
+    historyLeaveTypeCategory,
+    historyPurposeId,
     recognizedRows,
     leaveTypeId,
     destination,
@@ -1549,7 +1570,8 @@ export function useGatepassPage() {
     setHistorySearch,
     setHistoryFromDate,
     setHistoryToDate,
-    setHistoryLeaveTypeId,
+    setHistoryLeaveTypeCategory,
+    setHistoryPurposeId,
     setHistoryPage,
     setLeaveTypeId,
     setDestination,

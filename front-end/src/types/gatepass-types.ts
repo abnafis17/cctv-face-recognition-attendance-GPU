@@ -31,6 +31,12 @@ export type GatepassRecord = {
   status: GatepassStatus;
   note: string;
   requestedAt: string;
+  passType?: string | null;
+  remarks?: string | null;
+  purpose?: string;
+  destination?: string | null;
+  externalGatepassId?: string | null;
+  erpStatus?: string | null;
 };
 
 export type GatepassApiRecord = {
@@ -48,6 +54,10 @@ export type GatepassApiRecord = {
   inTime?: string | null;
   status: GatepassStatus;
   requestedAt?: string;
+  passType?: string | null;
+  remarks?: string | null;
+  externalGatepassId?: string | null;
+  erpStatus?: string | null;
 };
 
 export type EmployeeDirectoryRow = Employee & {
