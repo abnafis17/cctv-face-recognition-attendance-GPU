@@ -18,51 +18,47 @@ export default function GatepassPage() {
       />
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto">
-        <div className="grid min-h-0 min-w-0 flex-none grid-cols-1 xl:h-[480px] xl:grid-cols-[minmax(0,0.78fr)_minmax(0,1.22fr)] xl:overflow-hidden">
-          <GatepassCameraSection
-            selectedGatepassCameraId={gatepass.selectedGatepassCameraId}
-            gatepassCameras={gatepass.gatepassCameras}
-            gatepassCamerasLoading={gatepass.gatepassCamerasLoading}
-            cameraAction={gatepass.cameraAction}
-            submitting={gatepass.submitting}
-            selectedGatepassCamera={gatepass.selectedGatepassCamera}
-            previewCamera={gatepass.previewCamera}
-            recognitionStreamUrl={gatepass.recognitionStreamUrl}
-            isSelectedCameraRunning={gatepass.isSelectedCameraRunning}
-            gatepassCameraError={gatepass.gatepassCameraError}
-            directoryError={gatepass.directoryError}
-            panelError={gatepass.panelError}
-            onCameraChange={gatepass.handleCameraChange}
-            onStart={gatepass.startSelectedCamera}
-            onStop={gatepass.stopSelectedCamera}
-          />
+        <GatepassCameraSection
+          selectedGatepassCameraId={gatepass.selectedGatepassCameraId}
+          gatepassCameras={gatepass.gatepassCameras}
+          gatepassCamerasLoading={gatepass.gatepassCamerasLoading}
+          cameraAction={gatepass.cameraAction}
+          submitting={gatepass.submitting}
+          selectedGatepassCamera={gatepass.selectedGatepassCamera}
+          previewCamera={gatepass.previewCamera}
+          recognitionStreamUrl={gatepass.recognitionStreamUrl}
+          isSelectedCameraRunning={gatepass.isSelectedCameraRunning}
+          gatepassCameraError={gatepass.gatepassCameraError}
+          directoryError={gatepass.directoryError}
+          panelError={gatepass.panelError}
+          onCameraChange={gatepass.handleCameraChange}
+          onStart={gatepass.startSelectedCamera}
+          onStop={gatepass.stopSelectedCamera}
+        />
 
-          <section className="flex min-h-0 min-w-0 flex-col overflow-y-auto border-t border-zinc-100 bg-white xl:border-t-0">
-            <RecognizedPersonsSection
-              rows={gatepass.recognizedRows}
-              columns={gatepass.recognizedColumns}
-              recordsError={gatepass.recordsError}
-              isSelectedCameraRunning={gatepass.isSelectedCameraRunning}
-            />
+        <GatepassSubmissionSection
+          recognizedRows={gatepass.recognizedRows}
+          gatepassLeaveTypes={gatepass.gatepassLeaveTypes}
+          gatepassLeaveTypesLoading={gatepass.gatepassLeaveTypesLoading}
+          gatepassLeaveTypesError={gatepass.gatepassLeaveTypesError}
+          leaveTypeId={gatepass.leaveTypeId}
+          destination={gatepass.destination}
+          purpose={gatepass.purpose}
+          formErrors={gatepass.formErrors}
+          submitting={gatepass.submitting}
+          setLeaveTypeId={gatepass.setLeaveTypeId}
+          setDestination={gatepass.setDestination}
+          setPurpose={gatepass.setPurpose}
+          setFormErrors={gatepass.setFormErrors}
+          onSubmit={gatepass.submitRequest}
+        />
 
-            <GatepassSubmissionSection
-              recognizedRows={gatepass.recognizedRows}
-              gatepassLeaveTypes={gatepass.gatepassLeaveTypes}
-              gatepassLeaveTypesLoading={gatepass.gatepassLeaveTypesLoading}
-              gatepassLeaveTypesError={gatepass.gatepassLeaveTypesError}
-              leaveTypeId={gatepass.leaveTypeId}
-              destination={gatepass.destination}
-              purpose={gatepass.purpose}
-              formErrors={gatepass.formErrors}
-              submitting={gatepass.submitting}
-              setLeaveTypeId={gatepass.setLeaveTypeId}
-              setDestination={gatepass.setDestination}
-              setPurpose={gatepass.setPurpose}
-              setFormErrors={gatepass.setFormErrors}
-              onSubmit={gatepass.submitRequest}
-            />
-          </section>
-        </div>
+        <RecognizedPersonsSection
+          rows={gatepass.recognizedRows}
+          columns={gatepass.recognizedColumns}
+          recordsError={gatepass.recordsError}
+          isSelectedCameraRunning={gatepass.isSelectedCameraRunning}
+        />
 
         <GatepassHistorySection
           historyRows={gatepass.historyRows}

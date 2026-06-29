@@ -65,30 +65,32 @@ export default function GatepassHistorySection({
     <section className="flex min-w-0 flex-none flex-col border-t border-zinc-100 bg-white xl:min-h-0 xl:flex-1">
       <div
         onClick={() => setIsCollapsed(!isCollapsed)}
-        className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between cursor-pointer select-none hover:bg-zinc-50/50 transition-colors"
+        className="flex w-full cursor-pointer select-none hover:bg-zinc-50/50 transition-colors border-b border-zinc-100/60"
       >
-        <div className="min-w-0 flex items-center gap-2">
-          <div className="text-base font-semibold text-zinc-900">
-            Gatepass History
+        <div className="w-full flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0 flex items-center gap-2">
+            <div className="text-sm font-semibold text-zinc-800">
+              Gatepass History
+            </div>
+            {isCollapsed ? (
+              <ChevronDown className="h-4.5 w-4.5 text-zinc-500" />
+            ) : (
+              <ChevronUp className="h-4.5 w-4.5 text-zinc-500" />
+            )}
           </div>
-          {isCollapsed ? (
-            <ChevronDown className="h-4.5 w-4.5 text-zinc-500" />
-          ) : (
-            <ChevronUp className="h-4.5 w-4.5 text-zinc-500" />
-          )}
-        </div>
 
-        <Badge
-          variant="outline"
-          className="rounded-full border-zinc-100 bg-white text-zinc-700"
-        >
-          <Rows3 className="h-3.5 w-3.5" />
-          Total {historyRows.length}
-        </Badge>
+          <Badge
+            variant="outline"
+            className="rounded-full border-zinc-100 bg-white text-zinc-700 w-fit"
+          >
+            <Rows3 className="h-3.5 w-3.5" />
+            Total {historyRows.length}
+          </Badge>
+        </div>
       </div>
 
       {!isCollapsed && (
-        <>
+        <div className="w-full flex flex-col">
           <GatepassHistoryFilters
             historySearch={historySearch}
             historyFromDate={historyFromDate}
@@ -106,7 +108,7 @@ export default function GatepassHistorySection({
             fetchHistoryRecords={fetchHistoryRecords}
           />
 
-          <div className="min-w-0 px-4 pt-3 pb-4">
+          <div className="min-w-0 px-4 pt-2 pb-4">
             <div className="min-h-[220px] w-full max-w-full overflow-hidden rounded-2xl border border-zinc-100 bg-white">
               <TanstackDataTable
                 data={paginatedHistoryRows}
@@ -129,7 +131,7 @@ export default function GatepassHistorySection({
               />
             </div>
           ) : null}
-        </>
+        </div>
       )}
     </section>
   );

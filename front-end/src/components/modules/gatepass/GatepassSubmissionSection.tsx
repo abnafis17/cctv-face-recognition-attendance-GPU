@@ -51,26 +51,32 @@ export default function GatepassSubmissionSection({
   onSubmit,
 }: Props) {
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col px-4 pb-5 xl:pb-6">
-      <div className="pb-3">
-        <div className="text-base font-semibold text-zinc-900">
-          Gatepass Submission
-        </div>
-      </div>
-
-      <div className="min-h-0 flex-1">
-        <div className="flex h-full min-w-0 flex-col px-1 py-1 sm:px-2 sm:py-2">
-          <div className="text-sm text-zinc-500">
-            {recognizedRows.length
-              ? `${recognizedRows.length} recognized employee${
-                  recognizedRows.length > 1 ? "s" : ""
-                } ready for submission`
-              : "No recognized person in the queue."}
+    <div className="flex min-h-0 min-w-0 flex-none flex-col border-b border-zinc-100 bg-white p-3 md:px-5 md:py-3">
+      <div className="w-full flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        
+        {/* Info text & Form inputs container */}
+        <div className="flex flex-1 flex-col gap-3 lg:flex-row lg:items-end min-w-0">
+          
+          {/* Label / Status Info */}
+          <div className="shrink-0 pb-1 lg:max-w-[200px]">
+            <div className="text-sm font-semibold text-zinc-800">
+              Gatepass Submission
+            </div>
+            <div className="text-xs text-zinc-500 mt-0.5">
+              {recognizedRows.length
+                ? `${recognizedRows.length} employee${
+                    recognizedRows.length > 1 ? "s" : ""
+                  } ready`
+                : "No employee in queue"}
+            </div>
           </div>
 
-          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 xl:gap-2.5">
-            <div className="min-w-0 space-y-2">
-              <div className="text-[11px] font-medium text-zinc-500">
+          {/* Form Fields side by side */}
+          <div className="flex flex-1 flex-wrap items-end gap-3 min-w-0">
+            
+            {/* Leave Type */}
+            <div className="w-full sm:w-[180px] space-y-1">
+              <div className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">
                 Leave Type <span className="text-rose-500">*</span>
               </div>
               <Select
@@ -86,7 +92,7 @@ export default function GatepassSubmissionSection({
                   }));
                 }}
               >
-                <SelectTrigger className="h-10 w-full rounded-xl border-zinc-100 bg-white text-sm text-zinc-900">
+                <SelectTrigger className="h-9 w-full rounded-xl border-zinc-200 bg-white text-sm text-zinc-800 shadow-none hover:border-zinc-300 focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-colors">
                   <SelectValue placeholder="Select leave type" />
                 </SelectTrigger>
                 <SelectContent align="start">
@@ -95,15 +101,16 @@ export default function GatepassSubmissionSection({
                 </SelectContent>
               </Select>
               {formErrors.leaveType ? (
-                <div className="text-sm font-medium text-rose-600">
+                <div className="text-xs font-medium text-rose-600">
                   {formErrors.leaveType}
                 </div>
               ) : null}
             </div>
 
+            {/* Purpose */}
             {leaveTypeId === "short leave" && (
-              <div className="min-w-0 space-y-2">
-                <div className="text-[11px] font-medium text-zinc-500">
+              <div className="w-full sm:w-[180px] space-y-1">
+                <div className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">
                   Purpose <span className="text-rose-500">*</span>
                 </div>
                 <Select
@@ -119,17 +126,17 @@ export default function GatepassSubmissionSection({
                 >
                   <SelectTrigger
                     className={cn(
-                      "h-10 w-full rounded-xl bg-white text-sm text-zinc-900",
-                      formErrors.purpose ? "border-rose-300" : "border-zinc-100",
+                      "h-9 w-full rounded-xl bg-white text-sm text-zinc-800 shadow-none hover:border-zinc-300 focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-colors",
+                      formErrors.purpose ? "border-rose-300" : "border-zinc-200",
                     )}
                   >
                     <SelectValue
                       placeholder={
                         gatepassLeaveTypesLoading
-                          ? "Loading purposes..."
+                          ? "Loading..."
                           : gatepassLeaveTypes.length > 0
                             ? "Select purpose"
-                            : "No purposes available"
+                            : "No purposes"
                       }
                     />
                   </SelectTrigger>
@@ -142,59 +149,58 @@ export default function GatepassSubmissionSection({
                   </SelectContent>
                 </Select>
                 {gatepassLeaveTypesError ? (
-                  <div className="text-sm font-medium text-rose-600">
+                  <div className="text-xs font-medium text-rose-600">
                     {gatepassLeaveTypesError}
                   </div>
                 ) : null}
                 {formErrors.purpose ? (
-                  <div className="text-sm font-medium text-rose-600">
+                  <div className="text-xs font-medium text-rose-600">
                     {formErrors.purpose}
                   </div>
                 ) : null}
               </div>
             )}
 
-            <div className={cn(
-              "min-w-0 space-y-2",
-              leaveTypeId === "short leave"
-                ? "sm:col-span-2 xl:col-span-1"
-                : "sm:col-span-1"
-            )}>
-              <div className="text-[11px] font-medium text-zinc-500">
+            {/* Destination */}
+            <div className="flex-1 min-w-[200px] space-y-1">
+              <div className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">
                 Destination (Optional)
               </div>
               <Input
                 value={destination}
                 onChange={(event) => setDestination(event.target.value)}
-                placeholder="Enter destination (optional)"
-                className="h-10 rounded-xl border-zinc-100 bg-white"
+                placeholder="Enter destination"
+                className="h-9 rounded-xl border-zinc-200 bg-white text-sm text-zinc-800 shadow-none hover:border-zinc-300 focus-visible:ring-1 focus-visible:ring-zinc-400 focus-visible:ring-offset-0 transition-colors"
               />
             </div>
-          </div>
-
-          <div className="mt-4 flex w-full items-center justify-end pb-1 xl:pb-2">
-            <Button
-              type="button"
-              className="h-10 w-full rounded-xl bg-zinc-900 px-4 text-white hover:bg-zinc-800 sm:w-[190px]"
-              onClick={() => {
-                void onSubmit();
-              }}
-              disabled={submitting || recognizedRows.length === 0}
-            >
-              {submitting ? (
-                <>
-                  <LoaderCircle className="h-4 w-4 animate-spin" />
-                  Submitting...
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="h-4 w-4" />
-                  Submit Gatepass
-                </>
-              )}
-            </Button>
+            
           </div>
         </div>
+
+        {/* Submit button on the right */}
+        <div className="shrink-0 lg:pl-4">
+          <Button
+            type="button"
+            className="h-9 w-full rounded-xl bg-zinc-900 px-5 text-white hover:bg-zinc-800 sm:w-[180px] text-xs font-semibold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5"
+            onClick={() => {
+              void onSubmit();
+            }}
+            disabled={submitting || recognizedRows.length === 0}
+          >
+            {submitting ? (
+              <>
+                <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                Submitting...
+              </>
+            ) : (
+              <>
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                Submit Gatepass
+              </>
+            )}
+          </Button>
+        </div>
+
       </div>
     </div>
   );
