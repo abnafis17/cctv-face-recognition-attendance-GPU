@@ -29,7 +29,7 @@ type ErpGatepassPayloadRow = {
   destination: string;
   timeStart: string;
   date: string;
-  timeEnd: string;
+  timeEnd?: string;
   remarks: string;
   passType: string;
 };
@@ -91,8 +91,6 @@ function buildRequestBody(
   const date = toDhakaDateDDMMYYYY(input.outTime);
 
   if (isShortLeave) {
-    const end = addHours(input.outTime, 2);
-    const timeEnd = toDhakaTimeHHMMSS(end);
     return [
       {
         empId: String(input.empId ?? "").trim(),
@@ -101,21 +99,17 @@ function buildRequestBody(
         destination: String(input.destination ?? "").trim(),
         timeStart,
         date,
-        timeEnd,
         remarks: "okay",
         passType: "short leave",
       },
     ];
   } else {
-    const end = addHours(input.outTime, 1);
-    const timeEnd = toDhakaTimeHHMMSS(end);
     return [
       {
         empId: String(input.empId ?? "").trim(),
         destination: String(input.destination ?? "").trim(),
         timeStart,
         date,
-        timeEnd,
         remarks: "ok",
         passType: "Long Leave",
       },
