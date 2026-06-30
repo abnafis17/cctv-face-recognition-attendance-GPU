@@ -56,7 +56,14 @@ const nav: NavItem[] = [
   { href: "/daily-attendance", label: "Daily Attendance", icon: CalendarClock },
   { href: "/attendance", label: "Recognition History", icon: History },
   { href: "/unknown-recognition", label: "Unknown History", icon: UserX },
-  { href: "/gatepass", label: "Gate Pass", icon: IdCard },
+  {
+    label: "Gate Pass",
+    icon: IdCard,
+    subItems: [
+      { href: "/gatepass", label: "Gate Pass Form", icon: ScanFace },
+      { href: "/gatepass/history", label: "Gate Pass Log", icon: ClipboardList },
+    ],
+  },
   {
     label: "Visitor",
     icon: UserSearch,
@@ -74,6 +81,7 @@ const nav: NavItem[] = [
 function isActive(pathname: string, href: string) {
   if (href === "/dashboard") return pathname === "/dashboard";
   if (href === "/visitors") return pathname === "/visitors";
+  if (href === "/gatepass") return pathname === "/gatepass";
   return pathname === href || pathname.startsWith(href + "/");
 }
 
@@ -163,6 +171,9 @@ function SidebarContent({
   useEffect(() => {
     if (pathname.startsWith("/visitors")) {
       setOpenMenus((prev) => ({ ...prev, Visitor: true }));
+    }
+    if (pathname.startsWith("/gatepass")) {
+      setOpenMenus((prev) => ({ ...prev, "Gate Pass": true }));
     }
   }, [pathname]);
 
