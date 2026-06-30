@@ -103,7 +103,7 @@ logger = logging.getLogger("LiteAIServer")
 
 # 1. Global Configurations
 BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "http://10.81.100.175:3001").strip()
-DEFAULT_COMPANY_ID = os.getenv("BACKEND_COMPANY_ID", "cmk9dp01a0000vpskicoq1gj0").strip()
+DEFAULT_COMPANY_ID = os.getenv("BACKEND_COMPANY_ID", "cmr06hyac0004tb7uwg0m3tjo").strip()
 SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.35"))
 AI_FPS = float(os.getenv("AI_FPS", "3.0"))
 OPENCV_VIEWER_FPS = float(os.getenv("OPENCV_VIEWER_FPS", "15.0"))
@@ -158,7 +158,7 @@ def sync_gallery(company_id: str):
     url = f"{BACKEND_BASE_URL}/api/v1/gallery/templates"
     headers = {"x-company-id": company_id}
     try:
-        logger.info(f"Syncing gallery templates from backend: {url}...")
+        logger.warning(f"Syncing gallery templates from backend: {url}...")
         res = requests.get(url, headers=headers, timeout=5.0)
         if res.status_code == 200:
             templates = res.json()
@@ -177,7 +177,7 @@ def sync_gallery(company_id: str):
                     })
             with gallery_lock:
                 gallery_templates = loaded
-            logger.info(f"Gallery synchronized: {len(gallery_templates)} templates loaded.")
+            logger.warning(f"Gallery synchronized: {len(gallery_templates)} templates loaded.")
         else:
             logger.error(f"Failed to load templates. Status: {res.status_code}")
     except Exception as e:

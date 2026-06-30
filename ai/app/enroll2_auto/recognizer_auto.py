@@ -154,7 +154,7 @@ class FaceRecognizerAuto:
         det_size: tuple[int, int] = (640, 640),
         min_det_score: float = 0.25,  # lower than recognition pipeline for enrollment
     ):
-        model_name = os.getenv("FACE_ANALYSIS_MODEL_PACK", "buffalo_sc")
+        model_name = os.getenv("FACE_ANALYSIS_MODEL_PACK", os.getenv("INSIGHTFACE_MODEL", model_name))
         use_gpu = _env_bool("USE_GPU", use_gpu)
 
         # Allow env override
