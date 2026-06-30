@@ -75,19 +75,6 @@ export const EnrollmentPanel = React.memo(function EnrollmentPanel({
   setTts: (v: boolean) => void;
 }) {
   const collected = session?.collected ?? {};
-  const imgRef = React.useRef<HTMLImageElement | null>(null);
-
-  // Abort active MJPEG connection when enrolling screen is unmounted
-  React.useEffect(() => {
-    return () => {
-      const img = imgRef.current;
-      if (img) {
-        try {
-          img.src = "about:blank";
-        } catch {}
-      }
-    };
-  }, []);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch w-full">
@@ -104,7 +91,7 @@ export const EnrollmentPanel = React.memo(function EnrollmentPanel({
               </span>
             )}
           </div>
- 
+
           <div className="p-5 flex-1 flex flex-col justify-between gap-4 min-h-[320px]">
             {/* Aspect Video */}
             <div className="rounded-md border border-zinc-150 overflow-hidden bg-zinc-100 shadow-inner aspect-video w-full relative">
@@ -120,7 +107,6 @@ export const EnrollmentPanel = React.memo(function EnrollmentPanel({
               {streamSrc ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  ref={imgRef}
                   key={imgKey}
                   src={streamSrc}
                   alt="Enrollment Stream"

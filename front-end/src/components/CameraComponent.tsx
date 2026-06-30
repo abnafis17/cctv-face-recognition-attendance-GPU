@@ -47,10 +47,9 @@ const LocalCamera: React.FC<LocalCameraProps> = ({
   const localStreamRef = useRef<MediaStream | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
-  const imgRef = useRef<HTMLImageElement | null>(null);
 
   const [localActive, setLocalActive] = useState(false);
-  const [streamAttempt, setStreamAttempt] = useState(0);
+  const [localActiveCount, setLocalActiveCount] = useState(0);
   const [wsError, setWsError] = useState<string>("");
   const [actionsOpen, setActionsOpen] = useState(false);
 
@@ -74,8 +73,8 @@ const LocalCamera: React.FC<LocalCameraProps> = ({
     const sep = recQuery.includes("?") ? "&" : "?";
     return `${AI_HOST}/camera/recognition/stream/${encodeURIComponent(
       cameraId,
-    )}/${encodeURIComponent(cameraName)}${recQuery}${sep}t=${streamAttempt}`;
-  }, [cameraId, cameraName, recQuery, streamAttempt]);
+    )}/${encodeURIComponent(cameraName)}${recQuery}${sep}t=${localActiveCount}`;
+  }, [cameraId, cameraName, recQuery, localActiveCount]);
 
   const wsSignalUrl = useMemo(() => {
     // keep WS host consistent with AI_HOST (avoid hard-coding)
@@ -88,13 +87,6 @@ const LocalCamera: React.FC<LocalCameraProps> = ({
   console.log(recUrl, "=============REC=======");
   const stopLocalCamera = useCallback(() => {
     setWsError("");
-
-    const img = imgRef.current;
-    if (img) {
-      try {
-        img.src = "about:blank";
-      } catch {}
-    }
 
     const stream =
       localStreamRef.current ||
@@ -123,15 +115,7 @@ const LocalCamera: React.FC<LocalCameraProps> = ({
 
   // Ensure no stale streams when component unmounts
   useEffect(() => {
-    return () => {
-      const img = imgRef.current;
-      if (img) {
-        try {
-          img.src = "about:blank";
-        } catch {}
-      }
-      stopLocalCamera();
-    };
+    return () => stopLocalCamera();
   }, [stopLocalCamera]);
 
   // If cameraId/companyId changes while active, stop cleanly (user can Start again)
@@ -147,7 +131,7 @@ const LocalCamera: React.FC<LocalCameraProps> = ({
     console.log("startLocalCamera execution started: cameraId =", cameraId);
     try {
       setWsError("");
-      setStreamAttempt(Date.now());
+      setLocalActiveCount((c) => c + 1);
 
       // if already running, restart cleanly
       if (localStreamRef.current || pcRef.current) {
@@ -300,7 +284,6 @@ const LocalCamera: React.FC<LocalCameraProps> = ({
             // MJPEG stream (not compatible with next/image optimizations)
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              ref={imgRef}
               src={recUrl}
               alt="Recognition stream"
               className={cn(
