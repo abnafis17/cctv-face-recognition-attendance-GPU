@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Rows3, ChevronDown, ChevronUp } from "lucide-react";
+import { History, ChevronDown, ChevronUp, Rows3 } from "lucide-react";
 
 import Pagination from "@/components/reusable/Pagination";
 import { TanstackDataTable } from "@/components/reusable/TanstackDataTable";
@@ -62,67 +62,74 @@ export default function GatepassHistorySection({
   const [isCollapsed, setIsCollapsed] = useState(true);
 
   return (
-    <section className="flex min-w-0 flex-none flex-col border-t border-zinc-100 bg-white lg:min-h-0 lg:flex-1">
+    <div className="flex flex-col border border-zinc-100 bg-white rounded-md shadow-sm overflow-hidden w-full border-t-4 border-t-indigo-500">
+      
+      {/* Collapsible Header */}
       <div
         onClick={() => setIsCollapsed(!isCollapsed)}
-        className="flex w-full cursor-pointer select-none hover:bg-zinc-50/50 transition-colors border-b border-zinc-100/60"
+        className="flex items-center justify-between border-b border-zinc-100 bg-zinc-50/50 px-5 py-4 cursor-pointer select-none hover:bg-zinc-100/30 transition-colors"
       >
-        <div className="w-full flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0 flex items-center gap-2">
-            <div className="text-sm font-semibold text-zinc-800">
-              Gatepass History
-            </div>
-            {isCollapsed ? (
-              <ChevronDown className="h-4.5 w-4.5 text-zinc-500" />
-            ) : (
-              <ChevronUp className="h-4.5 w-4.5 text-zinc-500" />
-            )}
+        <div className="flex items-center gap-2.5">
+          <div className="h-5 w-5 rounded-md bg-indigo-50 flex items-center justify-center">
+            <History className="h-4 w-4 text-indigo-600" />
           </div>
-
-          <Badge
-            variant="outline"
-            className="rounded-full border-zinc-100 bg-white text-zinc-700 w-fit"
-          >
-            <Rows3 className="h-3.5 w-3.5" />
-            Total {historyRows.length}
-          </Badge>
+          <h2 className="text-sm font-bold text-zinc-900 tracking-tight">Gatepass History Log</h2>
+          {isCollapsed ? (
+            <ChevronDown className="h-4 w-4 text-indigo-400 mt-0.5" />
+          ) : (
+            <ChevronUp className="h-4 w-4 text-indigo-400 mt-0.5" />
+          )}
         </div>
+
+        <Badge
+          variant="secondary"
+          className="rounded-full bg-indigo-50 text-indigo-700 font-semibold px-2.5 py-0.5 text-xs flex items-center gap-1.5 border border-indigo-100"
+        >
+          <Rows3 className="h-3.5 w-3.5 text-indigo-500" />
+          <span>Total: {historyRows.length}</span>
+        </Badge>
       </div>
 
       {!isCollapsed && (
-        <div className="w-full flex flex-col">
-          <GatepassHistoryFilters
-            historySearch={historySearch}
-            historyFromDate={historyFromDate}
-            historyToDate={historyToDate}
-            historyLeaveTypeCategory={historyLeaveTypeCategory}
-            historyPurposeId={historyPurposeId}
-            gatepassLeaveTypes={gatepassLeaveTypes}
-            historyError={historyError}
-            setHistorySearch={setHistorySearch}
-            setHistoryFromDate={setHistoryFromDate}
-            setHistoryToDate={setHistoryToDate}
-            setHistoryLeaveTypeCategory={setHistoryLeaveTypeCategory}
-            setHistoryPurposeId={setHistoryPurposeId}
-            resetHistoryFilters={resetHistoryFilters}
-            fetchHistoryRecords={fetchHistoryRecords}
-          />
+        <div className="w-full flex flex-col animate-in fade-in-50 duration-200">
+          
+          {/* Filters Area */}
+          <div className="p-5 pb-2">
+            <GatepassHistoryFilters
+              historySearch={historySearch}
+              historyFromDate={historyFromDate}
+              historyToDate={historyToDate}
+              historyLeaveTypeCategory={historyLeaveTypeCategory}
+              historyPurposeId={historyPurposeId}
+              gatepassLeaveTypes={gatepassLeaveTypes}
+              historyError={historyError}
+              setHistorySearch={setHistorySearch}
+              setHistoryFromDate={setHistoryFromDate}
+              setHistoryToDate={setHistoryToDate}
+              setHistoryLeaveTypeCategory={setHistoryLeaveTypeCategory}
+              setHistoryPurposeId={setHistoryPurposeId}
+              resetHistoryFilters={resetHistoryFilters}
+              fetchHistoryRecords={fetchHistoryRecords}
+            />
+          </div>
 
-          <div className="min-w-0 px-4 pt-2 pb-4">
-            <div className="min-h-[220px] w-full max-w-full overflow-hidden rounded-2xl border border-zinc-100 bg-white">
+          {/* Table Area */}
+          <div className="px-5 pb-5">
+            <div className="min-h-[220px] w-full max-w-full overflow-hidden rounded-md border border-zinc-100 bg-white">
               <TanstackDataTable
                 data={paginatedHistoryRows}
                 columns={historyColumns}
                 loading={historyLoading}
                 className="w-full"
                 freezeClassName="w-full max-w-full overflow-x-auto overflow-y-hidden rounded-none"
-                emptyState="No gatepass records found in the database."
+                emptyState="No gatepass records found for the selected criteria."
               />
             </div>
           </div>
 
-          {historyRows.length ? (
-            <div className="shrink-0 border-t border-zinc-100 bg-white px-4 py-3">
+          {/* Pagination */}
+          {historyRows.length > 0 && (
+            <div className="shrink-0 border-t border-zinc-100 bg-zinc-50/20 px-5 py-3.5">
               <Pagination
                 numberOfData={historyRows.length}
                 limits={pageLimit}
@@ -130,9 +137,9 @@ export default function GatepassHistorySection({
                 activeTab2={historyPaginationResetKey}
               />
             </div>
-          ) : null}
+          )}
         </div>
       )}
-    </section>
+    </div>
   );
 }

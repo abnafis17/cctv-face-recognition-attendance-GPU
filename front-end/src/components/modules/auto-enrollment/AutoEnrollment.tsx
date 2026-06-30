@@ -327,112 +327,73 @@ export default function AutoEnrollment({
   );
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
-      <div className="page-subtitle">Auto enrollment stream (AI: {AI_HOST})</div>
+    <div className="flex flex-col gap-4 w-full">
+      {screen === "setup" && (
+        <SetupPanel
+          cameraId={cameraId}
+          setCameraId={setCameraId}
+          camerasWithLaptop={camerasWithLaptop}
+          selectedCamIsActive={selectedCamIsActive}
+          busy={busy}
+          selectedErpEmployeeId={selectedErpEmployeeId}
+          setSelectedErpEmployeeId={setSelectedErpEmployeeId}
+          hierarchyAvailability={hierarchy.availability}
+          hierarchyOptions={hierarchy.options}
+          unit={unit}
+          setUnit={setUnit}
+          department={department}
+          setDepartment={setDepartment}
+          section={section}
+          setSection={setSection}
+          line={line}
+          setLine={setLine}
+          erpItems={erpItems}
+          erpLoading={erpLoading}
+          erpError={erpError}
+          erpSearch={erpSearch}
+          setErpSearch={setErpSearch}
+          onPickEmployee={onPickEmployee}
+          employeeId={employeeId}
+          setEmployeeId={setEmployeeId}
+          name={name}
+          setName={setName}
+          reEnroll={reEnroll}
+          lockEmployeeIdentity={lockEmployeeIdentity}
+          start={start}
+          startDisabled={startDisabled}
+          tts={tts}
+          setTts={setTts}
+        />
+      )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <div className="page-meta">Face enrollment</div>
-              <div className="truncate text-xl font-semibold text-zinc-950">
-                Quick Setup (Face ID style)
-              </div>
-            </div>
-
-            <Badge
-              className={`${
-                running
-                  ? "bg-green-600"
-                  : session?.status === "saved"
-                  ? "bg-green-600"
-                  : session?.status === "error"
-                  ? "bg-red-600"
-                  : "bg-gray-400"
-              }`}
-            >
-              {running
-                ? "Running"
-                : session?.status === "saved"
-                ? "Saved"
-                : session?.status === "saving"
-                ? "Saving"
-                : session?.status === "error"
-                ? "Error"
-                : "Idle"}
-            </Badge>
-          </CardTitle>
-        </CardHeader>
-
-        <CardContent className="space-y-5">
-          {screen === "setup" && (
-            <SetupPanel
-              cameraId={cameraId}
-              setCameraId={setCameraId}
-              camerasWithLaptop={camerasWithLaptop}
-              selectedCamIsActive={selectedCamIsActive}
-              busy={busy}
-              selectedErpEmployeeId={selectedErpEmployeeId}
-              setSelectedErpEmployeeId={setSelectedErpEmployeeId}
-              hierarchyAvailability={hierarchy.availability}
-              hierarchyOptions={hierarchy.options}
-              unit={unit}
-              setUnit={setUnit}
-              department={department}
-              setDepartment={setDepartment}
-              section={section}
-              setSection={setSection}
-              line={line}
-              setLine={setLine}
-              erpItems={erpItems}
-              erpLoading={erpLoading}
-              erpError={erpError}
-              erpSearch={erpSearch}
-              setErpSearch={setErpSearch}
-              onPickEmployee={onPickEmployee}
-              employeeId={employeeId}
-              setEmployeeId={setEmployeeId}
-              name={name}
-              setName={setName}
-              reEnroll={reEnroll}
-              lockEmployeeIdentity={lockEmployeeIdentity}
-              start={start}
-              startDisabled={startDisabled}
-              tts={tts}
-              setTts={setTts}
-            />
-          )}
-
-          {screen === "enrolling" && (
-            <EnrollmentPanel
-              cameraId={cameraId}
-              laptopCameraId={laptopCameraId}
-              laptopActive={laptopActive}
-              previewVideoRef={previewVideoRef}
-              streamSrc={streamSrc}
-              imgKey={imgKey}
-              streamHasFrame={streamHasFrame}
-              streamRetries={streamRetries}
-              onFrame={onFrame}
-              onError={onError}
-              session={session}
-              pct={pct}
-              phase={phase}
-              doneCount={doneCount}
-              scan1Done={scan1Done}
-              scan2Done={scan2Done}
-              title={title}
-              hint={hint}
-              currentStep={currentStep}
-              multiWarn={multiWarn}
-              busy={busy}
-              stop={stop}
-              tts={tts}
-              setTts={setTts}
-            />
-          )}
-        </CardContent>
-      </Card>
+      {screen === "enrolling" && (
+        <EnrollmentPanel
+          cameraId={cameraId}
+          laptopCameraId={laptopCameraId}
+          laptopActive={laptopActive}
+          previewVideoRef={previewVideoRef}
+          streamSrc={streamSrc}
+          imgKey={imgKey}
+          streamHasFrame={streamHasFrame}
+          streamRetries={streamRetries}
+          onFrame={onFrame}
+          onError={onError}
+          session={session}
+          pct={pct}
+          phase={phase}
+          doneCount={doneCount}
+          scan1Done={scan1Done}
+          scan2Done={scan2Done}
+          title={title}
+          hint={hint}
+          currentStep={currentStep}
+          multiWarn={multiWarn}
+          busy={busy}
+          stop={stop}
+          tts={tts}
+          setTts={setTts}
+        />
+      )}
     </div>
   );
 }

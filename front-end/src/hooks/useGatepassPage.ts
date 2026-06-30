@@ -1599,6 +1599,7 @@ export function useGatepassPage() {
     summaryCounts,
     recognizedColumns,
     historyColumns,
+    removeRecognizedPerson,
     setHistorySearch,
     setHistoryFromDate,
     setHistoryToDate,

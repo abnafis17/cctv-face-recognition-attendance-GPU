@@ -10,7 +10,6 @@ import {
   CalendarClock,
   LogOut,
   Building2,
-  Mail,
   Cctv,
   History,
   UserX,
@@ -20,9 +19,16 @@ import {
   Settings,
   ChevronDown,
   ChevronUp,
-  List,
-  BarChart3,
   Database,
+  ChevronLeft,
+  ChevronRight,
+  // New relevant icons:
+  ScanFace,
+  IdCard,
+  UserSearch,
+  ClipboardList,
+  PieChart,
+  BarChart3,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { clearAccessToken, getAccessToken } from "@/lib/authStorage";
@@ -43,23 +49,22 @@ interface NavItem {
 }
 
 const nav: NavItem[] = [
-  // { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/cameras", label: "Cameras (Live)", icon: Cctv },
   { href: "/camera-list", label: "Camera List", icon: ListVideo },
-  { href: "/enroll", label: "Enrollment(Auto)", icon: UserPlus },
+  { href: "/enroll", label: "Enrollment (Auto)", icon: ScanFace },
   { href: "/employees", label: "Employees", icon: Users },
   { href: "/daily-attendance", label: "Daily Attendance", icon: CalendarClock },
   { href: "/attendance", label: "Recognition History", icon: History },
   { href: "/unknown-recognition", label: "Unknown History", icon: UserX },
-  { href: "/gatepass", label: "Gate Pass", icon: Mail },
+  { href: "/gatepass", label: "Gate Pass", icon: IdCard },
   {
     label: "Visitor",
-    icon: UserPlus,
+    icon: UserSearch,
     subItems: [
       { href: "/visitors/add", label: "Add Visitor", icon: UserPlus },
-      { href: "/visitors", label: "Visitor List", icon: List },
-      { href: "/visitors/employee-wise-visit", label: "Employee Wise Visit Report", icon: BarChart3 },
-      { href: "/visitors/visitor-wise-visit", label: "Visitor Wise Visit Report", icon: BarChart3 },
+      { href: "/visitors", label: "Visitor List", icon: ClipboardList },
+      { href: "/visitors/employee-wise-visit", label: "Employee Wise Visit", icon: BarChart3 },
+      { href: "/visitors/visitor-wise-visit", label: "Visitor Wise Visit", icon: PieChart },
     ],
   },
   { href: "/master-data", label: "Master Data", icon: Database },
@@ -138,9 +143,13 @@ function readSidebarIdentity(): SidebarIdentity {
 function SidebarContent({
   compact = false,
   onNavigate,
+  isCollapsed,
+  onToggleCollapse,
 }: {
   compact?: boolean;
   onNavigate?: () => void;
+  isCollapsed?: boolean;
+  onToggleCollapse?: () => void;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -232,39 +241,60 @@ function SidebarContent({
     <>
       <div
         className={cn(
-          "shrink-0 border-b border-white/10",
-          compact ? "px-3 py-4" : "px-5 py-5",
+          "shrink-0 border-b border-zinc-100",
+          compact ? "p-4 flex items-center justify-center" : "px-5 py-4 flex items-center justify-between gap-3",
         )}
       >
-        <div
-          className={cn(
-            "flex items-center",
-            compact ? "justify-center" : "gap-3",
-          )}
-        >
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-white ring-1 ring-white/20">
-            <Video className="h-5 w-5" />
-          </div>
-          {!compact && (
-            <div>
-              <div className="text-sm font-semibold text-white">CCTV Panel</div>
-              <div className="text-xs text-zinc-400">
-                Face Recognition Admin
+        {!compact ? (
+          <>
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-violet-600 to-indigo-500 text-white ring-2 ring-violet-500/25 shadow-lg shadow-violet-500/10">
+                <Video className="h-4.5 w-4.5" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-bold tracking-wide text-zinc-800">
+                  Cripton Vision
+                </div>
+                <div className="text-[9.5px] font-bold uppercase tracking-wider text-violet-600 mt-0.5">
+                  AI Attendance
+                </div>
               </div>
             </div>
-          )}
-        </div>
+            
+            {onToggleCollapse && (
+              <button
+                type="button"
+                onClick={onToggleCollapse}
+                title="Collapse Sidebar"
+                className="h-8 w-8 rounded-lg border border-zinc-200 bg-white text-zinc-500 hover:text-zinc-800 hover:bg-zinc-50 transition flex items-center justify-center cursor-pointer shrink-0 shadow-xs"
+              >
+                <Menu className="h-4 w-4" />
+              </button>
+            )}
+          </>
+        ) : (
+          onToggleCollapse && (
+            <button
+              type="button"
+              onClick={onToggleCollapse}
+              title="Expand Sidebar"
+              className="h-9 w-9 rounded-lg border border-zinc-200 bg-white text-zinc-500 hover:text-zinc-800 hover:bg-zinc-50 transition flex items-center justify-center cursor-pointer shadow-sm"
+            >
+              <Menu className="h-4.5 w-4.5" />
+            </button>
+          )
+        )}
       </div>
 
       <nav
         className={cn(
-          "flex-1 overflow-y-auto",
+          "flex-1 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]",
           compact ? "px-2 py-3" : "px-3 py-4",
         )}
         style={{ WebkitOverflowScrolling: "touch" }}
       >
         {!compact && (
-          <div className="mb-2 px-2 text-[11px] font-medium uppercase tracking-[0.18em] text-zinc-500">
+          <div className="mb-2 px-2 text-[11px] font-bold uppercase tracking-[0.18em] text-zinc-400">
             Navigation
           </div>
         )}
@@ -283,25 +313,25 @@ function SidebarContent({
                     onClick={() => toggleMenu(n.label)}
                     title={compact ? n.label : undefined}
                     className={cn(
-                      "group flex w-full items-center justify-between rounded-2xl transition-all duration-200 cursor-pointer text-left",
+                      "group flex w-full items-center justify-between rounded-lg transition-all duration-200 cursor-pointer text-left border-l-2 border-l-transparent",
                       compact ? "justify-center px-2 py-3" : "px-3 py-2.5",
-                      "text-zinc-300 hover:bg-white/10 hover:text-white",
+                      "text-zinc-655 hover:bg-zinc-50 hover:text-zinc-900",
                     )}
                   >
                     <div className="flex items-center gap-3">
                       <Icon
                         className={cn(
                           compact ? "h-5 w-5" : "h-4 w-4",
-                          "text-zinc-400 group-hover:text-zinc-100",
+                          "text-zinc-450 group-hover:text-zinc-750 transition-colors",
                         )}
                       />
-                      {!compact && <span className="truncate text-sm">{n.label}</span>}
+                      {!compact && <span className="truncate text-sm font-medium">{n.label}</span>}
                     </div>
                     {!compact && (
                       isOpen ? (
-                        <ChevronUp className="h-4 w-4 text-zinc-400 group-hover:text-zinc-100" />
+                        <ChevronUp className="h-4 w-4 text-zinc-455 group-hover:text-zinc-755 transition-colors" />
                       ) : (
-                        <ChevronDown className="h-4 w-4 text-zinc-400 group-hover:text-zinc-100" />
+                        <ChevronDown className="h-4 w-4 text-zinc-455 group-hover:text-zinc-755 transition-colors" />
                       )
                     )}
                   </button>
@@ -310,7 +340,7 @@ function SidebarContent({
                     <div
                       className={cn(
                         "space-y-1 relative transition-all duration-200",
-                        !compact && "ml-5 pl-3 border-l border-white/10"
+                        !compact && "ml-5 pl-3 border-l border-zinc-100"
                       )}
                     >
                       {n.subItems!.map((sub) => {
@@ -324,19 +354,19 @@ function SidebarContent({
                             onClick={onNavigate}
                             title={compact ? sub.label : undefined}
                             className={cn(
-                              "group flex items-center rounded-xl transition-all duration-200",
-                              compact ? "justify-center px-2 py-2" : "gap-3 px-3 py-2",
+                              "group flex items-center rounded-lg transition-all duration-200 border-l-2",
+                              compact ? "justify-center px-2 py-2 border-l-transparent" : "gap-3 px-3 py-2",
                               subActive
-                                ? "bg-white/10 text-white font-medium"
-                                : "text-zinc-400 hover:bg-white/5 hover:text-white",
+                                ? "bg-violet-50 text-violet-700 border-l-violet-600 font-semibold"
+                                : "text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900 border-l-transparent",
                             )}
                           >
                             <SubIcon
                               className={cn(
                                 compact ? "h-4 w-4" : "h-4 w-4",
                                 subActive
-                                  ? "text-white"
-                                  : "text-zinc-500 group-hover:text-zinc-300",
+                                  ? "text-violet-600"
+                                  : "text-zinc-400 group-hover:text-zinc-750",
                               )}
                             />
                             {!compact && (
@@ -361,25 +391,25 @@ function SidebarContent({
                 onClick={onNavigate}
                 title={compact ? n.label : undefined}
                 className={cn(
-                  "group flex items-center rounded-2xl transition-all duration-200",
-                  compact ? "justify-center px-2 py-3" : "gap-3 px-3 py-2.5",
+                  "group flex items-center rounded-lg transition-all duration-200 border-l-2",
+                  compact ? "justify-center px-2 py-3 border-l-transparent" : "gap-3 px-3 py-2.5",
                   active
-                    ? "bg-white text-zinc-900 shadow-sm"
-                    : "text-zinc-300 hover:bg-white/10 hover:text-white",
+                    ? "bg-violet-50 text-violet-700 border-l-violet-600 font-bold shadow-xs"
+                    : "text-zinc-650 hover:bg-zinc-50 hover:text-zinc-900 border-l-transparent",
                 )}
               >
                 <Icon
                   className={cn(
                     compact ? "h-5 w-5" : "h-4 w-4",
                     active
-                      ? "text-zinc-900"
-                      : "text-zinc-400 group-hover:text-zinc-100",
+                      ? "text-violet-600"
+                      : "text-zinc-450 group-hover:text-zinc-750",
                   )}
                 />
                 {compact ? (
                   <span className="sr-only">{n.label}</span>
                 ) : (
-                  <span className="truncate text-sm">{n.label}</span>
+                  <span className="truncate text-sm font-medium">{n.label}</span>
                 )}
               </Link>
             );
@@ -389,46 +419,18 @@ function SidebarContent({
 
       <div
         className={cn(
-          "shrink-0 border-t border-white/10",
+          "shrink-0 border-t border-zinc-100",
           compact ? "px-2 pb-3 pt-3" : "p-3",
         )}
       >
-        {!compact && (
-          <div className="mb-3 rounded-xl border border-white/15 bg-white/[0.05] px-3 py-2.5">
-            <div className="text-[10px] font-medium uppercase tracking-[0.14em] text-zinc-500">
-              Account
-            </div>
-            <div className="mt-2 flex items-start gap-2.5">
-              <div className="mt-0.5 rounded-md bg-white/10 p-1.5 text-zinc-300">
-                <Building2 className="h-3.5 w-3.5" />
-              </div>
-              <div className="min-w-0">
-                <div
-                  className="truncate text-sm font-semibold text-white"
-                  title={identity.companyName}
-                >
-                  {identity.companyName}
-                </div>
-                <div
-                  className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-zinc-400"
-                  title={identity.email}
-                >
-                  <Mail className="h-3 w-3 shrink-0" />
-                  <span className="truncate">{identity.email}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
         <button
           onClick={onLogout}
           title={compact ? "Logout" : undefined}
           className={cn(
-            "flex w-full items-center rounded-xl border border-white/20 px-3 py-2.5 text-sm font-medium text-zinc-100 transition",
+            "flex w-full items-center rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-sm font-semibold text-zinc-655 hover:bg-zinc-50 hover:text-zinc-800 transition cursor-pointer",
             compact
               ? "justify-center"
-              : "justify-center gap-2 hover:bg-white/10 active:scale-[0.99]",
+              : "justify-center gap-2 active:scale-[0.99] shadow-xs",
           )}
         >
           <LogOut className="h-4 w-4" />
@@ -448,6 +450,20 @@ function SidebarContent({
 export default function Sidebar() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("sidebar-collapsed") === "true";
+    }
+    return false;
+  });
+
+  const toggleCollapse = () => {
+    setIsCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem("sidebar-collapsed", String(next));
+      return next;
+    });
+  };
 
   useEffect(() => {
     setMobileOpen(false);
@@ -481,18 +497,18 @@ export default function Sidebar() {
 
   return (
     <>
-      <header className="fixed inset-x-0 top-0 z-40 border-b border-zinc-200/80 bg-white/90 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] backdrop-blur md:hidden">
+      <header className="fixed inset-x-0 top-0 z-40 border-b border-zinc-100 bg-white/90 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] backdrop-blur md:hidden">
         <div className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-zinc-900 text-white">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-violet-600 to-indigo-500 text-white shadow-md shadow-violet-500/20">
               <Video className="h-4 w-4" />
             </div>
             <div className="min-w-0">
-              <div className="truncate text-sm font-semibold text-zinc-900">
-                CCTV Panel
+              <div className="truncate text-sm font-bold text-zinc-900 tracking-tight">
+                Cripton Vision
               </div>
-              <div className="truncate text-[11px] text-zinc-500">
-                Face Recognition Admin
+              <div className="truncate text-[9.5px] font-bold uppercase tracking-wider text-violet-600 mt-0.5">
+                AI Attendance
               </div>
             </div>
           </div>
@@ -525,7 +541,7 @@ export default function Sidebar() {
           aria-label="Close sidebar"
           onClick={() => setMobileOpen(false)}
           className={cn(
-            "absolute inset-0 bg-zinc-950/45 backdrop-blur-[2px] transition-opacity duration-200",
+            "absolute inset-0 bg-zinc-950/25 backdrop-blur-[1px] transition-opacity duration-200",
             mobileOpen ? "opacity-100" : "opacity-0",
           )}
         />
@@ -533,7 +549,7 @@ export default function Sidebar() {
         <aside
           id="mobile-sidebar"
           className={cn(
-            "ui-readable-dark absolute inset-y-0 left-0 flex w-[85vw] max-w-[330px] flex-col bg-zinc-950 pt-[env(safe-area-inset-top)] text-zinc-100 shadow-2xl transition-transform duration-300 ease-out",
+            "ui-readable absolute inset-y-0 left-0 flex w-[85vw] max-w-[330px] flex-col bg-white pt-[env(safe-area-inset-top)] text-zinc-800 shadow-2xl transition-transform duration-300 ease-out border-r border-zinc-100",
             mobileOpen ? "translate-x-0" : "-translate-x-full",
           )}
         >
@@ -542,12 +558,16 @@ export default function Sidebar() {
         </aside>
       </div>
 
-      <aside className="ui-readable-dark hidden h-dvh w-20 flex-col border-r border-zinc-200 bg-zinc-950 text-zinc-100 md:flex lg:hidden">
-        <SidebarContent compact />
-      </aside>
-
-      <aside className="ui-readable-dark hidden h-dvh w-72 flex-col border-r border-zinc-200 bg-zinc-950 text-zinc-100 lg:flex">
-        <SidebarContent />
+      {/* Togglable Desktop Sidebar */}
+      <aside className={cn(
+        "ui-readable hidden h-dvh flex-col border-r border-zinc-100 bg-white text-zinc-800 md:flex transition-all duration-350 ease-in-out shrink-0 shadow-[2px_0_12px_rgba(15,23,42,0.02)]",
+        isCollapsed ? "w-20" : "w-72"
+      )}>
+        <SidebarContent 
+          compact={isCollapsed} 
+          isCollapsed={isCollapsed} 
+          onToggleCollapse={toggleCollapse} 
+        />
       </aside>
     </>
   );

@@ -1,6 +1,6 @@
 export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
-    <main className="min-h-screen bg-gradient-to-br from-slate-400 via-slate-300 to-zinc-400 p-6">
+    <main className="min-h-screen bg-slate-50 p-6">
       <div className="mx-auto max-w-6xl">
         <h1 className="page-title">CCTV Face Recognition Dashboard</h1>
         <p className="page-subtitle">
