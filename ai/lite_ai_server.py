@@ -4,6 +4,8 @@ import sys
 
 # Pre-import numpy to prevent system package directory import from loading older system numpy version
 import numpy
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 # Temporarily inject system package path to load GStreamer-supported system OpenCV
 sys.path.insert(0, '/usr/lib/python3/dist-packages')
@@ -795,11 +797,13 @@ async def webrtc_signal(ws: WebSocket):
                                             continue
                                         last_t = now
 
-                                        img = frame.to_ndarray(format="bgr24")
-                                        
-                                        with streams_lock:
-                                            if camera_id_for_connection in streams:
-                                                streams[camera_id_for_connection].inject_frame(img)
+                                        def process_and_inject(f):
+                                            img = f.to_ndarray(format="bgr24")
+                                            with streams_lock:
+                                                if camera_id_for_connection in streams:
+                                                    streams[camera_id_for_connection].inject_frame(img)
+
+                                        await asyncio.to_thread(process_and_inject, frame)
                                     except Exception as e:
                                         logger.warning(f"[WebRTC] Track loop exited: {e}")
                                         break

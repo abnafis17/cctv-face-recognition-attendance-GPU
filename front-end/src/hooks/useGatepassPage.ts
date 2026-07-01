@@ -6,6 +6,11 @@ import toast from "react-hot-toast";
 import axiosInstance, { AI_HOST, API } from "@/config/axiosInstance";
 import { useAttendanceEvents } from "@/hooks/useAttendanceEvents";
 import { getCompanyIdFromToken } from "@/lib/authStorage";
+import {
+  DEFAULT_LOCAL_CAMERA_ID,
+  dispatchLocalCameraStop,
+  isLocalCameraId,
+} from "@/lib/localCameraEvents";
 import type { Camera as CameraOption, Employee } from "@/types";
 
 import { getRecognizedColumns } from "@/components/modules/gatepass/recognizedColumns";
@@ -343,7 +348,7 @@ export function useGatepassPage() {
   }, [historySearch]);
 
   const laptopCameraId = useMemo(() => {
-    return companyId ? `laptop-${companyId}` : "cmkdpsq300000j7284bwluxh2";
+    return companyId ? `laptop-${companyId}` : DEFAULT_LOCAL_CAMERA_ID;
   }, [companyId]);
 
   const allCameras = useMemo(() => {
@@ -804,6 +809,23 @@ export function useGatepassPage() {
     }
   }, []);
 
+  const stopLocalGatepassCamera = useCallback(
+    (cameraId?: string | null) => {
+      const candidates = new Set(
+        [cameraId, laptopCameraId, DEFAULT_LOCAL_CAMERA_ID]
+          .map((value) => String(value ?? "").trim())
+          .filter(Boolean),
+      );
+
+      for (const candidate of candidates) {
+        dispatchLocalCameraStop(candidate);
+      }
+
+      dispatchLocalCameraStop();
+    },
+    [laptopCameraId],
+  );
+
   const stopCurrentCamera = useCallback(
     async (cameraId?: string, refresh = true) => {
       const targetId =
@@ -814,7 +836,9 @@ export function useGatepassPage() {
 
       if (!targetId) return;
 
-      if (targetId !== laptopCameraId) {
+      if (isLocalCameraId(targetId)) {
+        stopLocalGatepassCamera(targetId);
+      } else {
         await stopRecognitionCameraApi(targetId);
       }
 
@@ -842,8 +866,8 @@ export function useGatepassPage() {
       fetchGatepassCameras,
       patchGatepassCameraState,
       selectedGatepassCamera,
+      stopLocalGatepassCamera,
       stopRecognitionCameraApi,
-      laptopCameraId,
     ],
   );
 
@@ -854,7 +878,9 @@ export function useGatepassPage() {
     let cancelled = false;
 
     void (async () => {
-      if (storedCameraId !== laptopCameraId) {
+      if (isLocalCameraId(storedCameraId)) {
+        stopLocalGatepassCamera(storedCameraId);
+      } else {
         await stopRecognitionCameraApi(storedCameraId);
       }
       writeStoredGatepassCameraId("");
@@ -874,8 +900,8 @@ export function useGatepassPage() {
   }, [
     fetchGatepassCameras,
     patchGatepassCameraState,
+    stopLocalGatepassCamera,
     stopRecognitionCameraApi,
-    laptopCameraId,
   ]);
 
   useEffect(() => {
@@ -886,12 +912,14 @@ export function useGatepassPage() {
 
       if (!cameraId) return;
 
-      if (cameraId !== laptopCameraId) {
+      if (isLocalCameraId(cameraId)) {
+        stopLocalGatepassCamera(cameraId);
+      } else {
         void stopRecognitionCameraApi(cameraId);
       }
       writeStoredGatepassCameraId("");
     };
-  }, [stopRecognitionCameraApi, laptopCameraId]);
+  }, [stopLocalGatepassCamera, stopRecognitionCameraApi]);
 
   const fetchAttendanceLatestSeq = useCallback(async () => {
     const response = await axiosInstance.get(`${API.ATTENDANCE_LIST}/events`, {
@@ -1198,7 +1226,9 @@ export function useGatepassPage() {
         latestSeqBaseline = 0;
       }
 
-      if (targetId !== laptopCameraId) {
+      if (isLocalCameraId(targetId)) {
+        stopLocalGatepassCamera(targetId);
+      } else {
         await stopRecognitionCameraApi(targetId);
         await axiosInstance.post(`/cameras/start/${targetId}`);
         await axiosInstance.post("/attendance-control/enable", {
@@ -1245,7 +1275,9 @@ export function useGatepassPage() {
       writeStoredGatepassCameraId("");
 
       try {
-        if (targetId !== laptopCameraId) {
+        if (isLocalCameraId(targetId)) {
+          stopLocalGatepassCamera(targetId);
+        } else {
           await stopRecognitionCameraApi(targetId);
         }
         await fetchGatepassCameras(true);
@@ -1269,9 +1301,9 @@ export function useGatepassPage() {
     resetGatepassForm,
     selectedGatepassCamera,
     stopCurrentCamera,
+    stopLocalGatepassCamera,
     stopRecognitionCameraApi,
     submitting,
-    laptopCameraId,
   ]);
 
   const stopSelectedCamera = useCallback(async () => {
@@ -1311,7 +1343,15 @@ export function useGatepassPage() {
     clearRecognizedList();
     resetGatepassForm();
 
-    if (!targetId || (!activeCameraIdRef.current && !recognitionActive)) {
+    if (!targetId) {
+      toast.success("Gate pass cleared");
+      return;
+    }
+
+    if (!activeCameraIdRef.current && !recognitionActive) {
+      if (isLocalCameraId(targetId)) {
+        stopLocalGatepassCamera(targetId);
+      }
       toast.success("Gate pass cleared");
       return;
     }
@@ -1335,6 +1375,7 @@ export function useGatepassPage() {
     resetGatepassForm,
     selectedGatepassCamera,
     stopCurrentCamera,
+    stopLocalGatepassCamera,
   ]);
 
   const stopAndResetGatepassFlow = useCallback(
@@ -1352,7 +1393,14 @@ export function useGatepassPage() {
         String(activeCameraIdRef.current ?? "").trim() ||
         String(selectedGatepassCamera?.id ?? "").trim();
 
-      if (!targetId || (!activeCameraIdRef.current && !recognitionActive)) {
+      if (!targetId) {
+        return;
+      }
+
+      if (!activeCameraIdRef.current && !recognitionActive) {
+        if (isLocalCameraId(targetId)) {
+          stopLocalGatepassCamera(targetId);
+        }
         return;
       }
 
@@ -1375,6 +1423,7 @@ export function useGatepassPage() {
       resetGatepassForm,
       selectedGatepassCamera,
       stopCurrentCamera,
+      stopLocalGatepassCamera,
     ],
   );
 
@@ -1389,13 +1438,23 @@ export function useGatepassPage() {
         } finally {
           setCameraAction(null);
         }
+      } else if (
+        selectedGatepassCameraId !== cameraId &&
+        isLocalCameraId(selectedGatepassCameraId)
+      ) {
+        stopLocalGatepassCamera(selectedGatepassCameraId);
       }
 
       clearRecognizedList();
       setPanelError("");
       setSelectedGatepassCameraId(cameraId);
     },
-    [clearRecognizedList, selectedGatepassCameraId, stopCurrentCamera],
+    [
+      clearRecognizedList,
+      selectedGatepassCameraId,
+      stopCurrentCamera,
+      stopLocalGatepassCamera,
+    ],
   );
 
   const submitRequest = useCallback(async () => {

@@ -422,21 +422,38 @@ export default function AutoEnrollment({
 
     setLaptopActive(true);
 
-    const pc = new RTCPeerConnection({
+    let iceConfig: RTCConfiguration = {
       iceServers: [
         { urls: "stun:stun.l.google.com:19302" },
-        {
-          urls: "turn:10.81.100.128:3478?transport=udp",
-          username: "testuser",
-          credential: "testpass",
-        },
-        {
-          urls: "turn:10.81.100.128:3478?transport=tcp",
-          username: "testuser",
-          credential: "testpass",
-        },
       ],
-    });
+    };
+
+    try {
+      const envIce = process.env.NEXT_PUBLIC_MEDIA_WEBRTC_ICE_SERVERS;
+      if (envIce) {
+        iceConfig.iceServers = JSON.parse(envIce);
+      } else {
+        // Dynamic fallback to the current hostname for TURN server
+        const turnHost = typeof window !== "undefined" ? window.location.hostname : "localhost";
+        iceConfig.iceServers = [
+          { urls: "stun:stun.l.google.com:19302" },
+          {
+            urls: `turn:${turnHost}:3478?transport=udp`,
+            username: "testuser",
+            credential: "testpass",
+          },
+          {
+            urls: `turn:${turnHost}:3478?transport=tcp`,
+            username: "testuser",
+            credential: "testpass",
+          },
+        ];
+      }
+    } catch (err) {
+      console.warn("Failed to parse iceServers env, using default stun:", err);
+    }
+
+    const pc = new RTCPeerConnection(iceConfig);
     pcRef.current = pc;
     stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
