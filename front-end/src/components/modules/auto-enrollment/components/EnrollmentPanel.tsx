@@ -75,6 +75,7 @@ export const EnrollmentPanel = React.memo(function EnrollmentPanel({
   setTts: (v: boolean) => void;
 }) {
   const collected = session?.collected ?? {};
+  const [videoDimensions, setVideoDimensions] = React.useState({ width: 1280, height: 720 });
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch w-full">
@@ -95,15 +96,6 @@ export const EnrollmentPanel = React.memo(function EnrollmentPanel({
           <div className="p-5 flex-1 flex flex-col justify-between gap-4 min-h-[320px]">
             {/* Aspect Video */}
             <div className="rounded-md border border-zinc-150 overflow-hidden bg-zinc-100 shadow-inner aspect-video w-full relative">
-              {cameraId === laptopCameraId && laptopActive && !streamHasFrame ? (
-                <video
-                  ref={previewVideoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className="absolute inset-0 h-full w-full object-cover"
-                />
-              ) : null}
               {streamSrc ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
@@ -120,11 +112,19 @@ export const EnrollmentPanel = React.memo(function EnrollmentPanel({
                 />
               ) : null}
 
-              {!streamHasFrame && !(cameraId === laptopCameraId && laptopActive) ? (
+              {!streamHasFrame ? (
                 <div className="absolute inset-0 flex items-center justify-center text-xs text-zinc-500">
                   {streamRetries > 0 ? "Reconnecting camera..." : "Starting camera..."}
                 </div>
               ) : null}
+
+              <video
+                ref={previewVideoRef}
+                autoPlay
+                playsInline
+                muted
+                className="hidden"
+              />
             </div>
 
             {multiWarn && (

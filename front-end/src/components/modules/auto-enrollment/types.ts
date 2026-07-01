@@ -22,6 +22,8 @@ export type Session = {
   overlay_multi_in_roi?: boolean;
   voice_seq?: number;
   voice_text?: string | null;
+  overlay_primary_bbox?: [number, number, number, number] | null;
+  bbox?: [number, number, number, number] | null;
 };
 
 export type Screen = "setup" | "enrolling";

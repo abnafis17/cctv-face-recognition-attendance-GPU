@@ -108,7 +108,7 @@ BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "http://10.81.100.175:3001").st
 DEFAULT_COMPANY_ID = os.getenv("BACKEND_COMPANY_ID", "cmr06hyac0004tb7uwg0m3tjo").strip()
 SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.35"))
 AI_FPS = float(os.getenv("AI_FPS", "3.0"))
-OPENCV_VIEWER_FPS = float(os.getenv("OPENCV_VIEWER_FPS", "15.0"))
+OPENCV_VIEWER_FPS = float(os.getenv("OPENCV_VIEWER_FPS", "25.0"))
 ATTENDANCE_COOLDOWN_S = float(os.getenv("ATTENDANCE_COOLDOWN_SECONDS", "60.0"))
 BODY_PERSISTENCE_ENABLED = os.getenv("BODY_PERSISTENCE_ENABLED", "0").strip() != "0"
 MJPEG_RAW_JPEG_QUALITY = int(os.getenv("MJPEG_RAW_JPEG_QUALITY", "60"))
@@ -739,7 +739,7 @@ async def webrtc_signal(ws: WebSocket):
 
     pc: Optional[RTCPeerConnection] = None
     camera_id: Optional[str] = None
-    max_ingest_fps = max(1.0, float(os.getenv("WEBRTC_INGEST_MAX_FPS", "15.0")))
+    max_ingest_fps = max(1.0, float(os.getenv("WEBRTC_INGEST_MAX_FPS", "30.0")))
     ingest_min_interval = 1.0 / max_ingest_fps
 
     try:
@@ -1041,7 +1041,8 @@ def mjpeg_enroll_generator(camera_id: str):
     # Auto start camera if not already active to ensure enrollment frames flow
     stream = get_stream_for_camera(camera_id, DEFAULT_COMPANY_ID)
     
-    gui_period = 1.0 / 12.0 # Enroll FPS is typically 12 FPS
+    enroll_fps = float(os.getenv("ENROLL_STREAM_FPS", "25.0"))
+    gui_period = 1.0 / enroll_fps
     placeholder_bytes = make_dark_placeholder(camera_id)
     
     try:

@@ -163,7 +163,9 @@ r.get("/session/status", async (_req, res) => {
     });
     return res.status(resp.status).json(resp.data);
   } catch (err: any) {
-    console.error("enroll2-auto status failed:", err?.response?.data || err);
+    if (err?.code !== "ECONNREFUSED") {
+      console.error("enroll2-auto status failed:", err?.response?.data || err);
+    }
     return res
       .status(500)
       .json({ ok: false, error: "Failed to fetch enroll2-auto status" });

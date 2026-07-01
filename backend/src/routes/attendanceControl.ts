@@ -161,7 +161,9 @@ r.get("/status", async (req, res) => {
       console.error("attendance status db fallback failed:", dbErr?.message ?? dbErr);
     }
 
-    console.error("attendance status failed:", err?.message ?? err);
+    if (err?.code !== "ECONNREFUSED") {
+      console.error("attendance status failed:", err?.message ?? err);
+    }
     return res
       .status(500)
       .json({ ok: false, error: "Failed to get attendance status" });
@@ -194,8 +196,8 @@ r.get("/voice-events", async (req, res) => {
     });
     return res.status(ai.status).json(ai.data);
   } catch (err: any) {
-    if (err?.code === "ECONNREFUSED") {
-      console.error("attendance voice-events failed");
+    if (err?.code !== "ECONNREFUSED") {
+      console.error("attendance voice-events failed:", err?.message ?? err);
     }
 
     return res
