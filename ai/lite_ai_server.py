@@ -108,7 +108,8 @@ BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "http://10.81.100.175:3001").st
 DEFAULT_COMPANY_ID = os.getenv("BACKEND_COMPANY_ID", "cmr06hyac0004tb7uwg0m3tjo").strip()
 SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.35"))
 AI_FPS = float(os.getenv("AI_FPS", "3.0"))
-OPENCV_VIEWER_FPS = float(os.getenv("OPENCV_VIEWER_FPS", "25.0"))
+MJPEG_STREAM_FPS_RAW = float(os.getenv("MJPEG_STREAM_FPS_RAW", "8.0"))
+MJPEG_STREAM_FPS_RECOGNITION = float(os.getenv("MJPEG_STREAM_FPS_RECOGNITION", "8.0"))
 ATTENDANCE_COOLDOWN_S = float(os.getenv("ATTENDANCE_COOLDOWN_SECONDS", "60.0"))
 BODY_PERSISTENCE_ENABLED = os.getenv("BODY_PERSISTENCE_ENABLED", "0").strip() != "0"
 MJPEG_RAW_JPEG_QUALITY = int(os.getenv("MJPEG_RAW_JPEG_QUALITY", "60"))
@@ -197,11 +198,17 @@ class LiteCameraStream:
         self.company_id = company_id
         
         self.latest_raw_frame = None
-        self.latest_raw_jpeg = None
-        self.latest_annotated_jpeg = None
+        self.latest_frame_time = 0.0
         self.active_viewers = 0
         self.stopped = False
         self.cap = None
+        
+        # JPEG encoding lock and cache
+        self.jpeg_lock = threading.Lock()
+        self._cached_raw_jpeg = None
+        self._cached_raw_frame_time = 0.0
+        self._cached_annotated_jpeg = None
+        self._cached_annotated_frame_time = 0.0
         
         # Track cooldowns for marking attendance
         self.attendance_cooldowns = {} # emp_id -> last_log_time
@@ -227,6 +234,69 @@ class LiteCameraStream:
         self.process_thread = threading.Thread(target=self._run_process, name=f"lite-process-{camera_id}", daemon=True)
         self.process_thread.start()
         logger.info(f"Background stream & processing threads started for camera: {camera_id}")
+
+    def get_latest_raw_jpeg(self) -> Optional[bytes]:
+        frame = self.latest_raw_frame
+        if frame is None:
+            return None
+            
+        frame_time = self.latest_frame_time
+        
+        with self.jpeg_lock:
+            if self._cached_raw_frame_time == frame_time and self._cached_raw_jpeg is not None:
+                return self._cached_raw_jpeg
+                
+            ret_jpeg, jpeg_bytes = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), MJPEG_RAW_JPEG_QUALITY])
+            if ret_jpeg:
+                self._cached_raw_jpeg = jpeg_bytes.tobytes()
+                self._cached_raw_frame_time = frame_time
+                return self._cached_raw_jpeg
+        return None
+
+    def get_latest_annotated_jpeg(self) -> Optional[bytes]:
+        frame = self.latest_raw_frame
+        if frame is None:
+            return None
+            
+        frame_time = self.latest_frame_time
+        
+        with self.jpeg_lock:
+            if self._cached_annotated_frame_time == frame_time and self._cached_annotated_jpeg is not None:
+                return self._cached_annotated_jpeg
+                
+            annotated = frame.copy()
+            with self.body_tracker.lock:
+                tracks_copy = list(self.body_tracker.tracks)
+                
+            for track in tracks_copy:
+                bx1, by1, bx2, by2 = track.bbox
+                if track.name != "Unknown":
+                    if track.is_authorized:
+                        color = (220, 180, 0)
+                        label = f"{track.name} ({track.score:.2f})"
+                    else:
+                        color = (60, 60, 240)
+                        label = f"Unauthorized: {track.name}"
+                else:
+                    color = (180, 190, 30)
+                    label = "Unknown"
+                    
+                draw_polygon_body_bbox(annotated, track.bbox, color, 1)
+                
+                label_sz, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_DUPLEX, 0.55, 1)
+                y_top = max(by1 - label_sz[1] - 12, 0)
+                bg_color = (28, 28, 28)
+                
+                cv2.rectangle(annotated, (bx1, y_top), (bx1 + label_sz[0] + 12, y_top + label_sz[1] + 12), bg_color, cv2.FILLED)
+                cv2.rectangle(annotated, (bx1, y_top), (bx1 + label_sz[0] + 12, y_top + label_sz[1] + 12), color, 1)
+                cv2.putText(annotated, label, (bx1 + 6, y_top + label_sz[1] + 6), cv2.FONT_HERSHEY_DUPLEX, 0.55, (255, 255, 255), 1, cv2.LINE_AA)
+                
+            ret_jpeg, jpeg_bytes = cv2.imencode(".jpg", annotated, [int(cv2.IMWRITE_JPEG_QUALITY), MJPEG_RECOGNITION_JPEG_QUALITY])
+            if ret_jpeg:
+                self._cached_annotated_jpeg = jpeg_bytes.tobytes()
+                self._cached_annotated_frame_time = frame_time
+                return self._cached_annotated_jpeg
+        return None
 
     def _run_ingest(self):
         if self.camera_id.startswith("laptop-") or self.camera_id == "laptop_camera" or self.rtsp_url == "webrtc":
@@ -263,51 +333,9 @@ class LiteCameraStream:
             if frame is not None and frame.ndim == 3 and frame.shape[2] == 4:
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
             self.latest_raw_frame = frame
+            self.latest_frame_time = time.time()
             
-            # Dynamic viewer check: only encode/draw if we have active viewers
-            now = time.time()
-            is_viewer_active = (now - last_active_times.get(self.camera_id, 0.0) < 5.0)
-            if self.active_viewers > 0 or is_viewer_active:
-                # 1. Encode raw JPEG once
-                ret_jpeg, jpeg_bytes = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), MJPEG_RAW_JPEG_QUALITY])
-                if ret_jpeg:
-                    self.latest_raw_jpeg = jpeg_bytes.tobytes()
-                    
-                # 2. Draw overlays and encode annotated JPEG once at full ingest speed
-                annotated = frame.copy()
-                with self.body_tracker.lock:
-                    tracks_copy = list(self.body_tracker.tracks)
-                    
-                for track in tracks_copy:
-                    bx1, by1, bx2, by2 = track.bbox
-                    if track.name != "Unknown":
-                        if track.is_authorized:
-                            color = (220, 180, 0) # Neon Cyan/Teal (BGR: 220, 180, 0)
-                            label = f"{track.name} ({track.score:.2f})"
-                        else:
-                            color = (60, 60, 240) # Crimson Red (BGR: 60, 60, 240)
-                            label = f"Unauthorized: {track.name}"
-                    else:
-                        color = (180, 190, 30) # Blue-Green/Teal BGR: (180, 190, 30)
-                        label = "Unknown"
-                        
-                    # Draw body tracking boundary box
-                    draw_polygon_body_bbox(annotated, track.bbox, color, 1)
-                    
-                    # Draw label text plate
-                    label_sz, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_DUPLEX, 0.55, 1)
-                    y_top = max(by1 - label_sz[1] - 12, 0)
-                    bg_color = (28, 28, 28)
-                    
-                    cv2.rectangle(annotated, (bx1, y_top), (bx1 + label_sz[0] + 12, y_top + label_sz[1] + 12), bg_color, cv2.FILLED)
-                    cv2.rectangle(annotated, (bx1, y_top), (bx1 + label_sz[0] + 12, y_top + label_sz[1] + 12), color, 1)
-                    cv2.putText(annotated, label, (bx1 + 6, y_top + label_sz[1] + 6), cv2.FONT_HERSHEY_DUPLEX, 0.55, (255, 255, 255), 1, cv2.LINE_AA)
-                    
-                ret_jpeg, jpeg_bytes = cv2.imencode(".jpg", annotated, [int(cv2.IMWRITE_JPEG_QUALITY), MJPEG_RECOGNITION_JPEG_QUALITY])
-                if ret_jpeg:
-                    self.latest_annotated_jpeg = jpeg_bytes.tobytes()
-            
-            last_frame_time = now
+            last_frame_time = self.latest_frame_time
             
         if self.cap:
             self.cap.release()
@@ -589,8 +617,11 @@ class LiteCameraStream:
             self.cap.release()
             self.cap = None
         self.latest_raw_frame = None
-        self.latest_raw_jpeg = None
-        self.latest_annotated_jpeg = None
+        with self.jpeg_lock:
+            self._cached_raw_jpeg = None
+            self._cached_raw_frame_time = 0.0
+            self._cached_annotated_jpeg = None
+            self._cached_annotated_frame_time = 0.0
         self.recognized_persons = []
         self.attendance_cooldowns = {}
         self.last_logged_recognized_str = ""
@@ -599,44 +630,7 @@ class LiteCameraStream:
         if frame is not None and frame.ndim == 3 and frame.shape[2] == 4:
             frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
         self.latest_raw_frame = frame
-        
-        now = time.time()
-        is_viewer_active = (now - last_active_times.get(self.camera_id, 0.0) < 5.0)
-        if self.active_viewers > 0 or is_viewer_active:
-            ret_jpeg, jpeg_bytes = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), MJPEG_RAW_JPEG_QUALITY])
-            if ret_jpeg:
-                self.latest_raw_jpeg = jpeg_bytes.tobytes()
-                
-            annotated = frame.copy()
-            with self.body_tracker.lock:
-                tracks_copy = list(self.body_tracker.tracks)
-                
-            for track in tracks_copy:
-                bx1, by1, bx2, by2 = track.bbox
-                if track.name != "Unknown":
-                    if track.is_authorized:
-                        color = (220, 180, 0)
-                        label = f"{track.name} ({track.score:.2f})"
-                    else:
-                        color = (60, 60, 240)
-                        label = f"Unauthorized: {track.name}"
-                else:
-                    color = (180, 190, 30)
-                    label = "Unknown"
-                    
-                draw_polygon_body_bbox(annotated, track.bbox, color, 1)
-                
-                label_sz, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_DUPLEX, 0.55, 1)
-                y_top = max(by1 - label_sz[1] - 12, 0)
-                bg_color = (28, 28, 28)
-                
-                cv2.rectangle(annotated, (bx1, y_top), (bx1 + label_sz[0] + 12, y_top + label_sz[1] + 12), bg_color, cv2.FILLED)
-                cv2.rectangle(annotated, (bx1, y_top), (bx1 + label_sz[0] + 12, y_top + label_sz[1] + 12), color, 1)
-                cv2.putText(annotated, label, (bx1 + 6, y_top + label_sz[1] + 6), cv2.FONT_HERSHEY_DUPLEX, 0.55, (255, 255, 255), 1, cv2.LINE_AA)
-                
-            ret_jpeg, jpeg_bytes = cv2.imencode(".jpg", annotated, [int(cv2.IMWRITE_JPEG_QUALITY), MJPEG_RECOGNITION_JPEG_QUALITY])
-            if ret_jpeg:
-                self.latest_annotated_jpeg = jpeg_bytes.tobytes()
+        self.latest_frame_time = time.time()
 
 # 5. Global Camera Stream Manager (With Auto-Sleep)
 streams: Dict[str, LiteCameraStream] = {}
@@ -933,7 +927,7 @@ def mjpeg_recognition_generator(camera_id: str, company_id: str):
     logger.info(f"Client started viewing recognition stream: {camera_id}")
     stream = get_stream_for_camera(camera_id, company_id)
     
-    gui_period = 1.0 / OPENCV_VIEWER_FPS
+    gui_period = 1.0 / MJPEG_STREAM_FPS_RECOGNITION
     placeholder_bytes = make_dark_placeholder(camera_id)
     
     stream.active_viewers += 1
@@ -945,7 +939,7 @@ def mjpeg_recognition_generator(camera_id: str, company_id: str):
             t_start = time.time()
             last_active_times[camera_id] = t_start
             
-            jpeg_bytes = stream.latest_annotated_jpeg
+            jpeg_bytes = stream.get_latest_annotated_jpeg()
             if jpeg_bytes is None:
                 yield (b'--frame\n'
                        b'Content-Type: image/jpeg\n\n' + placeholder_bytes + b'\n')
@@ -968,7 +962,7 @@ def mjpeg_raw_generator(camera_id: str, company_id: str):
     logger.info(f"Client started viewing raw stream: {camera_id}")
     stream = get_stream_for_camera(camera_id, company_id)
     
-    gui_period = 1.0 / OPENCV_VIEWER_FPS
+    gui_period = 1.0 / MJPEG_STREAM_FPS_RAW
     placeholder_bytes = make_dark_placeholder(camera_id)
     
     stream.active_viewers += 1
@@ -980,7 +974,7 @@ def mjpeg_raw_generator(camera_id: str, company_id: str):
             t_start = time.time()
             last_active_times[camera_id] = t_start
             
-            jpeg_bytes = stream.latest_raw_jpeg
+            jpeg_bytes = stream.get_latest_raw_jpeg()
             if jpeg_bytes is None:
                 yield (b'--frame\n'
                        b'Content-Type: image/jpeg\n\n' + placeholder_bytes + b'\n')
@@ -1041,7 +1035,7 @@ def mjpeg_enroll_generator(camera_id: str):
     # Auto start camera if not already active to ensure enrollment frames flow
     stream = get_stream_for_camera(camera_id, DEFAULT_COMPANY_ID)
     
-    enroll_fps = float(os.getenv("ENROLL_STREAM_FPS", "25.0"))
+    enroll_fps = float(os.getenv("MJPEG_STREAM_FPS_ENROLL", os.getenv("ENROLL_STREAM_FPS", "10.0")))
     gui_period = 1.0 / enroll_fps
     placeholder_bytes = make_dark_placeholder(camera_id)
     
@@ -1091,7 +1085,8 @@ def mjpeg_enroll_generator(camera_id: str):
                     }
                     frame = draw_enroll2_auto_hud(frame, roi, primary, hud)
 
-                ret, jpeg = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+                quality = int(os.getenv("MJPEG_ENROLL_JPEG_QUALITY", "60"))
+                ret, jpeg = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
                 if ret:
                     yield (b'--frame\r\n'
                            b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
