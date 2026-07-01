@@ -698,6 +698,15 @@ async def lifespan(app: FastAPI):
     init_models()
     logger.warning("AI models initialized successfully. Server is ready.")
     yield
+    logger.warning("Shutting down Lite AI Server. Stopping all active camera streams...")
+    with streams_lock:
+        for camera_id, stream in list(streams.items()):
+            try:
+                stream.stop()
+            except Exception as e:
+                logger.error(f"Error stopping stream {camera_id}: {e}")
+        streams.clear()
+    logger.warning("All active camera streams stopped.")
 
 # 6. Unified FastAPI App
 app = FastAPI(title="CCTV Attendance Pro AI Server", version="1.5", lifespan=lifespan)
@@ -1184,4 +1193,4 @@ if __name__ == "__main__":
     host = os.getenv("AI_SERVER_HOST", "0.0.0.0")
     port = int(os.getenv("AI_SERVER_PORT", "8000"))
     logger.info(f"Starting Lite AI Server on {host}:{port}...")
-    uvicorn.run(app, host=host, port=port, log_config=None, access_log=False)
+    uvicorn.run(app, host=host, port=port, log_config=None, access_log=False, loop="asyncio")
