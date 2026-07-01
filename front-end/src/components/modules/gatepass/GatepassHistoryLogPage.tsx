@@ -23,33 +23,52 @@ function extractGatepassTimestampParts(value: unknown) {
   const normalized = String(value ?? "").trim();
   if (!normalized) return null;
 
-  const directMatch = normalized.match(
-    /^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{2}):(\d{2}):(\d{2}))/,
-  );
-
-  if (directMatch) {
-    return {
-      year: Number(directMatch[1]),
-      month: Number(directMatch[2]),
-      day: Number(directMatch[3]),
-      hour: Number(directMatch[4]),
-      minute: Number(directMatch[5]),
-      second: Number(directMatch[6]),
-    };
+  let parsed: Date;
+  if (/^\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}:\d{2}(\.\d+)?$/.test(normalized)) {
+    parsed = new Date(normalized + "Z");
+  } else {
+    parsed = new Date(normalized);
   }
 
-  const parsed = new Date(normalized);
   if (Number.isNaN(parsed.getTime())) return null;
 
-  return {
-    year: parsed.getUTCFullYear(),
-    month: parsed.getUTCMonth() + 1,
-    day: parsed.getUTCDate(),
-    hour: parsed.getUTCHours(),
-    minute: parsed.getUTCMinutes(),
-    second: parsed.getUTCSeconds(),
-  };
+  try {
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Dhaka",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    });
+    const parts = formatter.formatToParts(parsed);
+    const getPart = (type: string) => parts.find((p) => p.type === type)?.value;
+
+    const year = Number(getPart("year"));
+    const month = Number(getPart("month"));
+    const day = Number(getPart("day"));
+    let hour = Number(getPart("hour"));
+    const minute = Number(getPart("minute"));
+    const second = Number(getPart("second"));
+
+    if (hour === 24) hour = 0;
+
+    return { year, month, day, hour, minute, second };
+  } catch {
+    const dhakaTime = new Date(parsed.getTime() + 6 * 60 * 60 * 1000);
+    return {
+      year: dhakaTime.getUTCFullYear(),
+      month: dhakaTime.getUTCMonth() + 1,
+      day: dhakaTime.getUTCDate(),
+      hour: dhakaTime.getUTCHours(),
+      minute: dhakaTime.getUTCMinutes(),
+      second: dhakaTime.getUTCSeconds(),
+    };
+  }
 }
+
 
 function padTimestampPart(value: number) {
   return String(value).padStart(2, "0");
