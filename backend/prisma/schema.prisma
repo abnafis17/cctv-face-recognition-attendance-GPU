@@ -42,6 +42,7 @@ model Company {
   visitors        Visitor[]
   visitorTypes    VisitorType[]
   purposeOfVisits PurposeOfVisit[]
+  permissions     Permission[]
 }
 
 model User {
@@ -59,6 +60,40 @@ model User {
   updatedAt DateTime @updatedAt
 
   refreshTokens RefreshToken[]
+}
+
+model Permission {
+  id        String   @id @default(cuid())
+  role      String
+  module    String   // e.g. "/cameras", "/camera-list", "/enroll", "/employees", "/daily-attendance", "/attendance", "/unknown-recognition", "gatepass", "visitors", "/master-data", "/settings", "/permissions"
+  allowed   Boolean  @default(true)
+
+  companyId String?
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, role, module])
+  @@index([companyId])
+}
+
+model Module {
+  id          String   @id @default(cuid())
+  name        String
+  route       String?
+  description String?
+  sortOrder   Int      @default(0)
+
+  parentId    String?
+  parent      Module?  @relation("SubModules", fields: [parentId], references: [id], onDelete: Cascade)
+  subModules  Module[] @relation("SubModules")
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([parentId])
+  @@index([route])
 }
 
 model Employee {

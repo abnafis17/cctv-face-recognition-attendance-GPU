@@ -92,10 +92,35 @@ export async function registerUser(input: {
     throw err;
   }
 
-  // auto-login on register (optional)
-  const tokens = await issueTokens(safeUser);
+  const dbPermissions = await prisma.permission.findMany({
+    where: {
+      companyId: safeUser.companyId,
+      role: safeUser.role,
+    },
+  });
 
-  return { user: safeUser, ...tokens };
+  const permissionsMap: Record<string, boolean> = {};
+  const modulesList = await prisma.module.findMany({
+    select: { route: true },
+    where: { route: { not: null } }
+  });
+  const ALL_MODULES = modulesList.map(m => m.route as string);
+  for (const mod of ALL_MODULES) {
+    permissionsMap[mod] = true;
+  }
+  for (const p of dbPermissions) {
+    permissionsMap[p.module] = p.allowed;
+  }
+
+  const safeUserWithPerms = {
+    ...safeUser,
+    permissions: permissionsMap,
+  };
+
+  // auto-login on register (optional)
+  const tokens = await issueTokens(safeUserWithPerms);
+
+  return { user: safeUserWithPerms, ...tokens };
 }
 
 export async function loginUser(
@@ -130,7 +155,27 @@ export async function loginUser(
     throw err;
   }
 
-  const safeUser = {
+  const dbPermissions = await prisma.permission.findMany({
+    where: {
+      companyId: user.companyId,
+      role: user.role,
+    },
+  });
+
+  const permissionsMap: Record<string, boolean> = {};
+  const modulesList = await prisma.module.findMany({
+    select: { route: true },
+    where: { route: { not: null } }
+  });
+  const ALL_MODULES = modulesList.map(m => m.route as string);
+  for (const mod of ALL_MODULES) {
+    permissionsMap[mod] = true;
+  }
+  for (const p of dbPermissions) {
+    permissionsMap[p.module] = p.allowed;
+  }
+
+  const safeUserWithPerms = {
     id: user.id,
     name: user.name,
     email: user.email,
@@ -140,10 +185,11 @@ export async function loginUser(
     companyName: user?.company?.companyName ?? null,
     organizationId: user?.company?.organization_id ?? null,
     oragnizationId: user?.company?.organization_id,
+    permissions: permissionsMap,
   };
 
-  const tokens = await issueTokens(safeUser, meta);
-  return { user: safeUser, ...tokens };
+  const tokens = await issueTokens(safeUserWithPerms, meta);
+  return { user: safeUserWithPerms, ...tokens };
 }
 
 export async function refreshAccessToken(refreshTokenRaw: string) {

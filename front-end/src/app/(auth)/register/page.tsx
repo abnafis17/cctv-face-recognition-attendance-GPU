@@ -14,7 +14,7 @@ import toast from "react-hot-toast";
 
 import { Label } from "@/components/ui/label";
 import { registerApi } from "@/services/auth";
-import { getAccessToken } from "@/lib/authStorage";
+import { getAccessToken, getLandingRouteFromStorage } from "@/lib/authStorage";
 import axiosInstance from "@/config/axiosInstance";
 
 const schema = z.object({
@@ -338,7 +338,7 @@ export default function RegisterPage() {
     if (!accessToken) return;
     const next = safeNextUrl(
       new URLSearchParams(window.location.search).get("next"),
-      "/cameras",
+      getLandingRouteFromStorage(),
     );
     router.replace(next);
   }, [accessToken, router]);
@@ -381,7 +381,7 @@ export default function RegisterPage() {
 
       const next = safeNextUrl(
         new URLSearchParams(window.location.search).get("next"),
-        "/cameras",
+        getLandingRouteFromStorage(),
       );
       router.replace(next);
     } catch (e: unknown) {

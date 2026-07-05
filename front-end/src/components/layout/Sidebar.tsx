@@ -29,11 +29,37 @@ import {
   ClipboardList,
   PieChart,
   BarChart3,
+  ShieldCheck,
 } from "lucide-react";
+import * as LucideIcons from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { clearAccessToken, getAccessToken } from "@/lib/authStorage";
 import { cn } from "@/lib/utils";
 import axiosInstance from "@/config/axiosInstance";
+
+function getIconForRoute(route: string | null | undefined, label: string) {
+  if (route === "/cameras") return LucideIcons.Cctv;
+  if (route === "/camera-list") return LucideIcons.ListVideo;
+  if (route === "/enroll") return LucideIcons.ScanFace;
+  if (route === "/employees") return LucideIcons.Users;
+  if (route === "/daily-attendance") return LucideIcons.CalendarClock;
+  if (route === "/attendance") return LucideIcons.History;
+  if (route === "/unknown-recognition") return LucideIcons.UserX;
+  if (route === "/gatepass") return LucideIcons.ScanFace;
+  if (route === "/gatepass/history") return LucideIcons.ClipboardList;
+  if (route === "/visitors/add") return LucideIcons.UserPlus;
+  if (route === "/visitors") return LucideIcons.ClipboardList;
+  if (route === "/visitors/employee-wise-visit") return LucideIcons.BarChart3;
+  if (route === "/visitors/visitor-wise-visit") return LucideIcons.PieChart;
+  if (route === "/master-data") return LucideIcons.Database;
+  if (route === "/settings") return LucideIcons.Settings;
+  if (route === "/permissions") return LucideIcons.ShieldCheck;
+
+  if (label === "Gate Pass") return LucideIcons.IdCard;
+  if (label === "Visitor") return LucideIcons.UserSearch;
+
+  return LucideIcons.ShieldAlert;
+}
 
 interface SubNavItem {
   href: string;
@@ -48,7 +74,7 @@ interface NavItem {
   subItems?: SubNavItem[];
 }
 
-const nav: NavItem[] = [
+const staticNav: NavItem[] = [
   { href: "/cameras", label: "Cameras (Live)", icon: Cctv },
   { href: "/camera-list", label: "Camera List", icon: ListVideo },
   { href: "/enroll", label: "Enrollment (Auto)", icon: ScanFace },
@@ -76,6 +102,7 @@ const nav: NavItem[] = [
   },
   { href: "/master-data", label: "Master Data", icon: Database },
   { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/permissions", label: "Permissions", icon: ShieldCheck },
 ];
 
 function isActive(pathname: string, href: string) {
@@ -161,12 +188,15 @@ function SidebarContent({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [identity, setIdentity] = useState<SidebarIdentity>(() =>
-    readSidebarIdentity(),
-  );
+  const [identity, setIdentity] = useState<SidebarIdentity>({
+    companyName: "",
+    email: "",
+  });
   const syncedTokenRef = useRef<string>("");
 
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
+  const [permissions, setPermissions] = useState<Record<string, boolean>>({});
+  const [dynamicNav, setDynamicNav] = useState<NavItem[]>([]);
 
   useEffect(() => {
     if (pathname.startsWith("/visitors")) {
@@ -176,6 +206,54 @@ function SidebarContent({
       setOpenMenus((prev) => ({ ...prev, "Gate Pass": true }));
     }
   }, [pathname]);
+
+  useEffect(() => {
+    function loadPermissions() {
+      try {
+        const raw = localStorage.getItem("userInfo");
+        const userInfo = raw ? JSON.parse(raw) : null;
+        if (userInfo?.permissions) {
+          setPermissions(userInfo.permissions);
+        }
+      } catch (err) {
+        console.error("Failed to load permissions from localStorage:", err);
+      }
+    }
+    loadPermissions();
+
+    window.addEventListener("userInfoUpdated", loadPermissions);
+    return () => {
+      window.removeEventListener("userInfoUpdated", loadPermissions);
+    };
+  }, []);
+
+  useEffect(() => {
+    async function fetchModules() {
+      try {
+        const res = await axiosInstance.get("/auth/modules");
+        if (res.data?.ok && Array.isArray(res.data?.results)) {
+          const mapped: NavItem[] = res.data.results.map((m: any) => ({
+            href: m.route || undefined,
+            label: m.name,
+            icon: getIconForRoute(m.route, m.name),
+            subItems: m.subModules && m.subModules.length > 0
+              ? m.subModules.map((sub: any) => ({
+                  href: sub.route,
+                  label: sub.name,
+                  icon: getIconForRoute(sub.route, sub.name)
+                }))
+              : undefined
+          }));
+          setDynamicNav(mapped);
+        }
+      } catch (err) {
+        console.error("Failed to load dynamic nav modules:", err);
+      }
+    }
+    fetchModules();
+  }, []);
+
+  const currentNav = dynamicNav.length > 0 ? dynamicNav : staticNav;
 
   const toggleMenu = (label: string) => {
     setOpenMenus((prev) => ({
@@ -226,6 +304,7 @@ function SidebarContent({
                 companyName: companyName || current?.companyName || "",
               }),
             );
+            window.dispatchEvent(new Event("userInfoUpdated"));
           } catch {
             // ignore localStorage parse errors
           }
@@ -311,7 +390,20 @@ function SidebarContent({
         )}
 
         <div className="space-y-1">
-          {nav.map((n) => {
+          {currentNav
+            .filter((n) => {
+              if (n.subItems) {
+                const allowedSub = n.subItems.filter(
+                  (sub) => permissions[sub.href] !== false
+                );
+                return allowedSub.length > 0;
+              }
+              if (n.href) {
+                return permissions[n.href] !== false;
+              }
+              return true;
+            })
+            .map((n) => {
             const hasSubItems = !!n.subItems && n.subItems.length > 0;
 
             if (hasSubItems) {
@@ -354,7 +446,9 @@ function SidebarContent({
                         !compact && "ml-5 pl-3 border-l border-zinc-100"
                       )}
                     >
-                      {n.subItems!.map((sub) => {
+                      {n.subItems!
+                        .filter((sub) => permissions[sub.href] !== false)
+                        .map((sub) => {
                         const subActive = isActive(pathname, sub.href);
                         const SubIcon = sub.icon;
 

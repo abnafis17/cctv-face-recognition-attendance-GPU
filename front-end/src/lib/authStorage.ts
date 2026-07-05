@@ -53,3 +53,39 @@ export function getCompanyIdFromToken(): string | null {
   const value = payload?.companyId ?? payload?.company_id;
   return value ? String(value) : null;
 }
+
+export function getLandingRoute(permissions: Record<string, boolean> | null | undefined): string {
+  const defaultOrder = [
+    "/cameras",
+    "/camera-list",
+    "/enroll",
+    "/employees",
+    "/daily-attendance",
+    "/attendance",
+    "/unknown-recognition",
+    "/gatepass",
+    "/visitors",
+    "/master-data",
+    "/settings",
+    "/permissions",
+  ];
+  if (permissions) {
+    for (const route of defaultOrder) {
+      if (permissions[route] !== false) {
+        return route;
+      }
+    }
+  }
+  return "/cameras";
+}
+
+export function getLandingRouteFromStorage(): string {
+  if (!isBrowser()) return "/cameras";
+  try {
+    const raw = localStorage.getItem("userInfo");
+    const userInfo = raw ? JSON.parse(raw) : null;
+    return getLandingRoute(userInfo?.permissions);
+  } catch {
+    return "/cameras";
+  }
+}

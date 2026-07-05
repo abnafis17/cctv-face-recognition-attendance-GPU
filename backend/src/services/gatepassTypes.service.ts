@@ -64,34 +64,36 @@ async function resolveGatepassTypesUrl(companyId: string): Promise<string | null
 export async function listCompanyGatepassTypes(
   companyId: string,
 ): Promise<GatepassTypeOptionDto[]> {
-  const url = await resolveGatepassTypesUrl(companyId);
+  const defaultTypes = [
+    { id: "official", label: "Official", companyId },
+    { id: "personal", label: "Personal", companyId },
+    { id: "sick", label: "Sick Leave", companyId },
+    { id: "casual", label: "Casual Leave", companyId },
+  ];
 
-  if (!url) {
-    throw new Error(
-      'ERP gatepass settings are incomplete. Configure urlType "gatepasstypes" or "gatepass" with base URL, prefix, and endpoint.',
-    );
+  try {
+    const url = await resolveGatepassTypesUrl(companyId);
+
+    if (!url) {
+      return defaultTypes;
+    }
+
+    const response = await axios.post(url, "", {
+      headers: {
+        Accept: "*/*",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "x-api-version": "2.0",
+      },
+      timeout: DEFAULT_TIMEOUT_MS,
+      validateStatus: () => true,
+    });
+
+    if (response.status < 200 || response.status >= 300) {
+      return defaultTypes;
+    }
+
+    return normalizeGatepassTypesPayload(response.data);
+  } catch (err) {
+    return defaultTypes;
   }
-
-  const response = await axios.post(url, "", {
-    headers: {
-      Accept: "*/*",
-      "Content-Type": "application/x-www-form-urlencoded",
-      "x-api-version": "2.0",
-    },
-    timeout: DEFAULT_TIMEOUT_MS,
-    validateStatus: () => true,
-  });
-
-  if (response.status < 200 || response.status >= 300) {
-    const detail =
-      typeof response.data === "string"
-        ? response.data
-        : JSON.stringify(response.data ?? {});
-
-    throw new Error(
-      `ERP gatepass type request failed with status ${response.status}: ${detail}`,
-    );
-  }
-
-  return normalizeGatepassTypesPayload(response.data);
 }

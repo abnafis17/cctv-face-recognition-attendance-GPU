@@ -15,7 +15,7 @@ import toast from "react-hot-toast";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { loginApi } from "@/services/auth";
-import { getAccessToken } from "@/lib/authStorage";
+import { getAccessToken, getLandingRouteFromStorage } from "@/lib/authStorage";
 
 const schema = z.object({
   email: z.string().email("Enter a valid email"),
@@ -318,7 +318,7 @@ export default function LoginPage() {
     if (!accessToken) return;
     const next = safeNextUrl(
       new URLSearchParams(window.location.search).get("next"),
-      "/cameras",
+      getLandingRouteFromStorage(),
     );
     router.replace(next);
   }, [accessToken, router]);
@@ -332,7 +332,7 @@ export default function LoginPage() {
 
       const next = safeNextUrl(
         new URLSearchParams(window.location.search).get("next"),
-        "/cameras",
+        getLandingRouteFromStorage(),
       );
       router.replace(next);
     } catch (e: unknown) {
