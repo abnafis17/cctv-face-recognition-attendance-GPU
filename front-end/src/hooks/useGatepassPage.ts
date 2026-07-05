@@ -1116,8 +1116,8 @@ export function useGatepassPage() {
       }
 
       if (candidateSeq <= recognitionStartSeq) {
-        // Accept events that occurred within the last 60 seconds (to handle startup/cooldown race conditions)
-        const isRecent = (Date.now() - eventTime.getTime()) < 60000;
+        // Accept events that occurred within the last 5 minutes (to handle startup/cooldown race conditions and clock skews)
+        const isRecent = Math.abs(Date.now() - eventTime.getTime()) < 300000;
         console.log("[Gatepass] applyRecognitionCandidate seq is <= recognitionStartSeq. isRecent check:", {
           candidateSeq,
           recognitionStartSeq,
