@@ -53,12 +53,14 @@ export async function registerApi(input: {
   email: string;
   password: string;
   companyName: string;
+  role?: string;
 }) {
   try {
     const payload = {
       ...input,
       name: input.name?.trim() ? input.name.trim() : undefined,
       companyName: input.companyName.trim(),
+      role: input.role?.trim() ? input.role.trim() : undefined,
     };
 
     const res = await axiosInstance.post(AUTH.REGISTER, payload, {

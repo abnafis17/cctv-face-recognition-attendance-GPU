@@ -20,6 +20,7 @@ export async function registerUser(input: {
   email: string;
   password: string;
   companyName: string;
+  role?: string;
 }) {
   const existing = await prisma.user.findUnique({
     where: { email: input.email },
@@ -67,6 +68,7 @@ export async function registerUser(input: {
       email: input.email,
       passwordHash,
       companyId: company.id,
+      role: input.role ?? "ADMIN",
     },
     select: {
       id: true,

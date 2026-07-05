@@ -521,10 +521,11 @@ export default function LoginPage() {
       </div>
 
       {/* ═══════ RIGHT PANEL — Form ═══════ */}
-      <div className="col-span-1 lg:col-span-6 min-h-screen lg:h-screen flex flex-col items-center p-6 md:p-10 relative bg-slate-50/40 dot-grid overflow-y-auto">
+      <div className="col-span-1 lg:col-span-6 min-h-screen lg:h-screen p-6 md:p-10 relative bg-slate-50/40 dot-grid overflow-y-auto flex flex-col">
         <div className="absolute pointer-events-none" style={{ width: 500, height: 500, left: "50%", top: "50%", transform: "translate(-50%, -50%)", background: "radial-gradient(circle, rgba(124, 58, 237, 0.04), transparent 70%)" }} />
 
-        <div className="w-full relative z-10 max-w-[420px] my-auto py-8">
+        <div className="w-full min-h-full flex flex-col items-center py-6 md:py-8 relative z-10">
+          <div className="w-full max-w-[420px] my-auto">
           <div
             className="gradient-border rounded-2xl p-8 md:p-10 shadow-xl shadow-zinc-200/35"
             style={{
@@ -663,6 +664,7 @@ export default function LoginPage() {
             <div className="text-[10px] text-zinc-400">
               © 2026 Cripton Vision. All rights reserved. • <Link href="#" className="hover:underline">Privacy</Link> • <Link href="#" className="hover:underline">Terms</Link>
             </div>
+          </div>
           </div>
         </div>
       </div>

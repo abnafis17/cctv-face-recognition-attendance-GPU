@@ -64,6 +64,43 @@ authRouter.post("/register", async (req: Request, res: Response) => {
   }
 });
 
+authRouter.get("/roles", async (req: Request, res: Response) => {
+  try {
+    const roles = await prisma.user.findMany({
+      select: { role: true },
+      distinct: ["role"],
+    });
+
+    const list = roles.map((r) => r.role).filter(Boolean);
+    const defaults = ["ADMIN", "GENERAL_USER", "OPERATOR"];
+    const unique = Array.from(new Set([...defaults, ...list]));
+
+    return res.status(200).json({
+      ok: true,
+      results: unique,
+    });
+  } catch (e) {
+    return sendError(res, e, "Failed to fetch roles", 500);
+  }
+});
+
+authRouter.get("/companies", async (req: Request, res: Response) => {
+  try {
+    const companies = await prisma.company.findMany({
+      select: { companyName: true },
+      orderBy: { companyName: "asc" },
+    });
+
+    const list = companies.map((c) => c.companyName).filter(Boolean);
+    return res.status(200).json({
+      ok: true,
+      results: list,
+    });
+  } catch (e) {
+    return sendError(res, e, "Failed to fetch companies", 500);
+  }
+});
+
 authRouter.post("/login", async (req: Request, res: Response) => {
   try {
     const parsed = loginSchema.parse(req.body);

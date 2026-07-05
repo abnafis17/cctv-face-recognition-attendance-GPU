@@ -15,6 +15,7 @@ import toast from "react-hot-toast";
 import { Label } from "@/components/ui/label";
 import { registerApi } from "@/services/auth";
 import { getAccessToken } from "@/lib/authStorage";
+import axiosInstance from "@/config/axiosInstance";
 
 const schema = z.object({
   name: z
@@ -31,6 +32,7 @@ const schema = z.object({
     .max(120, "Company name must be at most 120 characters"),
   email: z.string().email("Enter a valid email"),
   password: z.string().min(8, "Password must be at least 8 characters").max(72),
+  role: z.string().trim().optional(),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -315,10 +317,14 @@ export default function RegisterPage() {
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
   const [focusedField, setFocusedField] = useState<string | null>(null);
+  const [showRolesDropdown, setShowRolesDropdown] = useState(false);
+  const [rolesList, setRolesList] = useState<string[]>(["ADMIN", "GENERAL_USER", "OPERATOR"]);
+  const [showCompaniesDropdown, setShowCompaniesDropdown] = useState(false);
+  const [companiesList, setCompaniesList] = useState<string[]>([]);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { name: "", companyName: "", email: "", password: "" },
+    defaultValues: { name: "", companyName: "", email: "", password: "", role: "ADMIN" },
     mode: "onSubmit",
   });
 
@@ -326,6 +332,7 @@ export default function RegisterPage() {
   const { onBlur: companyNameBlur, ...companyNameRegister } = form.register("companyName");
   const { onBlur: emailBlur, ...emailRegister } = form.register("email");
   const { onBlur: passwordBlur, ...passwordRegister } = form.register("password");
+  const { onBlur: roleBlur, ...roleRegister } = form.register("role");
 
   useEffect(() => {
     if (!accessToken) return;
@@ -335,6 +342,35 @@ export default function RegisterPage() {
     );
     router.replace(next);
   }, [accessToken, router]);
+
+  useEffect(() => {
+    async function fetchRoles() {
+      try {
+        const res = await axiosInstance.get("/auth/roles", {
+          _skipAuth: true,
+        } as any);
+        if (res.data?.ok && Array.isArray(res.data?.results)) {
+          setRolesList(res.data.results);
+        }
+      } catch (err) {
+        console.error("Failed to fetch roles:", err);
+      }
+    }
+    async function fetchCompanies() {
+      try {
+        const res = await axiosInstance.get("/auth/companies", {
+          _skipAuth: true,
+        } as any);
+        if (res.data?.ok && Array.isArray(res.data?.results)) {
+          setCompaniesList(res.data.results);
+        }
+      } catch (err) {
+        console.error("Failed to fetch companies:", err);
+      }
+    }
+    fetchRoles();
+    fetchCompanies();
+  }, []);
 
   async function onSubmit(values: FormValues) {
     setLoading(true);
@@ -534,10 +570,11 @@ export default function RegisterPage() {
       </div>
 
       {/* ═══════ RIGHT PANEL — Form ═══════ */}
-      <div className="col-span-1 lg:col-span-6 min-h-screen lg:h-screen flex flex-col items-center p-6 md:p-10 relative bg-slate-50/40 dot-grid overflow-y-auto">
+      <div className="col-span-1 lg:col-span-6 h-screen p-6 md:p-10 relative bg-slate-50/40 dot-grid overflow-y-auto flex flex-col">
         <div className="absolute pointer-events-none" style={{ width: 500, height: 500, left: "50%", top: "50%", transform: "translate(-50%, -50%)", background: "radial-gradient(circle, rgba(124, 58, 237, 0.04), transparent 70%)" }} />
 
-        <div className="w-full relative z-10 max-w-[420px] my-auto py-8">
+        <div className="w-full min-h-full flex flex-col items-center py-6 md:py-8 relative z-10">
+          <div className="w-full max-w-[420px] my-auto">
           <div
             className="gradient-border rounded-2xl p-8 md:p-10 shadow-xl shadow-zinc-200/35"
             style={{
@@ -613,21 +650,52 @@ export default function RegisterPage() {
               {/* Company Name */}
               <div>
                 <Label className="block text-[10px] font-bold mb-2 uppercase tracking-wider text-zinc-400" htmlFor="companyName">Company Name</Label>
-                <div className="login-glass-input rounded-md flex items-center gap-3 px-4 py-3">
-                  <Building2 className="w-[18px] h-[18px] flex-shrink-0 transition-all duration-300" style={{ color: focusedField === "companyName" ? "#7c3aed" : "#a1a1aa" }} />
-                  <input 
-                    id="companyName" 
-                    type="text" 
-                    onFocus={() => setFocusedField("companyName")} 
-                    onBlur={(e) => {
-                      setFocusedField(null);
-                      companyNameBlur(e);
-                    }}
-                    placeholder="Enter company/organization name" 
-                    className="w-full bg-transparent outline-none text-xs font-semibold text-zinc-800 placeholder:text-zinc-400"
-                    autoComplete="organization" 
-                    {...companyNameRegister} 
-                  />
+                <div className="relative">
+                  <div className="login-glass-input rounded-md flex items-center gap-3 px-4 py-3">
+                    <Building2 className="w-[18px] h-[18px] flex-shrink-0 transition-all duration-300" style={{ color: focusedField === "companyName" ? "#7c3aed" : "#a1a1aa" }} />
+                    <input 
+                      id="companyName" 
+                      type="text" 
+                      onFocus={() => {
+                        setFocusedField("companyName");
+                        setShowCompaniesDropdown(true);
+                      }} 
+                      onBlur={(e) => {
+                        setFocusedField(null);
+                        // Delay closing the dropdown so item clicks can trigger onMouseDown
+                        setTimeout(() => setShowCompaniesDropdown(false), 200);
+                        companyNameBlur(e);
+                      }}
+                      placeholder="Select or type company name" 
+                      className="w-full bg-transparent outline-none text-xs font-semibold text-zinc-800 placeholder:text-zinc-400"
+                      autoComplete="off" 
+                      {...companyNameRegister} 
+                    />
+                    <button 
+                      type="button" 
+                      onClick={() => setShowCompaniesDropdown(!showCompaniesDropdown)}
+                      className="flex-shrink-0 p-1 text-zinc-400 hover:text-zinc-600 cursor-pointer"
+                    >
+                      <ArrowRight className="w-4 h-4 rotate-90 transition-transform duration-200" />
+                    </button>
+                  </div>
+
+                  {showCompaniesDropdown && companiesList.length > 0 && (
+                    <div className="absolute left-0 right-0 mt-1 bg-white/95 backdrop-blur-md border border-zinc-200/80 rounded-md shadow-lg max-h-40 overflow-y-auto z-50 py-1">
+                      {companiesList.map((c) => (
+                        <button
+                          key={c}
+                          type="button"
+                          onMouseDown={() => {
+                            form.setValue("companyName", c);
+                          }}
+                          className="w-full text-left px-4 py-2 text-xs font-semibold text-zinc-700 hover:bg-violet-50 hover:text-violet-700 transition-colors cursor-pointer"
+                        >
+                          {c}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 {form.formState.errors.companyName?.message ? (
                   <p className="text-xs text-rose-600 font-semibold mt-1">
@@ -658,6 +726,63 @@ export default function RegisterPage() {
                 {form.formState.errors.email?.message ? (
                   <p className="text-xs text-rose-600 font-semibold mt-1">
                     {form.formState.errors.email.message}
+                  </p>
+                ) : null}
+              </div>
+
+              {/* User Role Selection (Combobox) */}
+              <div>
+                <Label className="block text-[10px] font-bold mb-2 uppercase tracking-wider text-zinc-400" htmlFor="role">User Role</Label>
+                <div className="relative">
+                  <div className="login-glass-input rounded-md flex items-center gap-3 px-4 py-3">
+                    <ShieldCheck className="w-[18px] h-[18px] flex-shrink-0 transition-all duration-300" style={{ color: focusedField === "role" ? "#7c3aed" : "#a1a1aa" }} />
+                    <input 
+                      id="role" 
+                      type="text" 
+                      onFocus={() => {
+                        setFocusedField("role");
+                        setShowRolesDropdown(true);
+                      }} 
+                      onBlur={(e) => {
+                        setFocusedField(null);
+                        // Delay closing the dropdown so item clicks can trigger onMouseDown
+                        setTimeout(() => setShowRolesDropdown(false), 200);
+                        roleBlur(e);
+                      }}
+                      placeholder="Select or type user role (e.g. ADMIN)" 
+                      className="w-full bg-transparent outline-none text-xs font-semibold text-zinc-800 placeholder:text-zinc-400"
+                      autoComplete="off" 
+                      {...roleRegister} 
+                    />
+                    <button 
+                      type="button" 
+                      onClick={() => setShowRolesDropdown(!showRolesDropdown)}
+                      className="flex-shrink-0 p-1 text-zinc-400 hover:text-zinc-600 cursor-pointer"
+                    >
+                      <ArrowRight className="w-4 h-4 rotate-90 transition-transform duration-200" />
+                    </button>
+                  </div>
+
+                  {showRolesDropdown && (
+                    <div className="absolute left-0 right-0 mt-1 bg-white/95 backdrop-blur-md border border-zinc-200/80 rounded-md shadow-lg max-h-40 overflow-y-auto z-50 py-1">
+                      {rolesList.map((r) => (
+                        <button
+                          key={r}
+                          type="button"
+                          onMouseDown={() => {
+                            form.setValue("role", r);
+                          }}
+                          className="w-full text-left px-4 py-2 text-xs font-semibold text-zinc-700 hover:bg-violet-50 hover:text-violet-700 transition-colors cursor-pointer"
+                        >
+                          {r}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {form.formState.errors.role?.message ? (
+                  <p className="text-xs text-rose-600 font-semibold mt-1">
+                    {form.formState.errors.role.message}
                   </p>
                 ) : null}
               </div>
@@ -729,6 +854,7 @@ export default function RegisterPage() {
             <div className="text-[10px] text-zinc-400">
               © 2026 Cripton Vision. All rights reserved. • <Link href="#" className="hover:underline">Privacy</Link> • <Link href="#" className="hover:underline">Terms</Link>
             </div>
+          </div>
           </div>
         </div>
       </div>
