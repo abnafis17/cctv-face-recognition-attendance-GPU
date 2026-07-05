@@ -352,7 +352,7 @@ export default function LoginPage() {
   if (accessToken) return null;
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-12 h-screen w-full overflow-hidden bg-slate-50">
+    <div className="grid grid-cols-1 lg:grid-cols-12 min-h-screen lg:h-screen w-full lg:overflow-hidden bg-slate-50">
       {/* ── Theme CSS Variables + Keyframes ── */}
       <style>{`
         @keyframes floatShape {
@@ -521,10 +521,10 @@ export default function LoginPage() {
       </div>
 
       {/* ═══════ RIGHT PANEL — Form ═══════ */}
-      <div className="col-span-1 lg:col-span-6 h-screen flex flex-col justify-center items-center p-6 md:p-10 relative bg-slate-50/40 dot-grid overflow-hidden">
+      <div className="col-span-1 lg:col-span-6 min-h-screen lg:h-screen flex flex-col items-center p-6 md:p-10 relative bg-slate-50/40 dot-grid overflow-y-auto">
         <div className="absolute pointer-events-none" style={{ width: 500, height: 500, left: "50%", top: "50%", transform: "translate(-50%, -50%)", background: "radial-gradient(circle, rgba(124, 58, 237, 0.04), transparent 70%)" }} />
 
-        <div className="w-full relative z-10 max-w-[420px]">
+        <div className="w-full relative z-10 max-w-[420px] my-auto py-8">
           <div
             className="gradient-border rounded-2xl p-8 md:p-10 shadow-xl shadow-zinc-200/35"
             style={{
@@ -630,6 +630,20 @@ export default function LoginPage() {
                 {loading ? <div className="spinner-ring" /> : <><span>Sign In to Workspace</span><ArrowRight className="w-4 h-4 transition-transform duration-250 group-hover:translate-x-1" /></>}
               </button>
             </form>
+
+            <div className="mt-6 text-center text-xs text-zinc-500">
+              Don&apos;t have an account?{" "}
+              <Link
+                href="/register"
+                className="font-bold text-violet-600 hover:underline"
+              >
+                Create one
+              </Link>
+            </div>
+
+            <div className="mt-2 text-center text-[10px] text-zinc-400">
+              By continuing, you agree to your organization&apos;s security policy.
+            </div>
 
             {/* Compliance badges */}
             <div className="mt-8 pt-6 border-t border-zinc-200/50">
