@@ -950,10 +950,16 @@ export function useGatepassPage() {
 
   const matchesSelectedCamera = useCallback(
     (cameraKey: unknown) => {
-      if (!selectedGatepassCamera) return false;
+      if (!selectedGatepassCamera) {
+        console.log("[Gatepass match] Skip: selectedGatepassCamera is null");
+        return false;
+      }
 
       const eventCameraKey = String(cameraKey ?? "").trim();
-      if (!eventCameraKey) return false;
+      if (!eventCameraKey) {
+        console.log("[Gatepass match] Skip: eventCameraKey is empty");
+        return false;
+      }
 
       const selectedCameraDbId = String(selectedGatepassCamera.id ?? "").trim();
       const selectedCameraPublicId = String(
@@ -963,18 +969,32 @@ export function useGatepassPage() {
         .trim()
         .toLowerCase();
 
-      if (eventCameraKey === selectedCameraDbId) return true;
-      if (selectedCameraPublicId && eventCameraKey === selectedCameraPublicId) {
-        return true;
-      }
-      if (
-        selectedCameraName &&
-        eventCameraKey.toLowerCase() === selectedCameraName
-      ) {
-        return true;
-      }
+      const matched = (() => {
+        if (isLocalCameraId(eventCameraKey) && isLocalCameraId(selectedCameraDbId)) {
+          return true;
+        }
+        if (eventCameraKey === selectedCameraDbId) return true;
+        if (selectedCameraPublicId && eventCameraKey === selectedCameraPublicId) {
+          return true;
+        }
+        if (
+          selectedCameraName &&
+          eventCameraKey.toLowerCase() === selectedCameraName
+        ) {
+          return true;
+        }
+        return false;
+      })();
 
-      return false;
+      console.log("[Gatepass match] Matches Selected Camera result:", {
+        eventCameraKey,
+        selectedCameraDbId,
+        selectedCameraPublicId,
+        selectedCameraName,
+        matched,
+      });
+
+      return matched;
     },
     [selectedGatepassCamera],
   );
@@ -1067,24 +1087,43 @@ export function useGatepassPage() {
 
   const applyRecognitionCandidate = useCallback(
     (candidate: AttendanceEventPayload) => {
-      if (!selectedGatepassCamera || !recognitionActive) return false;
+      console.log("[Gatepass] applyRecognitionCandidate candidate:", candidate);
+      if (!selectedGatepassCamera || !recognitionActive) {
+        console.log("[Gatepass] applyRecognitionCandidate skipped: no camera or not active", { selectedGatepassCamera, recognitionActive });
+        return false;
+      }
 
       const candidateSeq = Number(candidate.seq ?? 0) || 0;
       const eventEmployeeId = String(candidate.employeeId ?? "").trim();
-      if (!eventEmployeeId) return false;
+      if (!eventEmployeeId) {
+        console.log("[Gatepass] applyRecognitionCandidate skipped: empty employeeId");
+        return false;
+      }
 
       const candidateAt = "at" in candidate ? candidate.at : undefined;
       const eventTimeRaw = String(
         candidate.timestamp ?? candidateAt ?? "",
       ).trim();
-      if (!eventTimeRaw) return false;
+      if (!eventTimeRaw) {
+        console.log("[Gatepass] applyRecognitionCandidate skipped: empty timestamp");
+        return false;
+      }
 
       const eventTime = new Date(eventTimeRaw);
-      if (Number.isNaN(eventTime.getTime())) return false;
+      if (Number.isNaN(eventTime.getTime())) {
+        console.log("[Gatepass] applyRecognitionCandidate skipped: invalid timestamp", eventTimeRaw);
+        return false;
+      }
 
       if (candidateSeq <= recognitionStartSeq) {
         // Accept events that occurred within the last 60 seconds (to handle startup/cooldown race conditions)
         const isRecent = (Date.now() - eventTime.getTime()) < 60000;
+        console.log("[Gatepass] applyRecognitionCandidate seq is <= recognitionStartSeq. isRecent check:", {
+          candidateSeq,
+          recognitionStartSeq,
+          isRecent,
+          diff: Date.now() - eventTime.getTime()
+        });
         if (!isRecent) return false;
       }
 
@@ -1097,10 +1136,14 @@ export function useGatepassPage() {
         eventTime.toISOString(),
       ].join(":");
 
-      if (lastRecognitionSignatureRef.current === signature) return false;
+      if (lastRecognitionSignatureRef.current === signature) {
+        console.log("[Gatepass] applyRecognitionCandidate skipped: duplicate signature", signature);
+        return false;
+      }
       lastRecognitionSignatureRef.current = signature;
 
       const directoryEmployee = employeeDirectoryByKey.get(eventEmployeeId);
+      console.log("[Gatepass] applyRecognitionCandidate directoryEmployee match:", directoryEmployee);
       const matchedEmployee = directoryEmployee
         ? mapEmployeeToGatepassEmployee(
           directoryEmployee,
@@ -1117,6 +1160,7 @@ export function useGatepassPage() {
         null;
 
       if (hasOpenOutRecord(latestRecord)) {
+        console.log("[Gatepass] applyRecognitionCandidate auto-return trigger:", matchedEmployee);
         setPanelError("");
         void autoMarkGatepassReturn({
           employee: matchedEmployee,
@@ -1126,6 +1170,7 @@ export function useGatepassPage() {
         return true;
       }
 
+      console.log("[Gatepass] queueRecognizedPerson calling with matchedEmployee:", matchedEmployee);
       queueRecognizedPerson(matchedEmployee, eventTime, signature);
       setPanelError("");
       return true;
@@ -1143,7 +1188,11 @@ export function useGatepassPage() {
 
   const handleAttendanceEvents = useCallback(
     (events: AttendanceEventPayload[]) => {
-      if (!selectedGatepassCamera || !recognitionActive) return;
+      console.log("[Gatepass] handleAttendanceEvents event count:", events.length, events);
+      if (!selectedGatepassCamera || !recognitionActive) {
+        console.log("[Gatepass] handleAttendanceEvents ignored: no camera or not active", { selectedGatepassCamera, recognitionActive });
+        return;
+      }
 
       const allEventsUnscoped =
         events.length > 0 &&
@@ -1157,6 +1206,8 @@ export function useGatepassPage() {
         }
         return matchesSelectedCamera(event.cameraId);
       });
+
+      console.log("[Gatepass] handleAttendanceEvents filtered matchingEvents:", matchingEvents);
 
       for (const event of matchingEvents) {
         applyRecognitionCandidate(event);
