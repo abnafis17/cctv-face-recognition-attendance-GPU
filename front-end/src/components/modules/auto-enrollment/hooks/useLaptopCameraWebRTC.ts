@@ -46,7 +46,6 @@ export function useLaptopCameraWebRTC({
   }, [aiHost]);
 
   const stopLaptopCamera = useCallback(() => {
-    console.log("stopLaptopCamera execution started");
     shouldRunRef.current = false;
 
     // 1. Close WebRTC PeerConnection and its senders/tracks
@@ -97,7 +96,6 @@ export function useLaptopCameraWebRTC({
     } catch {}
 
     setLaptopActive(false);
-    console.log("stopLaptopCamera completed, webcam tracks stopped.");
   }, []);
 
   useEffect(() => {
@@ -105,12 +103,10 @@ export function useLaptopCameraWebRTC({
   }, [stopLaptopCamera]);
 
   const startLaptopCamera = useCallback(async () => {
-    console.log("startLaptopCamera execution started");
     shouldRunRef.current = true;
 
     // if already running, restart cleanly
     if (localStreamRef.current || pcRef.current) {
-      console.log("Laptop camera already active, stopping first...");
       stopLaptopCamera();
     }
 
@@ -143,7 +139,6 @@ export function useLaptopCameraWebRTC({
         };
 
     try {
-      console.log("Requesting getUserMedia...");
       const stream = await navigator.mediaDevices.getUserMedia({
         video: videoConstraints,
         audio: false,
@@ -151,7 +146,6 @@ export function useLaptopCameraWebRTC({
 
       // Race condition check after async call
       if (!isMountedRef.current || !shouldRunRef.current) {
-        console.log("Component unmounted or inactive during getUserMedia. Stopping stream tracks.");
         stream.getTracks().forEach((t) => t.stop());
         return;
       }
@@ -170,7 +164,6 @@ export function useLaptopCameraWebRTC({
 
       // Race condition check after constraints
       if (!isMountedRef.current || !shouldRunRef.current) {
-        console.log("Component unmounted or inactive during constraints. Stopping stream tracks.");
         stream.getTracks().forEach((t) => t.stop());
         return;
       }
@@ -188,7 +181,6 @@ export function useLaptopCameraWebRTC({
 
       // Race condition check after play
       if (!isMountedRef.current || !shouldRunRef.current) {
-        console.log("Component unmounted or inactive during play. Stopping stream tracks.");
         stream.getTracks().forEach((t) => t.stop());
         if (previewVideoRef.current) previewVideoRef.current.srcObject = null;
         localStreamRef.current = null;
@@ -253,7 +245,6 @@ export function useLaptopCameraWebRTC({
         }
       });
 
-      console.log("Connecting WebSocket to", wsSignalUrl);
       const ws = new WebSocket(wsSignalUrl);
       wsRef.current = ws;
 
@@ -271,7 +262,6 @@ export function useLaptopCameraWebRTC({
       };
 
       ws.onopen = async () => {
-        console.log("WebSignal WebSocket opened. Creating SDP offer...");
         const offer = await pc.createOffer();
 
         if (!isMountedRef.current || !shouldRunRef.current) {

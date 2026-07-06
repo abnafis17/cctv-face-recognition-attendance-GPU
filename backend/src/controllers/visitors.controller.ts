@@ -81,6 +81,14 @@ function mapErpEmployee(item: any) {
     item?.emailAddress ??
     item?.EmailAddress;
 
+  const companyName =
+    item?.organizationName ??
+    item?.OrganizationName ??
+    item?.companyName ??
+    item?.CompanyName ??
+    item?.company ??
+    item?.Company;
+
   if (employeeId == null || employeeName == null) return null;
 
   return {
@@ -90,6 +98,7 @@ function mapErpEmployee(item: any) {
     unit: String(unitName ?? "").trim(),
     contactNumber: String(mobile ?? "").trim(),
     emailAddress: String(email ?? "").trim(),
+    companyName: String(companyName ?? "").trim(),
   };
 }
 
@@ -316,7 +325,7 @@ export async function lookupVisitor(req: Request, res: Response) {
               visitorName: emp.employeeName,
               contactNumber: emp.contactNumber,
               emailAddress: emp.emailAddress,
-              companyAddress: emp.unit || "Own Company",
+              companyAddress: emp.companyName || emp.unit || "Own Company",
               department: emp.department || "",
               visitorType: "Official",
               hostEmployeeId: emp.employeeId,

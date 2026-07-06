@@ -32,7 +32,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import * as LucideIcons from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { clearAccessToken, getAccessToken } from "@/lib/authStorage";
 import { cn } from "@/lib/utils";
 import axiosInstance from "@/config/axiosInstance";
@@ -117,63 +117,7 @@ type SidebarIdentity = {
   email: string;
 };
 
-function decodeJwtPayload(token: string): Record<string, unknown> | null {
-  const parts = String(token || "").split(".");
-  if (parts.length < 2) return null;
 
-  const raw = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-  const padded = raw + "=".repeat((4 - (raw.length % 4)) % 4);
-
-  try {
-    return JSON.parse(atob(padded));
-  } catch {
-    return null;
-  }
-}
-
-function readSidebarIdentity(): SidebarIdentity {
-  if (typeof window === "undefined") {
-    return {
-      companyName: "Company Account",
-      email: "Not available",
-    };
-  }
-
-  let companyName = "";
-  let email = "";
-
-  try {
-    const rawUserInfo = localStorage.getItem("userInfo");
-    const userInfo = rawUserInfo ? JSON.parse(rawUserInfo) : null;
-
-    companyName = String(
-      userInfo?.companyName ?? userInfo?.company?.companyName ?? "",
-    ).trim();
-    email = String(userInfo?.email ?? "").trim();
-  } catch {
-    // ignore localStorage parse errors
-  }
-
-  const accessToken = getAccessToken();
-  const payload = accessToken ? decodeJwtPayload(accessToken) : null;
-
-  if (payload) {
-    if (!email) {
-      email = String(payload.email ?? "").trim();
-    }
-
-    if (!companyName) {
-      companyName = String(
-        payload.companyName ?? payload.company_name ?? "",
-      ).trim();
-    }
-  }
-
-  return {
-    companyName: companyName || "Company Account",
-    email: email || "Not available",
-  };
-}
 
 function SidebarContent({
   compact = false,
@@ -192,7 +136,7 @@ function SidebarContent({
     companyName: "",
     email: "",
   });
-  const syncedTokenRef = useRef<string>("");
+
 
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
   const [permissions, setPermissions] = useState<Record<string, boolean>>({});
@@ -208,22 +152,27 @@ function SidebarContent({
   }, [pathname]);
 
   useEffect(() => {
-    function loadPermissions() {
+    function loadUserInfo() {
       try {
         const raw = localStorage.getItem("userInfo");
         const userInfo = raw ? JSON.parse(raw) : null;
         if (userInfo?.permissions) {
           setPermissions(userInfo.permissions);
         }
+        const companyName = String(
+          userInfo?.companyName ?? userInfo?.company?.companyName ?? "Company Account"
+        ).trim();
+        const email = String(userInfo?.email ?? "Not available").trim();
+        setIdentity({ companyName, email });
       } catch (err) {
-        console.error("Failed to load permissions from localStorage:", err);
+        console.error("Failed to load user info in sidebar:", err);
       }
     }
-    loadPermissions();
+    loadUserInfo();
 
-    window.addEventListener("userInfoUpdated", loadPermissions);
+    window.addEventListener("userInfoUpdated", loadUserInfo);
     return () => {
-      window.removeEventListener("userInfoUpdated", loadPermissions);
+      window.removeEventListener("userInfoUpdated", loadUserInfo);
     };
   }, []);
 
@@ -261,65 +210,6 @@ function SidebarContent({
       [label]: !prev[label],
     }));
   };
-
-  useEffect(() => {
-    const localIdentity = readSidebarIdentity();
-    setIdentity(localIdentity);
-
-    const token = getAccessToken();
-    if (!token) {
-      syncedTokenRef.current = "";
-      return;
-    }
-
-    if (syncedTokenRef.current === token) return;
-
-    let cancelled = false;
-
-    const syncIdentityFromDb = async () => {
-      try {
-        const res = await axiosInstance.get("/auth/me");
-        const me = res?.data?.results ?? {};
-        const companyName = String(
-          me?.companyName ?? me?.company?.companyName ?? "",
-        ).trim();
-        const email = String(me?.email ?? "").trim();
-
-        if (!cancelled && (companyName || email)) {
-          syncedTokenRef.current = token;
-          const nextIdentity: SidebarIdentity = {
-            companyName: companyName || localIdentity.companyName,
-            email: email || localIdentity.email,
-          };
-          setIdentity(nextIdentity);
-
-          try {
-            const raw = localStorage.getItem("userInfo");
-            const current = raw ? JSON.parse(raw) : {};
-            localStorage.setItem(
-              "userInfo",
-              JSON.stringify({
-                ...current,
-                ...me,
-                companyName: companyName || current?.companyName || "",
-              }),
-            );
-            window.dispatchEvent(new Event("userInfoUpdated"));
-          } catch {
-            // ignore localStorage parse errors
-          }
-        }
-      } catch {
-        // keep local identity if /auth/me fails
-      }
-    };
-
-    void syncIdentityFromDb();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [pathname]);
 
   function onLogout() {
     clearAccessToken();
