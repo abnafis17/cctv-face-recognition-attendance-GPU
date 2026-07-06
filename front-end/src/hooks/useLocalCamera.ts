@@ -91,7 +91,6 @@ export function useLocalCamera({
   }, []);
 
   const stopLocalCamera = useCallback(() => {
-    console.log("stopLocalCamera execution started");
     shouldRunRef.current = false;
     startTokenRef.current += 1;
     if (isMountedRef.current) {
@@ -163,7 +162,6 @@ export function useLocalCamera({
     if (isMountedRef.current) {
       setLocalActive(false);
     }
-    console.log("stopLocalCamera completed, webcam tracks stopped.");
   }, []);
 
   useEffect(() => {
@@ -208,7 +206,6 @@ export function useLocalCamera({
   }, [cameraId, companyId, localActive, stopLocalCamera]);
 
   const startLocalCamera = useCallback(async () => {
-    console.log("startLocalCamera execution started: cameraId =", cameraId);
     let startToken = 0;
     const isCurrentStart = () =>
       isMountedRef.current &&
@@ -225,7 +222,6 @@ export function useLocalCamera({
         pcRef.current ||
         wsRef.current
       ) {
-        console.log("Webcam stream or RTCPeerConnection already active, stopping first...");
         stopLocalCamera();
       }
 
@@ -235,7 +231,6 @@ export function useLocalCamera({
 
       setLocalActiveCount((c) => c + 1);
 
-      console.log("Requesting getUserMedia...");
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           width: { ideal: 1280 },
@@ -246,13 +241,11 @@ export function useLocalCamera({
 
       // Race condition check after async call
       if (!isCurrentStart()) {
-        console.log("Component unmounted or inactive during getUserMedia. Stopping stream tracks.");
         stopMediaTracks(stream);
         if (localStreamRef.current === stream) localStreamRef.current = null;
         return;
       }
 
-      console.log("getUserMedia successful! Stream ID =", stream.id);
       localStreamRef.current = stream;
 
       if (localVideoRef.current) {
@@ -266,7 +259,6 @@ export function useLocalCamera({
 
       // Race condition check after play
       if (!isCurrentStart()) {
-        console.log("Component unmounted or inactive during play. Stopping stream tracks.");
         stopMediaTracks(stream);
         if (localVideoRef.current) localVideoRef.current.srcObject = null;
         localStreamRef.current = null;
@@ -308,7 +300,6 @@ export function useLocalCamera({
 
       stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
-      console.log("Connecting WebSocket to", wsSignalUrl);
       const ws = new WebSocket(wsSignalUrl);
       wsRef.current = ws;
 
@@ -320,14 +311,12 @@ export function useLocalCamera({
       };
 
       ws.onclose = (e) => {
-        console.log("WebSignal WebSocket closed:", e.code, e.reason);
         if (isCurrentStart() && pcRef.current === pc) {
           setWsError("WebSocket connection closed");
         }
       };
 
       ws.onopen = async () => {
-        console.log("WebSignal WebSocket opened. Creating SDP offer...");
         const offer = await pc.createOffer();
 
         if (!isCurrentStart()) {
@@ -361,7 +350,6 @@ export function useLocalCamera({
       ws.onmessage = async (event) => {
         if (!isCurrentStart()) return;
         const data = JSON.parse(event.data);
-        console.log("WebSignal WebSocket message received:", data.type || "ice/sdp");
 
         if (data.sdp && data.cameraId === cameraId) {
           await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
@@ -396,7 +384,6 @@ export function useLocalCamera({
       }
 
       setLocalActive(true);
-      console.log("startLocalCamera completed successfully. localActive set to true.");
     } catch (err) {
       console.error("Camera start failed with error:", err);
       if (isCurrentStart()) {
@@ -407,10 +394,8 @@ export function useLocalCamera({
   }, [cameraId, companyId, stopLocalCamera, wsSignalUrl]);
 
   useEffect(() => {
-    console.log("LocalCamera active effect triggered:", { active, localActive, cameraId });
     if (active !== undefined) {
       if (active && !localActive && !shouldRunRef.current) {
-        console.log("Calling startLocalCamera from active effect");
         void startLocalCamera();
       } else if (
         !active &&
@@ -420,7 +405,6 @@ export function useLocalCamera({
           Boolean(pcRef.current) ||
           Boolean(wsRef.current))
       ) {
-        console.log("Calling stopLocalCamera from active effect");
         stopLocalCamera();
       }
     }

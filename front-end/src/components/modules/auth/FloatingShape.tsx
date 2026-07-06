@@ -36,7 +36,6 @@ export default function FloatingShape({
         border: "1px solid rgba(99, 102, 241, 0.12)",
         background: "linear-gradient(135deg, rgba(99, 102, 241, 0.06), rgba(6, 182, 212, 0.04))",
         animation: `floatShape ${duration}s ease-in-out ${delay}s infinite`,
-        backdropFilter: "blur(2px)",
       }}
     />
   );

@@ -41,7 +41,7 @@ export default function AuroraCanvas() {
         const speed = time * (0.8 + ribbon * 0.2);
 
         ctx.moveTo(0, baseY);
-        for (let x = 0; x <= w; x += 3) {
+        for (let x = 0; x <= w; x += 16) {
           const y =
             baseY +
             Math.sin(x * 0.004 + speed) * amplitude +
@@ -70,7 +70,7 @@ export default function AuroraCanvas() {
         const baseY = h * (0.3 + s * 0.18);
         const speed = time * (1.2 + s * 0.3);
 
-        for (let x = 0; x <= w; x += 2) {
+        for (let x = 0; x <= w; x += 16) {
           const y =
             baseY +
             Math.sin(x * 0.005 + speed) * 30 +
@@ -83,10 +83,7 @@ export default function AuroraCanvas() {
         const streakAlpha = 0.2 - s * 0.04;
         ctx.strokeStyle = `hsla(${streakHue}, 100%, 60%, ${streakAlpha})`;
         ctx.lineWidth = 2 - s * 0.5;
-        ctx.shadowBlur = 20;
-        ctx.shadowColor = `hsla(${streakHue}, 100%, 70%, 0.15)`;
         ctx.stroke();
-        ctx.shadowBlur = 0;
       }
 
       // Floating light dust particles (aurora embers)
@@ -115,7 +112,7 @@ export default function AuroraCanvas() {
   return (
     <canvas
       ref={canvasRef}
-      className="absolute inset-0 w-full h-full"
+      className="absolute inset-0 w-full h-full opacity-80 filter blur-[20px]"
       style={{ display: "block" }}
     />
   );

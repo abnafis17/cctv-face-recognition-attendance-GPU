@@ -60,6 +60,11 @@ export function useUnknownRecognitions() {
   });
 
   const inFlightRef = useRef(false);
+  const rangeRef = useRef(range);
+
+  useEffect(() => {
+    rangeRef.current = range;
+  }, [range]);
 
   const fetchUnknownRecognitions = useCallback(
     async (overrideRange?: RangeValue) => {
@@ -67,7 +72,7 @@ export function useUnknownRecognitions() {
       inFlightRef.current = true;
       setLoading(true);
 
-      const activeRange = overrideRange ?? range;
+      const activeRange = overrideRange ?? rangeRef.current;
 
       try {
         const params: Record<string, string | number> = {
@@ -95,7 +100,7 @@ export function useUnknownRecognitions() {
         inFlightRef.current = false;
       }
     },
-    [range]
+    []
   );
 
   useEffect(() => {

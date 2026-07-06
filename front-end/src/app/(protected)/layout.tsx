@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ShieldAlert, ArrowLeft } from "lucide-react";
 import Link from "next/link";
@@ -8,6 +8,7 @@ import Link from "next/link";
 import Sidebar from "@/components/layout/Sidebar";
 import AuthGuard from "@/components/layout/AuthGuard";
 import { getLandingRoute } from "@/lib/authStorage";
+import axiosInstance from "@/config/axiosInstance";
 
 function getModuleKeyForPath(pathname: string): string | null {
   if (pathname.startsWith("/cameras")) return "/cameras";
@@ -49,11 +50,59 @@ export default function ProtectedShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [permissions, setPermissions] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    function loadPermissions() {
+    let cancelled = false;
+
+    async function syncProfile() {
+      try {
+        const res = await axiosInstance.get("/auth/me");
+        if (cancelled) return;
+
+        if (res.data?.ok && res.data?.results) {
+          const me = res.data.results;
+          const raw = localStorage.getItem("userInfo");
+          const current = raw ? JSON.parse(raw) : {};
+          const nextUserInfo = {
+            ...current,
+            ...me,
+          };
+          localStorage.setItem("userInfo", JSON.stringify(nextUserInfo));
+          setPermissions(me.permissions || {});
+          window.dispatchEvent(new Event("userInfoUpdated"));
+        }
+      } catch (err) {
+        console.error("Failed to sync user profile in layout:", err);
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    // First load from localStorage to render immediately if possible
+    try {
+      const raw = localStorage.getItem("userInfo");
+      const userInfo = raw ? JSON.parse(raw) : null;
+      if (userInfo?.permissions) {
+        setPermissions(userInfo.permissions);
+      }
+    } catch (err) {
+      console.error("Failed to load initial permissions:", err);
+    }
+
+    void syncProfile();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    function handleUpdate() {
       try {
         const raw = localStorage.getItem("userInfo");
         const userInfo = raw ? JSON.parse(raw) : null;
@@ -61,21 +110,26 @@ export default function ProtectedShell({
           setPermissions(userInfo.permissions);
         }
       } catch (err) {
-        console.error("Failed to load permissions:", err);
-      } finally {
-        setLoading(false);
+        console.error("Failed to load permissions on event update:", err);
       }
     }
-    loadPermissions();
-
-    window.addEventListener("userInfoUpdated", loadPermissions);
+    window.addEventListener("userInfoUpdated", handleUpdate);
     return () => {
-      window.removeEventListener("userInfoUpdated", loadPermissions);
+      window.removeEventListener("userInfoUpdated", handleUpdate);
     };
   }, []);
 
   const moduleKey = getModuleKeyForPath(pathname);
   const isAllowed = !moduleKey || permissions[moduleKey] !== false;
+
+  useEffect(() => {
+    if (!loading && !isAllowed) {
+      const landing = getLandingRoute(permissions);
+      if (landing !== pathname) {
+        router.replace(landing);
+      }
+    }
+  }, [loading, isAllowed, permissions, pathname, router]);
 
   return (
     <AuthGuard>
