@@ -410,7 +410,7 @@ export default function AddVisitorPage() {
   };
 
   return (
-    <div className="mx-auto max-w-7xl px-2 pb-10">
+    <div className="w-full pb-10 space-y-6">
       {/* Top Banner Header */}
       <div className="mb-6 flex items-center justify-between rounded-xl bg-[#0c1b33] p-5 text-white shadow-md">
         <div className="flex items-center gap-4">
