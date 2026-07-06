@@ -233,6 +233,7 @@ export default function AddVisitorPage() {
 
         form.setValue("emailAddress", row.emailAddress || "");
         form.setValue("companyAddress", row.companyAddress || "");
+        form.setValue("visitorType", row.visitorType || "Guest");
         if (row.visitorPhoto) {
           form.setValue("visitorPhoto", row.visitorPhoto);
           setPhotoPreview(row.visitorPhoto);
