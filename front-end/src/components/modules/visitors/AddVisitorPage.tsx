@@ -702,7 +702,6 @@ export default function AddVisitorPage() {
                     name="hostEmployeeId"
                     render={({ field }) => (
                       <div className="relative w-full">
-                        <UserCheck className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-zinc-400" />
                         <SearchableSelect
                           value={field.value}
                           onChange={field.onChange}
@@ -711,7 +710,7 @@ export default function AddVisitorPage() {
                           searchPlaceholder="Search name or ID..."
                           loading={erpLoading}
                           onSearchChange={(q) => setHostSearch(q)}
-                          className="h-10 rounded-xl border-zinc-200 bg-white pl-10 text-left font-normal shadow-none hover:bg-zinc-50"
+                          className="h-10 rounded-xl border-zinc-200 bg-white pl-4 text-left font-normal shadow-none hover:bg-zinc-50"
                         />
                       </div>
                     )}
