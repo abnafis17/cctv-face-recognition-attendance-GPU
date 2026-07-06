@@ -170,7 +170,6 @@ function extractGatepassTimestampParts(value: unknown) {
   }
 }
 
-
 function dhakaTodayYYYYMMDD() {
   return new Date().toLocaleDateString("en-CA", { timeZone: DHAKA_TIMEZONE });
 }
@@ -325,7 +324,9 @@ export function useGatepassPage() {
   const [historyToDate, setHistoryToDate] = useState(() =>
     dhakaTodayYYYYMMDD(),
   );
-  const [historyLeaveTypeCategory, setHistoryLeaveTypeCategory] = useState<"all" | "short" | "long">("all");
+  const [historyLeaveTypeCategory, setHistoryLeaveTypeCategory] = useState<
+    "all" | "short" | "long"
+  >("all");
   const [historyPurposeId, setHistoryPurposeId] = useState("all");
   const [recognizedPeople, setRecognizedPeople] = useState<RecognizedPerson[]>(
     [],
@@ -379,15 +380,16 @@ export function useGatepassPage() {
       task: "gate_pass",
     };
 
-    const filteredFetched = gatepassCameras.filter((c) => c.id !== laptopCameraId);
+    const filteredFetched = gatepassCameras.filter(
+      (c) => c.id !== laptopCameraId,
+    );
     return [laptopCameraOption, ...filteredFetched];
   }, [gatepassCameras, laptopCameraId, recognitionActive, activeCameraId]);
 
   const selectedGatepassCamera = useMemo(
     () =>
-      allCameras.find(
-        (camera) => camera.id === selectedGatepassCameraId,
-      ) ?? null,
+      allCameras.find((camera) => camera.id === selectedGatepassCameraId) ??
+      null,
     [allCameras, selectedGatepassCameraId],
   );
 
@@ -467,8 +469,6 @@ export function useGatepassPage() {
     [removeRecognizedPerson],
   );
 
-
-
   const historyRows = useMemo(
     () => [...historyRecords].reverse(),
     [historyRecords],
@@ -540,14 +540,14 @@ export function useGatepassPage() {
         current.map((camera) =>
           camera.id === normalized
             ? {
-              ...camera,
-              ...(next.isActive !== undefined
-                ? { isActive: next.isActive }
-                : {}),
-              ...(next.attendance !== undefined
-                ? { attendance: next.attendance }
-                : {}),
-            }
+                ...camera,
+                ...(next.isActive !== undefined
+                  ? { isActive: next.isActive }
+                  : {}),
+                ...(next.attendance !== undefined
+                  ? { attendance: next.attendance }
+                  : {}),
+              }
             : camera,
         ),
       );
@@ -654,10 +654,8 @@ export function useGatepassPage() {
 
       const rows = Array.isArray(response.data)
         ? response.data
-          .map(normalizeGatepassLeaveTypeOption)
-          .filter(
-            (row): row is GatepassLeaveTypeOption => Boolean(row),
-          )
+            .map(normalizeGatepassLeaveTypeOption)
+            .filter((row): row is GatepassLeaveTypeOption => Boolean(row))
         : [];
 
       setGatepassLeaveTypes(rows);
@@ -730,10 +728,10 @@ export function useGatepassPage() {
           historyLeaveTypeCategory === "all"
             ? undefined
             : historyLeaveTypeCategory === "long"
-            ? "Long Leave"
-            : historyPurposeId === "all"
-            ? "short leave"
-            : historyPurposeId;
+              ? "Long Leave"
+              : historyPurposeId === "all"
+                ? "short leave"
+                : historyPurposeId;
 
         const response = await axiosInstance.get<GatepassApiRecord[]>(
           API.GATEPASS_TABLE,
@@ -954,11 +952,17 @@ export function useGatepassPage() {
         .toLowerCase();
 
       return (() => {
-        if (isLocalCameraId(eventCameraKey) && isLocalCameraId(selectedCameraDbId)) {
+        if (
+          isLocalCameraId(eventCameraKey) &&
+          isLocalCameraId(selectedCameraDbId)
+        ) {
           return true;
         }
         if (eventCameraKey === selectedCameraDbId) return true;
-        if (selectedCameraPublicId && eventCameraKey === selectedCameraPublicId) {
+        if (
+          selectedCameraPublicId &&
+          eventCameraKey === selectedCameraPublicId
+        ) {
           return true;
         }
         if (
@@ -1079,15 +1083,6 @@ export function useGatepassPage() {
       if (candidateSeq <= recognitionStartSeq) {
         // Accept events that occurred within the last 5 minutes (to handle startup/cooldown race conditions and clock skews)
         const isRecent = Math.abs(Date.now() - eventTime.getTime()) < 300000;
-<<<<<<< HEAD
-        console.log("[Gatepass] applyRecognitionCandidate seq is <= recognitionStartSeq. isRecent check:", {
-          candidateSeq,
-          recognitionStartSeq,
-          isRecent,
-          diff: Date.now() - eventTime.getTime()
-        });
-=======
->>>>>>> a44b32cfd7c9d4867fa8c9495f6442c23b42bd6a
         if (!isRecent) return false;
       }
 
@@ -1184,8 +1179,6 @@ export function useGatepassPage() {
     lastRecognitionSignatureRef.current = "";
     returnSyncSignatureRef.current = "";
   }, []);
-
-
 
   const resetGatepassForm = useCallback(() => {
     setLeaveTypeId("");
@@ -1349,12 +1342,7 @@ export function useGatepassPage() {
     } finally {
       setCameraAction(null);
     }
-  }, [
-    cameraAction,
-    selectedGatepassCamera,
-    stopCurrentCamera,
-    submitting,
-  ]);
+  }, [cameraAction, selectedGatepassCamera, stopCurrentCamera, submitting]);
 
   const cancelGatepassFlow = useCallback(async () => {
     const targetId =
@@ -1519,9 +1507,10 @@ export function useGatepassPage() {
     const successfulKeys = new Set<string>();
     const failedNames: string[] = [];
 
-    const selectedPurpose = isShortLeave && purpose
-      ? gatepassLeaveTypes.find((lt) => lt.id === purpose) ?? null
-      : null;
+    const selectedPurpose =
+      isShortLeave && purpose
+        ? (gatepassLeaveTypes.find((lt) => lt.id === purpose) ?? null)
+        : null;
 
     try {
       for (const row of recognizedRows) {
@@ -1565,10 +1554,16 @@ export function useGatepassPage() {
           await axiosInstance.post(API.GATEPASS_TABLE, {
             employeeId,
             cameraId: selectedGatepassCamera.id,
-            leaveTypeId: isShortLeave ? (selectedPurpose?.id ?? "") : "Long Leave",
-            leaveType: isShortLeave ? (selectedPurpose?.label ?? "") : "Long Leave",
+            leaveTypeId: isShortLeave
+              ? (selectedPurpose?.id ?? "")
+              : "Long Leave",
+            leaveType: isShortLeave
+              ? (selectedPurpose?.label ?? "")
+              : "Long Leave",
             destination: destination.trim() || null,
-            purpose: isShortLeave ? (selectedPurpose?.label ?? "") : "Long Leave",
+            purpose: isShortLeave
+              ? (selectedPurpose?.label ?? "")
+              : "Long Leave",
             recognizedAt: row.recognizedAt.toISOString(),
             passType: isShortLeave ? "short leave" : "Long Leave",
             remarks: isShortLeave ? "okay" : "ok",
