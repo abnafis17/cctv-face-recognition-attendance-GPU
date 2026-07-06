@@ -140,9 +140,13 @@ export function useErpEmployees(options?: {
   debounceMs?: number;
   initialSearch?: string;
   autoFetch?: boolean; // fetch once on mount even if search is empty
+  pageSize?: number;
+  pageNumber?: number;
 }) {
   const debounceMs = options?.debounceMs ?? 350;
   const autoFetch = options?.autoFetch ?? true;
+  const pageSize = options?.pageSize ?? 0;
+  const pageNumber = options?.pageNumber ?? 0;
 
   const [search, setSearch] = useState(options?.initialSearch ?? "");
   const [employees, setEmployees] = useState<ErpEmployee[]>([]);
@@ -216,8 +220,8 @@ export function useErpEmployees(options?: {
       }
 
       const payload = {
-        pageNumber: 0,
-        pageSize: 0,
+        pageNumber,
+        pageSize,
         search: q || "",
         organizationId: readOrganizationId(),
       };
@@ -270,7 +274,7 @@ export function useErpEmployees(options?: {
     } finally {
       setLoading(false);
     }
-  }, [readOrganizationId]);
+  }, [readOrganizationId, pageNumber, pageSize]);
 
   // Debounced search effect
   useEffect(() => {

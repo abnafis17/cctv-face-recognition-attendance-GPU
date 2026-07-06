@@ -219,13 +219,19 @@ export default function AutoEnrollment({
 
   // ---- ERP employee search & picker ----
   const {
+    search: erpSearch,
+    setSearch: setErpSearch,
     employees,
     loading: erpLoading,
     error: erpError,
-  } = useErpEmployees({ debounceMs: 350, initialSearch: "" });
+  } = useErpEmployees({
+    debounceMs: 1000,
+    initialSearch: "",
+    pageSize: 20,
+    pageNumber: 1,
+  });
 
   const [selectedErpEmployeeId, setSelectedErpEmployeeId] = useState("");
-  const [erpSearch, setErpSearch] = useState("");
   const lockEmployeeIdentity = reEnroll && !!initialEmployeeId;
   const clearedAfterSuccessRef = useRef(false);
 
