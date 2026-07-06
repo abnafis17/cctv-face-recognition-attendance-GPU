@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import React, {
+  useState,
+  useMemo,
+  useEffect,
+  useRef,
+  useCallback,
+} from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
@@ -26,7 +32,10 @@ import {
   ArrowRightLeft,
   CalendarDays,
 } from "lucide-react";
-import { visitorSchema, type VisitorFormValues } from "@/lib/validation/visitor-schema";
+import {
+  visitorSchema,
+  type VisitorFormValues,
+} from "@/lib/validation/visitor-schema";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -48,9 +57,28 @@ import {
 } from "@/components/ui/dialog";
 import Webcam from "react-webcam";
 
-const fallbackVisitorTypes = ["Guest", "Contractor", "Official", "Interviewee", "Other"];
-const fallbackPurposes = ["Meeting", "Interview", "Delivery", "Audit", "Maintenance", "Other"];
-const idProofTypes = ["NID", "Passport", "Driving License", "Employee Card", "Other"];
+const fallbackVisitorTypes = [
+  "Guest",
+  "Contractor",
+  "Official",
+  "Interviewee",
+  "Other",
+];
+const fallbackPurposes = [
+  "Meeting",
+  "Interview",
+  "Delivery",
+  "Audit",
+  "Maintenance",
+  "Other",
+];
+const idProofTypes = [
+  "Employee ID",
+  "NID",
+  "Passport",
+  "Driving License",
+  "Other",
+];
 const extraGuestsOptions = Array.from({ length: 15 }, (_, i) => String(i + 1));
 
 export default function AddVisitorPage() {
@@ -63,8 +91,12 @@ export default function AddVisitorPage() {
     async function loadMasterData() {
       try {
         const [vtRes, povRes] = await Promise.all([
-          axiosInstance.get(API.MASTER_DATA_VISITOR_TYPES, { params: { limit: 1000 } }),
-          axiosInstance.get(API.MASTER_DATA_PURPOSES_OF_VISIT, { params: { limit: 1000 } }),
+          axiosInstance.get(API.MASTER_DATA_VISITOR_TYPES, {
+            params: { limit: 1000 },
+          }),
+          axiosInstance.get(API.MASTER_DATA_PURPOSES_OF_VISIT, {
+            params: { limit: 1000 },
+          }),
         ]);
         if (!active) return;
         const vtNames = (vtRes.data?.items || []).map((x: any) => x.name);
@@ -81,8 +113,10 @@ export default function AddVisitorPage() {
     };
   }, []);
 
-  const activeVisitorTypes = visitorTypesList.length > 0 ? visitorTypesList : fallbackVisitorTypes;
-  const activePurposes = purposesList.length > 0 ? purposesList : fallbackPurposes;
+  const activeVisitorTypes =
+    visitorTypesList.length > 0 ? visitorTypesList : fallbackVisitorTypes;
+  const activePurposes =
+    purposesList.length > 0 ? purposesList : fallbackPurposes;
 
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [isLookupEmployee, setIsLookupEmployee] = useState(false);
@@ -100,7 +134,11 @@ export default function AddVisitorPage() {
   }, []);
 
   const today = new Date();
-  const dateString = today.toLocaleDateString("en-GB").split("/").reverse().join("-"); // YYYY-MM-DD
+  const dateString = today
+    .toLocaleDateString("en-GB")
+    .split("/")
+    .reverse()
+    .join("-"); // YYYY-MM-DD
   const timeString = today.toTimeString().split(" ")[0].substring(0, 5); // HH:MM
 
   const form = useForm<VisitorFormValues>({
@@ -110,11 +148,11 @@ export default function AddVisitorPage() {
       contactNumber: "",
       emailAddress: "",
       companyAddress: "",
-      visitorType: "Guest",
-      purposeOfVisit: "Meeting",
+      visitorType: "",
+      purposeOfVisit: "",
       department: "",
       hostEmployeeId: "",
-      idProofType: "NID",
+      idProofType: "",
       idProofNumber: "",
       vehicleNumber: "",
       extraGuest: "",
@@ -127,10 +165,11 @@ export default function AddVisitorPage() {
     },
   });
 
-  const {
-    employees: erpEmployees,
-    loading: erpLoading,
-  } = useErpEmployees({ debounceMs: 350, initialSearch: "", autoFetch: true });
+  const { employees: erpEmployees, loading: erpLoading } = useErpEmployees({
+    debounceMs: 350,
+    initialSearch: "",
+    autoFetch: true,
+  });
 
   const derivedDepartments = useMemo(() => {
     const depts = erpEmployees
@@ -138,7 +177,7 @@ export default function AddVisitorPage() {
       .filter(Boolean)
       .map((d) => d.trim());
     return Array.from(new Set(depts)).sort((a, b) =>
-      a.localeCompare(b, undefined, { sensitivity: "base" })
+      a.localeCompare(b, undefined, { sensitivity: "base" }),
     );
   }, [erpEmployees]);
 
@@ -149,8 +188,13 @@ export default function AddVisitorPage() {
 
   useEffect(() => {
     if (!selectedDepartment || !selectedHostId) return;
-    const currentHost = erpEmployees.find((e) => e.employeeId === selectedHostId);
-    if (!currentHost || currentHost.department.toLowerCase() !== selectedDepartment.toLowerCase()) {
+    const currentHost = erpEmployees.find(
+      (e) => e.employeeId === selectedHostId,
+    );
+    if (
+      !currentHost ||
+      currentHost.department.toLowerCase() !== selectedDepartment.toLowerCase()
+    ) {
       form.setValue("hostEmployeeId", "");
     }
   }, [selectedDepartment, selectedHostId, erpEmployees, form]);
@@ -159,7 +203,7 @@ export default function AddVisitorPage() {
     let list = erpEmployees;
     if (selectedDepartment) {
       list = list.filter(
-        (e) => e.department.toLowerCase() === selectedDepartment.toLowerCase()
+        (e) => e.department.toLowerCase() === selectedDepartment.toLowerCase(),
       );
     }
     const q = hostSearch.trim().toLowerCase();
@@ -167,7 +211,7 @@ export default function AddVisitorPage() {
       list = list.filter(
         (e) =>
           e.employeeName.toLowerCase().includes(q) ||
-          e.employeeId.toLowerCase().includes(q)
+          e.employeeId.toLowerCase().includes(q),
       );
     }
     return list;
@@ -184,9 +228,10 @@ export default function AddVisitorPage() {
   const extraGuestValue = form.watch("extraGuest");
   const extraGuestsCount = extraGuestValue ? parseInt(extraGuestValue, 10) : 0;
 
-  const visitorPassPlaceholder = extraGuestsCount > 0
-    ? `e.g. PASS123, ${Array.from({ length: extraGuestsCount }, (_, i) => `PASS${124 + i}`).join(", ")} (1 self + ${extraGuestsCount} extra guest${extraGuestsCount > 1 ? "s" : ""})`
-    : "Pass / badge number";
+  const visitorPassPlaceholder =
+    extraGuestsCount > 0
+      ? `e.g. PASS123, ${Array.from({ length: extraGuestsCount }, (_, i) => `PASS${124 + i}`).join(", ")} (1 self + ${extraGuestsCount} extra guest${extraGuestsCount > 1 ? "s" : ""})`
+      : "Pass / badge number";
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -205,7 +250,11 @@ export default function AddVisitorPage() {
   const handleLookup = async () => {
     const queryVal = lookupPhone.trim();
     if (!queryVal) {
-      toast.error(isLookupEmployee ? "Please enter an employee ID to search" : "Please enter a phone number to search");
+      toast.error(
+        isLookupEmployee
+          ? "Please enter an employee ID to search"
+          : "Please enter a phone number to search",
+      );
       return;
     }
     if (!isLookupEmployee && !/^(\+88)?01[3-9]\d{8}$/.test(queryVal)) {
@@ -222,7 +271,7 @@ export default function AddVisitorPage() {
       if (response.data?.found && response.data?.data) {
         const row = response.data.data;
         form.setValue("visitorName", row.visitorName || "");
-        
+
         // Ensure contactNumber is only pre-filled if it is a valid mobile format, otherwise leave empty for user entry
         let returnedContact = row.contactNumber || "";
         if (!isLookupEmployee && !returnedContact) {
@@ -244,16 +293,26 @@ export default function AddVisitorPage() {
           setCapturedFile(null);
         }
         setIsPhoneReadOnly(true);
-        toast.success(`${response.data.type === "employee" ? "Employee" : "Visitor"} record loaded successfully!`, { id: toastId });
+        toast.success(
+          `${response.data.type === "employee" ? "Employee" : "Visitor"} record loaded successfully!`,
+          { id: toastId },
+        );
       } else {
-        toast.error(isLookupEmployee ? "No employee record found matching this ID" : "No visitor record found matching this phone number", { id: toastId });
+        toast.error(
+          isLookupEmployee
+            ? "No employee record found matching this ID"
+            : "No visitor record found matching this phone number",
+          { id: toastId },
+        );
         if (!isLookupEmployee) {
           form.setValue("contactNumber", queryVal);
           setIsPhoneReadOnly(true);
         }
       }
     } catch (error: any) {
-      toast.error(error?.response?.data?.error || "Lookup search failed", { id: toastId });
+      toast.error(error?.response?.data?.error || "Lookup search failed", {
+        id: toastId,
+      });
     }
   };
 
@@ -264,7 +323,9 @@ export default function AddVisitorPage() {
       try {
         const response = await fetch(imageSrc);
         const blob = await response.blob();
-        const file = new File([blob], "visitor_photo.jpg", { type: "image/jpeg" });
+        const file = new File([blob], "visitor_photo.jpg", {
+          type: "image/jpeg",
+        });
         setCapturedFile(file);
         form.setValue("visitorPhoto", imageSrc);
         setIsCameraModalOpen(false);
@@ -358,12 +419,20 @@ export default function AddVisitorPage() {
           </div>
           <div>
             <h1 className="text-white text-xl font-bold">Add Visitor</h1>
-            <p className="text-xs text-zinc-300">Register a new or returning visitor</p>
+            <p className="text-xs text-zinc-300">
+              Register a new or returning visitor
+            </p>
           </div>
         </div>
         <div className="hidden items-center gap-2 text-xs font-semibold text-zinc-300 md:flex">
           <Calendar className="h-4 w-4" />
-          <span>{today.toLocaleDateString("en-US", { day: "2-digit", month: "short", year: "numeric" })}</span>
+          <span>
+            {today.toLocaleDateString("en-US", {
+              day: "2-digit",
+              month: "short",
+              year: "numeric",
+            })}
+          </span>
         </div>
       </div>
 
@@ -402,7 +471,10 @@ export default function AddVisitorPage() {
                     onChange={(e) => setIsLookupEmployee(e.target.checked)}
                     className="h-4 w-4 rounded border-zinc-300 text-[#0c1b33] focus:ring-[#0c1b33] cursor-pointer"
                   />
-                  <label htmlFor="isEmployee" className="text-sm font-medium text-zinc-700 cursor-pointer select-none">
+                  <label
+                    htmlFor="isEmployee"
+                    className="text-sm font-medium text-zinc-700 cursor-pointer select-none"
+                  >
                     Is Employee
                   </label>
                 </div>
@@ -437,7 +509,9 @@ export default function AddVisitorPage() {
                     />
                   </div>
                   {form.formState.errors.visitorName && (
-                    <span className="text-xs text-rose-500">{form.formState.errors.visitorName.message}</span>
+                    <span className="text-xs text-rose-500">
+                      {form.formState.errors.visitorName.message}
+                    </span>
                   )}
                 </div>
 
@@ -455,7 +529,9 @@ export default function AddVisitorPage() {
                     />
                   </div>
                   {form.formState.errors.contactNumber && (
-                    <span className="text-xs text-rose-500">{form.formState.errors.contactNumber.message}</span>
+                    <span className="text-xs text-rose-500">
+                      {form.formState.errors.contactNumber.message}
+                    </span>
                   )}
                 </div>
 
@@ -473,7 +549,9 @@ export default function AddVisitorPage() {
                     />
                   </div>
                   {form.formState.errors.emailAddress && (
-                    <span className="text-xs text-rose-500">{form.formState.errors.emailAddress.message}</span>
+                    <span className="text-xs text-rose-500">
+                      {form.formState.errors.emailAddress.message}
+                    </span>
                   )}
                 </div>
 
@@ -490,7 +568,9 @@ export default function AddVisitorPage() {
                     />
                   </div>
                   {form.formState.errors.companyAddress && (
-                    <span className="text-xs text-rose-500">{form.formState.errors.companyAddress.message}</span>
+                    <span className="text-xs text-rose-500">
+                      {form.formState.errors.companyAddress.message}
+                    </span>
                   )}
                 </div>
               </div>
@@ -511,7 +591,10 @@ export default function AddVisitorPage() {
                     control={form.control}
                     name="visitorType"
                     render={({ field }) => (
-                      <Select value={field.value} onValueChange={field.onChange}>
+                      <Select
+                        value={field.value}
+                        onValueChange={field.onChange}
+                      >
                         <SelectTrigger className="relative h-10 w-full rounded-xl border-zinc-200 bg-white pl-10">
                           <HelpCircle className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
                           <SelectValue placeholder="Select type" />
@@ -527,7 +610,9 @@ export default function AddVisitorPage() {
                     )}
                   />
                   {form.formState.errors.visitorType && (
-                    <span className="text-xs text-rose-500">{form.formState.errors.visitorType.message}</span>
+                    <span className="text-xs text-rose-500">
+                      {form.formState.errors.visitorType.message}
+                    </span>
                   )}
                 </div>
 
@@ -539,7 +624,10 @@ export default function AddVisitorPage() {
                     control={form.control}
                     name="purposeOfVisit"
                     render={({ field }) => (
-                      <Select value={field.value} onValueChange={field.onChange}>
+                      <Select
+                        value={field.value}
+                        onValueChange={field.onChange}
+                      >
                         <SelectTrigger className="relative h-10 w-full rounded-xl border-zinc-200 bg-white pl-10">
                           <FileText className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
                           <SelectValue placeholder="Select purpose" />
@@ -555,7 +643,9 @@ export default function AddVisitorPage() {
                     )}
                   />
                   {form.formState.errors.purposeOfVisit && (
-                    <span className="text-xs text-rose-500">{form.formState.errors.purposeOfVisit.message}</span>
+                    <span className="text-xs text-rose-500">
+                      {form.formState.errors.purposeOfVisit.message}
+                    </span>
                   )}
                 </div>
 
@@ -567,7 +657,10 @@ export default function AddVisitorPage() {
                     control={form.control}
                     name="department"
                     render={({ field }) => (
-                      <Select value={field.value} onValueChange={field.onChange}>
+                      <Select
+                        value={field.value}
+                        onValueChange={field.onChange}
+                      >
                         <SelectTrigger className="relative h-10 w-full rounded-xl border-zinc-200 bg-white pl-10">
                           <Building className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
                           <SelectValue placeholder="Select department" />
@@ -593,13 +686,16 @@ export default function AddVisitorPage() {
                     )}
                   />
                   {form.formState.errors.department && (
-                    <span className="text-xs text-rose-500">{form.formState.errors.department.message}</span>
+                    <span className="text-xs text-rose-500">
+                      {form.formState.errors.department.message}
+                    </span>
                   )}
                 </div>
 
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
-                    Host Name / Employee Name <span className="text-rose-500">*</span>
+                    Host Name / Employee Name{" "}
+                    <span className="text-rose-500">*</span>
                   </label>
                   <Controller
                     control={form.control}
@@ -621,7 +717,9 @@ export default function AddVisitorPage() {
                     )}
                   />
                   {form.formState.errors.hostEmployeeId && (
-                    <span className="text-xs text-rose-500">{form.formState.errors.hostEmployeeId.message}</span>
+                    <span className="text-xs text-rose-500">
+                      {form.formState.errors.hostEmployeeId.message}
+                    </span>
                   )}
                 </div>
               </div>
@@ -642,7 +740,10 @@ export default function AddVisitorPage() {
                     control={form.control}
                     name="idProofType"
                     render={({ field }) => (
-                      <Select value={field.value} onValueChange={field.onChange}>
+                      <Select
+                        value={field.value}
+                        onValueChange={field.onChange}
+                      >
                         <SelectTrigger className="relative h-10 w-full rounded-xl border-zinc-200 bg-white pl-10">
                           <CreditCard className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
                           <SelectValue placeholder="Select ID type" />
@@ -658,7 +759,9 @@ export default function AddVisitorPage() {
                     )}
                   />
                   {form.formState.errors.idProofType && (
-                    <span className="text-xs text-rose-500">{form.formState.errors.idProofType.message}</span>
+                    <span className="text-xs text-rose-500">
+                      {form.formState.errors.idProofType.message}
+                    </span>
                   )}
                 </div>
 
@@ -675,7 +778,9 @@ export default function AddVisitorPage() {
                     />
                   </div>
                   {form.formState.errors.idProofNumber && (
-                    <span className="text-xs text-rose-500">{form.formState.errors.idProofNumber.message}</span>
+                    <span className="text-xs text-rose-500">
+                      {form.formState.errors.idProofNumber.message}
+                    </span>
                   )}
                 </div>
 
@@ -692,7 +797,9 @@ export default function AddVisitorPage() {
                     />
                   </div>
                   {form.formState.errors.vehicleNumber && (
-                    <span className="text-xs text-rose-500">{form.formState.errors.vehicleNumber.message}</span>
+                    <span className="text-xs text-rose-500">
+                      {form.formState.errors.vehicleNumber.message}
+                    </span>
                   )}
                 </div>
 
@@ -704,7 +811,12 @@ export default function AddVisitorPage() {
                     control={form.control}
                     name="extraGuest"
                     render={({ field }) => (
-                      <Select value={field.value || "0"} onValueChange={(val) => field.onChange(val === "0" ? "" : val)}>
+                      <Select
+                        value={field.value || "0"}
+                        onValueChange={(val) =>
+                          field.onChange(val === "0" ? "" : val)
+                        }
+                      >
                         <SelectTrigger className="relative h-10 w-full rounded-xl border-zinc-200 bg-white pl-10">
                           <Users className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
                           <SelectValue placeholder="None" />
@@ -721,7 +833,9 @@ export default function AddVisitorPage() {
                     )}
                   />
                   {form.formState.errors.extraGuest && (
-                    <span className="text-xs text-rose-500">{form.formState.errors.extraGuest.message}</span>
+                    <span className="text-xs text-rose-500">
+                      {form.formState.errors.extraGuest.message}
+                    </span>
                   )}
                 </div>
 
@@ -738,7 +852,9 @@ export default function AddVisitorPage() {
                     />
                   </div>
                   {form.formState.errors.visitorPassNo && (
-                    <span className="text-xs text-rose-500">{form.formState.errors.visitorPassNo.message}</span>
+                    <span className="text-xs text-rose-500">
+                      {form.formState.errors.visitorPassNo.message}
+                    </span>
                   )}
                 </div>
               </div>
@@ -764,7 +880,9 @@ export default function AddVisitorPage() {
                     />
                   </div>
                   {form.formState.errors.dateOfVisit && (
-                    <span className="text-xs text-rose-500">{form.formState.errors.dateOfVisit.message}</span>
+                    <span className="text-xs text-rose-500">
+                      {form.formState.errors.dateOfVisit.message}
+                    </span>
                   )}
                 </div>
 
@@ -781,7 +899,9 @@ export default function AddVisitorPage() {
                     />
                   </div>
                   {form.formState.errors.timeIn && (
-                    <span className="text-xs text-rose-500">{form.formState.errors.timeIn.message}</span>
+                    <span className="text-xs text-rose-500">
+                      {form.formState.errors.timeIn.message}
+                    </span>
                   )}
                 </div>
 
@@ -798,7 +918,9 @@ export default function AddVisitorPage() {
                     />
                   </div>
                   {form.formState.errors.entryAuthorizedBy && (
-                    <span className="text-xs text-rose-500">{form.formState.errors.entryAuthorizedBy.message}</span>
+                    <span className="text-xs text-rose-500">
+                      {form.formState.errors.entryAuthorizedBy.message}
+                    </span>
                   )}
                 </div>
 
@@ -816,7 +938,9 @@ export default function AddVisitorPage() {
                     />
                   </div>
                   {form.formState.errors.remarks && (
-                    <span className="text-xs text-rose-500">{form.formState.errors.remarks.message}</span>
+                    <span className="text-xs text-rose-500">
+                      {form.formState.errors.remarks.message}
+                    </span>
                   )}
                 </div>
               </div>
@@ -844,7 +968,9 @@ export default function AddVisitorPage() {
                   ) : (
                     <div className="flex flex-col items-center gap-2 text-center">
                       <Camera className="h-8 w-8 text-zinc-400 group-hover:text-zinc-500 group-hover:scale-105 transition-all" />
-                      <span className="text-xs font-medium text-zinc-500">Visitor Photo</span>
+                      <span className="text-xs font-medium text-zinc-500">
+                        Visitor Photo
+                      </span>
                     </div>
                   )}
                 </div>
@@ -891,7 +1017,9 @@ export default function AddVisitorPage() {
         <Dialog open={isCameraModalOpen} onOpenChange={setIsCameraModalOpen}>
           <DialogContent className="sm:max-w-md bg-white rounded-2xl border border-zinc-200">
             <DialogHeader>
-              <DialogTitle className="text-zinc-900">Capture Visitor Photo</DialogTitle>
+              <DialogTitle className="text-zinc-900">
+                Capture Visitor Photo
+              </DialogTitle>
             </DialogHeader>
             <div className="flex flex-col items-center gap-4 py-4">
               <div className="overflow-hidden rounded-xl border border-zinc-200 bg-zinc-950 aspect-video w-full relative">
@@ -902,7 +1030,7 @@ export default function AddVisitorPage() {
                   videoConstraints={{
                     width: 640,
                     height: 480,
-                    facingMode: "user"
+                    facingMode: "user",
                   }}
                   className="h-full w-full object-cover"
                 />
