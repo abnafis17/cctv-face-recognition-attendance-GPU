@@ -1095,15 +1095,15 @@ export function useGatepassPage() {
       lastRecognitionSignatureRef.current = signature;
 
       const directoryEmployee = employeeDirectoryByKey.get(eventEmployeeId);
-      const matchedEmployee = directoryEmployee
-        ? mapEmployeeToGatepassEmployee(
-            directoryEmployee,
-            selectedGatepassCamera.name,
-          )
-        : fallbackGatepassEmployee(
-            eventEmployeeId,
-            selectedGatepassCamera.name,
-          );
+      if (!directoryEmployee) {
+        // Skip unknown employees
+        return false;
+      }
+
+      const matchedEmployee = mapEmployeeToGatepassEmployee(
+        directoryEmployee,
+        selectedGatepassCamera.name,
+      );
 
       const latestRecord =
         latestRecordByEmployeeKey.get(matchedEmployee.employeeCode) ??
