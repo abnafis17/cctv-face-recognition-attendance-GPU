@@ -52,6 +52,12 @@ export function SearchableSelect({
 }) {
   const [open, setOpen] = React.useState(false);
 
+  React.useEffect(() => {
+    if (!open) {
+      onSearchChange?.("");
+    }
+  }, [open, onSearchChange]);
+
   const selected = React.useMemo(
     () => items.find((i) => i.value === value),
     [items, value]

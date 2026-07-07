@@ -165,12 +165,24 @@ export default function AddVisitorPage() {
     },
   });
 
-  const { employees: erpEmployees, loading: erpLoading } = useErpEmployees({
+  const {
+    employees: erpEmployees,
+    loading: erpLoading,
+    setSearch: setErpSearch,
+  } = useErpEmployees({
     debounceMs: 350,
     initialSearch: "",
     autoFetch: true,
   });
 
+  const [departmentsList, setDepartmentsList] = useState<string[]>([]);
+  const [selectedEmployee, setSelectedEmployee] = useState<any>(null);
+  const [hostSearch, setHostSearch] = useState("");
+
+  const selectedDepartment = form.watch("department");
+  const selectedHostId = form.watch("hostEmployeeId");
+
+  // Extract and accumulate unique departments from fetched employees
   const derivedDepartments = useMemo(() => {
     const depts = erpEmployees
       .map((e) => e.department)
@@ -181,23 +193,54 @@ export default function AddVisitorPage() {
     );
   }, [erpEmployees]);
 
-  const [hostSearch, setHostSearch] = useState("");
+  useEffect(() => {
+    if (erpEmployees.length > 0) {
+      const depts = erpEmployees
+        .map((e) => e.department)
+        .filter(Boolean)
+        .map((d) => d.trim());
+      const uniqueDepts = Array.from(new Set(depts));
+      if (uniqueDepts.length > 0) {
+        setDepartmentsList((prev) => {
+          const combined = Array.from(new Set([...prev, ...uniqueDepts])).sort((a, b) =>
+            a.localeCompare(b, undefined, { sensitivity: "base" }),
+          );
+          return combined;
+        });
+      }
+    }
+  }, [erpEmployees]);
 
-  const selectedDepartment = form.watch("department");
-  const selectedHostId = form.watch("hostEmployeeId");
+  const activeDepartments =
+    departmentsList.length > 0 ? departmentsList : derivedDepartments;
 
+  const showDepartmentsLoading = erpLoading && departmentsList.length === 0;
+
+  // Trigger ERP search based on host search input or selected department
+  useEffect(() => {
+    const q = hostSearch.trim() || selectedDepartment || "";
+    setErpSearch(q);
+  }, [hostSearch, selectedDepartment, setErpSearch]);
+
+  // Synchronize department change with host clearing
   useEffect(() => {
     if (!selectedDepartment || !selectedHostId) return;
-    const currentHost = erpEmployees.find(
-      (e) => e.employeeId === selectedHostId,
-    );
-    if (
-      !currentHost ||
-      currentHost.department.toLowerCase() !== selectedDepartment.toLowerCase()
-    ) {
-      form.setValue("hostEmployeeId", "");
+
+    const currentHost =
+      selectedEmployee && selectedEmployee.employeeId === selectedHostId
+        ? selectedEmployee
+        : erpEmployees.find((e) => e.employeeId === selectedHostId);
+
+    if (currentHost) {
+      if (
+        currentHost.department.toLowerCase() !==
+        selectedDepartment.toLowerCase()
+      ) {
+        form.setValue("hostEmployeeId", "");
+        setSelectedEmployee(null);
+      }
     }
-  }, [selectedDepartment, selectedHostId, erpEmployees, form]);
+  }, [selectedDepartment, selectedHostId, selectedEmployee, erpEmployees, form]);
 
   const filteredHostEmployees = useMemo(() => {
     let list = erpEmployees;
@@ -400,6 +443,8 @@ export default function AddVisitorPage() {
     setCapturedFile(null);
     setIsCameraModalOpen(false);
     setIsPhoneReadOnly(false);
+    setSelectedEmployee(null);
+    setHostSearch("");
     if (showToast) {
       toast.success("Form cleared");
     }
@@ -666,16 +711,16 @@ export default function AddVisitorPage() {
                           <SelectValue placeholder="Select department" />
                         </SelectTrigger>
                         <SelectContent>
-                          {erpLoading ? (
+                          {showDepartmentsLoading ? (
                             <SelectItem value="loading-depts" disabled>
                               Loading departments...
                             </SelectItem>
-                          ) : derivedDepartments.length === 0 ? (
+                          ) : activeDepartments.length === 0 ? (
                             <SelectItem value="no-depts" disabled>
                               No departments found
                             </SelectItem>
                           ) : (
-                            derivedDepartments.map((d) => (
+                            activeDepartments.map((d) => (
                               <SelectItem key={d} value={d}>
                                 {d}
                               </SelectItem>
@@ -704,7 +749,20 @@ export default function AddVisitorPage() {
                       <div className="relative w-full">
                         <SearchableSelect
                           value={field.value}
-                          onChange={field.onChange}
+                          onChange={(val) => {
+                            field.onChange(val);
+                            if (!val) {
+                              setSelectedEmployee(null);
+                              return;
+                            }
+                            const emp = erpEmployees.find((e) => e.employeeId === val);
+                            if (emp) {
+                              setSelectedEmployee(emp);
+                              if (emp.department) {
+                                form.setValue("department", emp.department);
+                              }
+                            }
+                          }}
                           items={hostOptions}
                           placeholder="Select host / employee"
                           searchPlaceholder="Search name or ID..."
