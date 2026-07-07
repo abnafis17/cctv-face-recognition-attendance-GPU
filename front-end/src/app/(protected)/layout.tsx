@@ -55,6 +55,19 @@ export default function ProtectedShell({
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const html = document.documentElement;
+    const body = document.body;
+
+    html.classList.add("overflow-hidden", "h-screen");
+    body.classList.add("overflow-hidden", "h-screen");
+
+    return () => {
+      html.classList.remove("overflow-hidden", "h-screen");
+      body.classList.remove("overflow-hidden", "h-screen");
+    };
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
 
     async function syncProfile() {
