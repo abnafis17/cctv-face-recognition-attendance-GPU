@@ -12,6 +12,7 @@ import { RefreshCw, Search, SquarePen, Trash } from "lucide-react";
 import ConfirmationModal from "../../reusable/ConfirmationModal";
 import EmployeeEditForm from "./EmployeeEditForm";
 import { useRouter } from "next/navigation";
+import Pagination from "../../reusable/Pagination";
 import {
   deriveEmployeeHierarchy,
   normalizeHierarchyValue,
@@ -117,6 +118,8 @@ const EmployeeListTable = () => {
   const [selectedUser, setSelectedUser] = useState<Employee | null>(null);
   const [selectedPerson, setSelectedPerson] = useState<Employee | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const limits = 20;
 
   const fetchEmployees = useCallback(async () => {
     try {
@@ -167,6 +170,12 @@ const EmployeeListTable = () => {
       ),
     [hierarchy.filteredRows, search],
   );
+
+  const paginatedEmployees = useMemo(() => {
+    const startIndex = (currentPage - 1) * limits;
+    const endIndex = startIndex + limits;
+    return filteredEmployees.slice(startIndex, endIndex);
+  }, [filteredEmployees, currentPage]);
 
   const hasActiveFilter = Boolean(
     search.trim() ||
@@ -266,7 +275,9 @@ const EmployeeListTable = () => {
           <div className="w-full px-1 py-2 text-center font-bold">SL</div>
         ),
         cell: (info) => (
-          <div className="px-1 py-2 text-center">{info.row.index + 1}</div>
+          <div className="px-1 py-2 text-center">
+            {(currentPage - 1) * limits + info.row.index + 1}
+          </div>
         ),
         size: 48,
       },
@@ -406,7 +417,7 @@ const EmployeeListTable = () => {
         size: 100,
       },
     ],
-    [handleEdit, handleReEnroll],
+    [handleEdit, handleReEnroll, currentPage, limits],
   );
 
   return (
@@ -568,15 +579,28 @@ const EmployeeListTable = () => {
           </div>
         </div>
 
-        <div className="overflow-x-auto rounded-xl border bg-white shadow-sm">
-          <div className="min-w-[1700px]">
-            <TanstackDataTable
-              data={filteredEmployees}
-              columns={employeeColumns}
-              loading={loading}
-              headerCellClassName="whitespace-nowrap bg-zinc-50"
-            />
+        <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm">
+          <div className="overflow-x-auto">
+            <div className="min-w-[1700px]">
+              <TanstackDataTable
+                data={paginatedEmployees}
+                columns={employeeColumns}
+                loading={loading}
+                headerCellClassName="whitespace-nowrap bg-zinc-50"
+              />
+            </div>
           </div>
+          {filteredEmployees.length > 0 && (
+            <div className="shrink-0 border-t border-zinc-100 bg-white px-4 py-3">
+              <Pagination
+                numberOfData={filteredEmployees.length}
+                limits={limits}
+                getCurrentPage={setCurrentPage}
+                searchText={search}
+                activeTab={`${hierarchyFilters.unit}-${hierarchyFilters.department}-${hierarchyFilters.section}-${hierarchyFilters.line}`}
+              />
+            </div>
+          )}
         </div>
       </div>
 
