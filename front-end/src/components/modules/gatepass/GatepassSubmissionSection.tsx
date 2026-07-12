@@ -112,12 +112,18 @@ export default function GatepassSubmissionSection({
         </div>
       </div>
 
-      {/* Form Fields in a Single Row */}
+      {/* Form Fields */}
       <div className="p-3.5">
-        <div className="flex flex-col lg:flex-row lg:items-end gap-3 w-full flex-wrap xl:flex-nowrap">
+        <div
+          className={cn(
+            leaveTypeId === "short leave"
+              ? "grid grid-cols-1 md:grid-cols-2 gap-3 w-full"
+              : "flex flex-col lg:flex-row lg:items-end gap-3 w-full flex-wrap xl:flex-nowrap"
+          )}
+        >
           
           {/* Leave Type Selector */}
-          <div className="w-full lg:w-[150px] shrink-0 space-y-1">
+          <div className={cn("space-y-1", leaveTypeId === "short leave" ? "w-full" : "w-full lg:w-[150px] shrink-0")}>
             <label className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block">
               Leave Type <span className="text-rose-500">*</span>
             </label>
@@ -127,6 +133,7 @@ export default function GatepassSubmissionSection({
               onValueChange={(value) => {
                 setLeaveTypeId(value);
                 setPurpose("");
+                setApproxReturnTime("");
                 setFormErrors((current) => ({
                   ...current,
                   leaveType: undefined,
@@ -156,7 +163,7 @@ export default function GatepassSubmissionSection({
 
           {/* Purpose Selector (Conditional for short leave) */}
           {leaveTypeId === "short leave" && (
-            <div className="w-full lg:w-[150px] shrink-0 space-y-1 animate-in fade-in-50 slide-in-from-top-1 duration-200">
+            <div className="w-full space-y-1 animate-in fade-in-50 slide-in-from-top-1 duration-200">
               <label className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block">
                 Purpose <span className="text-rose-500">*</span>
               </label>
@@ -209,7 +216,7 @@ export default function GatepassSubmissionSection({
           )}
 
           {/* Destination (Optional) */}
-          <div className="flex-1 min-w-[150px] space-y-1">
+          <div className={cn("space-y-1", leaveTypeId === "short leave" ? "w-full" : "flex-1 min-w-[150px]")}>
             <label className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block">
               Destination <span className="text-zinc-300 font-normal">(Optional)</span>
             </label>
@@ -223,20 +230,22 @@ export default function GatepassSubmissionSection({
           </div>
 
           {/* Approx. Return Time */}
-          <div className="w-full lg:w-[150px] shrink-0 space-y-1">
-            <label className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block">
-              Approx. Return <span className="text-zinc-300 font-normal">(minute)</span>
-            </label>
-            <Input
-              type="number"
-              min="1"
-              value={approxReturnTime}
-              disabled={submitting || !hasQueue}
-              onChange={(event) => setApproxReturnTime(event.target.value)}
-              placeholder="e.g. 30, 60"
-              className="h-9 rounded-md border-zinc-200 bg-white text-[11px] text-zinc-855 shadow-none hover:border-zinc-300 focus-visible:ring-1 focus-visible:ring-zinc-400 focus-visible:ring-offset-0 transition-colors px-3"
-            />
-          </div>
+          {leaveTypeId === "short leave" && (
+            <div className="w-full space-y-1">
+              <label className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block">
+                Approx. Return <span className="text-zinc-300 font-normal">(minute)</span>
+              </label>
+              <Input
+                type="number"
+                min="1"
+                value={approxReturnTime}
+                disabled={submitting || !hasQueue}
+                onChange={(event) => setApproxReturnTime(event.target.value)}
+                placeholder="e.g. 30, 60"
+                className="h-9 rounded-md border-zinc-200 bg-white text-[11px] text-zinc-855 shadow-none hover:border-zinc-300 focus-visible:ring-1 focus-visible:ring-zinc-400 focus-visible:ring-offset-0 transition-colors px-3"
+              />
+            </div>
+          )}
         </div>
       </div>
     </div>
