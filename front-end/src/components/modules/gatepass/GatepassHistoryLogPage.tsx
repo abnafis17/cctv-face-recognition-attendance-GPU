@@ -158,6 +158,14 @@ function dhakaTodayYYYYMMDD() {
 
 export default function GatepassHistoryLogPage() {
   const [rows, setRows] = useState<GatepassRecord[]>([]);
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setNow(Date.now());
+    }, 5000);
+    return () => clearInterval(interval);
+  }, []);
   const [loading, setLoading] = useState(false);
   const [leaveTypes, setLeaveTypes] = useState<GatepassLeaveTypeOption[]>([]);
 
@@ -481,14 +489,23 @@ export default function GatepassHistoryLogPage() {
             emptyState="No gatepass records found for the selected criteria."
             getRowClassName={(row) => {
               const rec = row.original;
-              if (
-                rec.status !== "returned" &&
-                rec.returnTime &&
-                rec.rawOutTime
-              ) {
-                const outDate = new Date(rec.rawOutTime);
-                const diff = (Date.now() - outDate.getTime()) / (1000 * 60);
-                if (diff > rec.returnTime) {
+              if (!rec.returnTime || !rec.rawOutTime) return "";
+              const outDate = new Date(rec.rawOutTime);
+              if (isNaN(outDate.getTime())) return "";
+
+              if (rec.status === "returned" && rec.rawInTime) {
+                const inDate = new Date(rec.rawInTime);
+                if (!isNaN(inDate.getTime())) {
+                  const diffMins = (inDate.getTime() - outDate.getTime()) / (1000 * 60);
+                  if (diffMins <= rec.returnTime) {
+                    return "bg-emerald-50/70 hover:bg-emerald-100/70 text-emerald-950 transition-colors";
+                  } else {
+                    return "bg-rose-50/70 hover:bg-rose-100/70 text-rose-950 transition-colors";
+                  }
+                }
+              } else if (rec.status !== "returned") {
+                const diffMins = (now - outDate.getTime()) / (1000 * 60);
+                if (diffMins > rec.returnTime) {
                   return "bg-rose-50/70 hover:bg-rose-100/70 text-rose-950 transition-colors";
                 }
               }

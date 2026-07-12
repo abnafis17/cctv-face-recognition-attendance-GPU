@@ -114,16 +114,10 @@ export default function GatepassSubmissionSection({
 
       {/* Form Fields */}
       <div className="p-3.5">
-        <div
-          className={cn(
-            leaveTypeId === "short leave"
-              ? "grid grid-cols-1 md:grid-cols-2 gap-3 w-full"
-              : "flex flex-col lg:flex-row lg:items-end gap-3 w-full flex-wrap xl:flex-nowrap"
-          )}
-        >
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
           
           {/* Leave Type Selector */}
-          <div className={cn("space-y-1", leaveTypeId === "short leave" ? "w-full" : "w-full lg:w-[150px] shrink-0")}>
+          <div className="w-full space-y-1">
             <label className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block">
               Leave Type <span className="text-rose-500">*</span>
             </label>
@@ -216,7 +210,7 @@ export default function GatepassSubmissionSection({
           )}
 
           {/* Destination (Optional) */}
-          <div className={cn("space-y-1", leaveTypeId === "short leave" ? "w-full" : "flex-1 min-w-[150px]")}>
+          <div className="w-full space-y-1">
             <label className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block">
               Destination <span className="text-zinc-300 font-normal">(Optional)</span>
             </label>
