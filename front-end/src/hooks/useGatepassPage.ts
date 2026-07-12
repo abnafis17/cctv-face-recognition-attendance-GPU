@@ -260,6 +260,9 @@ function mapGatepassApiRecordToViewRecord(
     destination: row.destination,
     externalGatepassId: row.externalGatepassId,
     erpStatus: row.erpStatus,
+    returnTime: row.returnTime ? Number(row.returnTime) : null,
+    rawOutTime: row.rawOutTime || row.outTime,
+    rawInTime: row.rawInTime || row.inTime,
   };
 }
 
@@ -333,6 +336,7 @@ export function useGatepassPage() {
   const [leaveTypeId, setLeaveTypeId] = useState("");
   const [destination, setDestination] = useState("");
   const [purpose, setPurpose] = useState("");
+  const [approxReturnTime, setApproxReturnTime] = useState("");
   const [formErrors, setFormErrors] = useState<FormErrors>({});
   const [recognitionActive, setRecognitionActive] = useState(false);
   const [recognitionStartSeq, setRecognitionStartSeq] = useState(0);
@@ -1182,6 +1186,7 @@ export function useGatepassPage() {
     setLeaveTypeId("");
     setDestination("");
     setPurpose("");
+    setApproxReturnTime("");
     setFormErrors({});
   }, []);
 
@@ -1563,6 +1568,7 @@ export function useGatepassPage() {
             recognizedAt: row.recognizedAt.toISOString(),
             passType: isShortLeave ? "short leave" : "Long Leave",
             remarks: isShortLeave ? "okay" : "ok",
+            returnTime: approxReturnTime ? parseInt(approxReturnTime, 10) : null,
           });
 
           successCount += 1;
@@ -1654,6 +1660,7 @@ export function useGatepassPage() {
     leaveTypeId,
     destination,
     purpose,
+    approxReturnTime,
     formErrors,
     recognitionActive,
     activeCameraId,
@@ -1681,6 +1688,7 @@ export function useGatepassPage() {
     setLeaveTypeId,
     setDestination,
     setPurpose,
+    setApproxReturnTime,
     setFormErrors,
     handleCameraChange,
     startSelectedCamera,

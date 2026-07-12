@@ -25,11 +25,13 @@ type Props = {
   leaveTypeId: string;
   destination: string;
   purpose: string;
+  approxReturnTime: string;
   formErrors: FormErrors;
   submitting: boolean;
   setLeaveTypeId: React.Dispatch<React.SetStateAction<string>>;
   setDestination: React.Dispatch<React.SetStateAction<string>>;
   setPurpose: React.Dispatch<React.SetStateAction<string>>;
+  setApproxReturnTime: React.Dispatch<React.SetStateAction<string>>;
   setFormErrors: React.Dispatch<React.SetStateAction<FormErrors>>;
   onSubmit: () => Promise<void>;
   onCancel: () => Promise<void>;
@@ -43,11 +45,13 @@ export default function GatepassSubmissionSection({
   leaveTypeId,
   destination,
   purpose,
+  approxReturnTime,
   formErrors,
   submitting,
   setLeaveTypeId,
   setDestination,
   setPurpose,
+  setApproxReturnTime,
   setFormErrors,
   onSubmit,
   onCancel,
@@ -214,6 +218,22 @@ export default function GatepassSubmissionSection({
               disabled={submitting || !hasQueue}
               onChange={(event) => setDestination(event.target.value)}
               placeholder="e.g. Hospital, Bank, Home"
+              className="h-9 rounded-md border-zinc-200 bg-white text-[11px] text-zinc-855 shadow-none hover:border-zinc-300 focus-visible:ring-1 focus-visible:ring-zinc-400 focus-visible:ring-offset-0 transition-colors px-3"
+            />
+          </div>
+
+          {/* Approx. Return Time */}
+          <div className="w-full lg:w-[150px] shrink-0 space-y-1">
+            <label className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block">
+              Approx. Return <span className="text-zinc-300 font-normal">(minute)</span>
+            </label>
+            <Input
+              type="number"
+              min="1"
+              value={approxReturnTime}
+              disabled={submitting || !hasQueue}
+              onChange={(event) => setApproxReturnTime(event.target.value)}
+              placeholder="e.g. 30, 60"
               className="h-9 rounded-md border-zinc-200 bg-white text-[11px] text-zinc-855 shadow-none hover:border-zinc-300 focus-visible:ring-1 focus-visible:ring-zinc-400 focus-visible:ring-offset-0 transition-colors px-3"
             />
           </div>

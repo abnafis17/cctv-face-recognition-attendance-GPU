@@ -513,6 +513,7 @@ model GatepassTable {
 
   passType String?
   remarks  String?
+  returnTime Int?
 
   externalGatepassId String?
   erpStatus          String?   @default("pending")

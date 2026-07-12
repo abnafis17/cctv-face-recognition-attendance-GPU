@@ -49,11 +49,13 @@ export default function GatepassPage() {
               leaveTypeId={gatepass.leaveTypeId}
               destination={gatepass.destination}
               purpose={gatepass.purpose}
+              approxReturnTime={gatepass.approxReturnTime}
               formErrors={gatepass.formErrors}
               submitting={gatepass.submitting}
               setLeaveTypeId={gatepass.setLeaveTypeId}
               setDestination={gatepass.setDestination}
               setPurpose={gatepass.setPurpose}
+              setApproxReturnTime={gatepass.setApproxReturnTime}
               setFormErrors={gatepass.setFormErrors}
               onSubmit={gatepass.submitRequest}
               onCancel={gatepass.cancelGatepassFlow}

@@ -127,6 +127,18 @@ export function getHistoryColumns(
       size: 180,
     },
     {
+      id: "returnTime",
+      header: () => (
+        <div className="w-full px-1 py-2 text-center font-bold">Approx. Return</div>
+      ),
+      cell: ({ row }) => (
+        <div className="px-1 py-2 text-center text-zinc-700 font-medium">
+          {row.original.returnTime ? `${row.original.returnTime} min` : "--"}
+        </div>
+      ),
+      size: 130,
+    },
+    {
       id: "outTime",
       header: () => (
         <div className="w-full px-1 py-2 text-center font-bold">Out Time</div>

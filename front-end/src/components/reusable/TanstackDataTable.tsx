@@ -14,6 +14,7 @@ import {
   Row,
 } from "@tanstack/react-table";
 import { ArrowUp, ArrowDown } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 import {
   Table,
@@ -39,6 +40,7 @@ interface TanstackDataTableProps<TData>
   cellHeight?: number | string;
   headerCellClassName?: string;
   emptyState?: React.ReactNode;
+  getRowClassName?: (row: Row<TData>) => string;
 }
 
 export function TanstackDataTable<TData>({
@@ -55,6 +57,7 @@ export function TanstackDataTable<TData>({
   headerCellClassName,
   freezeClassName,
   emptyState,
+  getRowClassName,
 }: TanstackDataTableProps<TData>) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
@@ -196,7 +199,10 @@ export function TanstackDataTable<TData>({
                 <TableRow
                   key={row.id}
                   data-state={row.getIsSelected() && "selected"}
-                  className={isBorderless ? "border-none" : ""}
+                  className={cn(
+                    isBorderless ? "border-none" : "",
+                    getRowClassName ? getRowClassName(row) : ""
+                  )}
                 >
                   {row.getAllCells().map((cell) => (
                     <TableCell

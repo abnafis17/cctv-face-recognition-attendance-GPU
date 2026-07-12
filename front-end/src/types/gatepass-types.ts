@@ -37,6 +37,9 @@ export type GatepassRecord = {
   destination?: string | null;
   externalGatepassId?: string | null;
   erpStatus?: string | null;
+  returnTime?: number | null;
+  rawOutTime?: string;
+  rawInTime?: string | null;
 };
 
 export type GatepassApiRecord = {
@@ -58,6 +61,9 @@ export type GatepassApiRecord = {
   remarks?: string | null;
   externalGatepassId?: string | null;
   erpStatus?: string | null;
+  returnTime?: number | null;
+  rawOutTime?: string;
+  rawInTime?: string | null;
 };
 
 export type EmployeeDirectoryRow = Employee & {

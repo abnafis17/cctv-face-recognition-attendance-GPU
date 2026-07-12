@@ -38,6 +38,11 @@ export const gatepassCreateSchema = z.object({
   recognizedAt: z.string().trim().min(1).max(64).optional(),
   passType: optionalTrimmedString(191).optional(),
   remarks: optionalTrimmedString(1000).optional(),
+  returnTime: z.preprocess((val) => {
+    if (val === undefined || val === null) return null;
+    const num = Number(val);
+    return Number.isNaN(num) ? null : num;
+  }, z.number().int().nonnegative().nullable()).optional(),
 });
 
 export const gatepassReturnSchema = z.object({

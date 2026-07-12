@@ -123,6 +123,17 @@ export default function GatepassHistorySection({
                 className="w-full"
                 freezeClassName="w-full max-w-full overflow-x-auto overflow-y-hidden rounded-none"
                 emptyState="No gatepass records found for the selected criteria."
+                getRowClassName={(row) => {
+                  const rec = row.original;
+                  if (rec.status !== "returned" && rec.returnTime && rec.rawOutTime) {
+                    const outDate = new Date(rec.rawOutTime);
+                    const diff = (Date.now() - outDate.getTime()) / (1000 * 60);
+                    if (diff > rec.returnTime) {
+                      return "bg-rose-50/70 hover:bg-rose-100/70 text-rose-950 transition-colors";
+                    }
+                  }
+                  return "";
+                }}
               />
             </div>
           </div>

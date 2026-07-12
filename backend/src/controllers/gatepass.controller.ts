@@ -36,6 +36,7 @@ type GatepassJoinedRow = {
   updatedAt: Date;
   passType: string | null;
   remarks: string | null;
+  returnTime: number | null;
   externalGatepassId: string | null;
   erpStatus: string | null;
   employeePkId: string;
@@ -109,6 +110,7 @@ SELECT
   gp."updatedAt",
   gp."passType",
   gp."remarks",
+  gp."returnTime",
   gp."externalGatepassId",
   gp."erpStatus",
   e."id" AS "employeePkId",
@@ -184,6 +186,7 @@ function serializeGatepass(row: GatepassJoinedRow) {
       : null,
     passType: row.passType,
     remarks: row.remarks,
+    returnTime: row.returnTime,
     externalGatepassId: row.externalGatepassId,
     erpStatus: row.erpStatus,
   };
@@ -210,6 +213,7 @@ function normalizeCreateInput(req: Request): GatepassCreateInput {
     recognizedAt: req.body?.recognizedAt,
     passType: req.body?.passType,
     remarks: req.body?.remarks,
+    returnTime: req.body?.returnTime,
   });
 }
 
@@ -376,7 +380,8 @@ export async function createGatepassRecord(req: Request, res: Response) {
         "createdAt",
         "updatedAt",
         "passType",
-        "remarks"
+        "remarks",
+        "returnTime"
       ) VALUES (
         ${gatepassId},
         ${companyId},
@@ -386,14 +391,15 @@ export async function createGatepassRecord(req: Request, res: Response) {
         ${trimmedPurpose},
         ${normalizedDestination},
         ${recognizedAt},
-        ${null},
-        ${"out"},
+        null,
+        'out',
         ${camera?.id ?? null},
-        ${null},
+        null,
         ${createdAt},
         ${createdAt},
         ${payload.passType ?? null},
-        ${payload.remarks ?? null}
+        ${payload.remarks ?? null},
+        ${payload.returnTime ?? null}
       )`,
     );
 
