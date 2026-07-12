@@ -186,11 +186,16 @@ function SidebarContent({
             label: m.name,
             icon: getIconForRoute(m.route, m.name),
             subItems: m.subModules && m.subModules.length > 0
-              ? m.subModules.map((sub: any) => ({
-                  href: sub.route,
-                  label: sub.name,
-                  icon: getIconForRoute(sub.route, sub.name)
-                }))
+              ? (() => {
+                  const filtered = m.subModules.filter((sub: any) => sub.route && !sub.route.startsWith("/employees/"));
+                  return filtered.length > 0
+                    ? filtered.map((sub: any) => ({
+                        href: sub.route,
+                        label: sub.name,
+                        icon: getIconForRoute(sub.route, sub.name)
+                      }))
+                    : undefined;
+                })()
               : undefined
           }));
           setDynamicNav(mapped);

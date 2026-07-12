@@ -121,6 +121,20 @@ const EmployeeListTable = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const limits = 20;
 
+  const [permissions, setPermissions] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("userInfo");
+      const userInfo = raw ? JSON.parse(raw) : null;
+      if (userInfo?.permissions) {
+        setPermissions(userInfo.permissions);
+      }
+    } catch (err) {
+      console.error("Failed to load permissions in EmployeeListTable:", err);
+    }
+  }, []);
+
   const fetchEmployees = useCallback(async () => {
     try {
       setLoading(true);
@@ -386,38 +400,54 @@ const EmployeeListTable = () => {
         header: () => (
           <div className="w-full px-1 py-2 text-center font-bold">Actions</div>
         ),
-        cell: ({ row }) => (
-          <div className="flex items-center justify-center gap-1 px-1 py-2">
-            <button
-              title="Edit"
-              className="cursor-pointer rounded p-1 hover:bg-gray-200"
-              onClick={() => handleEdit(row.original)}
-            >
-              <SquarePen className="h-4 w-4 text-blue-700" />
-            </button>
-            <button
-              title="Re-enroll Face"
-              className="cursor-pointer rounded p-1 hover:bg-gray-200"
-              onClick={() => handleReEnroll(row.original)}
-            >
-              <RefreshCw className="h-4 w-4 text-emerald-600" />
-            </button>
-            <button
-              title="Delete"
-              className="cursor-pointer rounded p-1 hover:bg-gray-200"
-              onClick={() => {
-                setSelectedPerson(row.original);
-                setShowDeleteModal(true);
-              }}
-            >
-              <Trash className="h-4 w-4 text-red-600" />
-            </button>
-          </div>
-        ),
+        cell: ({ row }) => {
+          const showEdit = permissions["/employees/edit"] !== false;
+          const showReEnroll = permissions["/employees/re-enroll"] !== false;
+          const showDelete = permissions["/employees/delete"] !== false;
+
+          if (!showEdit && !showReEnroll && !showDelete) {
+            return <div className="px-1 py-2 text-center text-xs text-zinc-400 font-semibold">N/A</div>;
+          }
+
+          return (
+            <div className="flex items-center justify-center gap-1 px-1 py-2">
+              {showEdit && (
+                <button
+                  title="Edit"
+                  className="cursor-pointer rounded p-1 hover:bg-gray-200"
+                  onClick={() => handleEdit(row.original)}
+                >
+                  <SquarePen className="h-4 w-4 text-blue-700" />
+                </button>
+              )}
+              {showReEnroll && (
+                <button
+                  title="Re-enroll Face"
+                  className="cursor-pointer rounded p-1 hover:bg-gray-200"
+                  onClick={() => handleReEnroll(row.original)}
+                >
+                  <RefreshCw className="h-4 w-4 text-emerald-600" />
+                </button>
+              )}
+              {showDelete && (
+                <button
+                  title="Delete"
+                  className="cursor-pointer rounded p-1 hover:bg-gray-200"
+                  onClick={() => {
+                    setSelectedPerson(row.original);
+                    setShowDeleteModal(true);
+                  }}
+                >
+                  <Trash className="h-4 w-4 text-red-600" />
+                </button>
+              )}
+            </div>
+          );
+        },
         size: 100,
       },
     ],
-    [handleEdit, handleReEnroll, currentPage, limits],
+    [handleEdit, handleReEnroll, currentPage, limits, permissions],
   );
 
   return (

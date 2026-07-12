@@ -234,6 +234,34 @@ export async function bootstrap() {
 
       console.log("Seeding system modules completed.");
     }
+
+    // Ensure Employee action submodules exist (Edit, Re-enroll Face, Delete)
+    const employeesModule = await prisma.module.findFirst({
+      where: { route: "/employees" }
+    });
+    if (employeesModule) {
+      const actions = [
+        { name: "Edit", route: "/employees/edit", sortOrder: 41 },
+        { name: "Re-enroll Face", route: "/employees/re-enroll", sortOrder: 42 },
+        { name: "Delete", route: "/employees/delete", sortOrder: 43 }
+      ];
+      for (const act of actions) {
+        const existing = await prisma.module.findFirst({
+          where: { route: act.route }
+        });
+        if (!existing) {
+          await prisma.module.create({
+            data: {
+              name: act.name,
+              route: act.route,
+              parentId: employeesModule.id,
+              sortOrder: act.sortOrder
+            }
+          });
+          console.log(`✅ Seeded missing employee action module: ${act.name}`);
+        }
+      }
+    }
   } catch (err) {
     console.error("Failed to seed system modules:", err);
   }

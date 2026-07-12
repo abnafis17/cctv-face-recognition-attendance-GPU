@@ -1,7 +1,7 @@
 "use client";
 
-import React from "react";
-import { ShieldCheck, Save, Loader2, Lock } from "lucide-react";
+import React, { useState } from "react";
+import { ShieldCheck, Save, Loader2, Lock, ChevronDown, ChevronUp } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import { useRolePermissions } from "./hooks/useRolePermissions";
 import { Button } from "@/components/ui/button";
@@ -38,6 +38,7 @@ function getIconForRoute(route: string | null | undefined, label: string) {
 }
 
 export default function RolePermissionsPage() {
+  const [isEmployeesExpanded, setIsEmployeesExpanded] = useState(false);
   const {
     roles,
     selectedRole,
@@ -122,53 +123,116 @@ export default function RolePermissionsPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {permissions.map((p) => {
-            const dbModule = systemModules.find((sm) => sm.route === p.module);
-            const meta = dbModule
-              ? {
-                  label: dbModule.name,
-                  icon: getIconForRoute(dbModule.route, dbModule.name),
-                  desc: dbModule.description || `Access control module for ${dbModule.name} page.`,
-                }
-              : {
-                  label: p.module,
-                  icon: ShieldCheck,
-                  desc: "Custom system route or feature mapping",
-                };
-            const Icon = meta.icon;
+          {permissions
+            .filter((p) => !p.module.startsWith("/employees/"))
+            .map((p) => {
+              const dbModule = systemModules.find((sm) => sm.route === p.module);
+              const meta = dbModule
+                ? {
+                    label: dbModule.name,
+                    icon: getIconForRoute(dbModule.route, dbModule.name),
+                    desc: dbModule.description || `Access control module for ${dbModule.name} page.`,
+                  }
+                : {
+                    label: p.module,
+                    icon: ShieldCheck,
+                    desc: "Custom system route or feature mapping",
+                  };
+              const Icon = meta.icon;
 
-            return (
-              <div
-                key={p.module}
-                className="flex items-center justify-between p-4 bg-white border border-zinc-200 rounded-xl shadow-xs hover:border-zinc-300 hover:shadow-sm transition-all duration-200"
-              >
-                <div className="flex items-center gap-4 min-w-0">
-                  <div className="h-10 w-10 shrink-0 rounded-xl bg-slate-50 flex items-center justify-center border border-zinc-200 text-zinc-600">
-                    <Icon className="w-5 h-5 text-[#0c1b33]" />
+              return (
+                <div
+                  key={p.module}
+                  className="flex flex-col p-4 bg-white border border-zinc-200 rounded-xl shadow-xs hover:border-zinc-300 hover:shadow-sm transition-all duration-200"
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <div className="flex items-center gap-4 min-w-0">
+                      <div className="h-10 w-10 shrink-0 rounded-xl bg-slate-50 flex items-center justify-center border border-zinc-200 text-zinc-600">
+                        <Icon className="w-5 h-5 text-[#0c1b33]" />
+                      </div>
+                      <div className="min-w-0">
+                        <span className="text-sm font-bold text-zinc-800 truncate block">
+                          {meta.label}
+                        </span>
+                        <span className="text-xs text-zinc-400 block truncate max-w-[200px] sm:max-w-[280px]">
+                          {meta.desc}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      {/* Chevron expand button for Employees */}
+                      {p.module === "/employees" && (
+                        <button
+                          type="button"
+                          onClick={() => setIsEmployeesExpanded(!isEmployeesExpanded)}
+                          title="Toggle actions permission list"
+                          className="p-1.5 rounded-lg hover:bg-slate-100 text-zinc-500 hover:text-zinc-800 transition cursor-pointer"
+                        >
+                          {isEmployeesExpanded ? (
+                            <ChevronUp className="w-4 h-4" />
+                          ) : (
+                            <ChevronDown className="w-4 h-4" />
+                          )}
+                        </button>
+                      )}
+
+                      {/* Switch Toggle */}
+                      <label className="relative inline-flex items-center cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={p.allowed}
+                          onChange={() => handleToggle(p.module)}
+                          className="sr-only peer"
+                        />
+                        <div className="w-10 h-6 bg-zinc-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#0c1b33]"></div>
+                      </label>
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <span className="text-sm font-bold text-zinc-800 truncate block">
-                      {meta.label}
-                    </span>
-                    <span className="text-xs text-zinc-400 block truncate max-w-[200px] sm:max-w-[280px]">
-                      {meta.desc}
-                    </span>
-                  </div>
+
+                  {/* Collapsible Action Toggles under Employees */}
+                  {p.module === "/employees" && isEmployeesExpanded && (
+                    <div className="mt-4 pt-4 border-t border-zinc-100 space-y-3">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block mb-1">
+                        Employee Grid Action Permissions
+                      </span>
+                      <div className="grid grid-cols-1 gap-2">
+                        {permissions
+                          .filter((sub) => sub.module.startsWith("/employees/"))
+                          .map((sub) => {
+                            const subName = sub.module === "/employees/edit"
+                              ? "Edit"
+                              : sub.module === "/employees/re-enroll"
+                              ? "Re-enroll Face"
+                              : sub.module === "/employees/delete"
+                              ? "Delete"
+                              : sub.module.replace("/employees/", "");
+                            return (
+                              <div
+                                key={sub.module}
+                                className="flex items-center justify-between p-2.5 bg-slate-50/50 hover:bg-slate-50 border border-zinc-100 rounded-lg transition-all duration-200"
+                              >
+                                <span className="text-xs font-semibold text-zinc-700">
+                                  {subName} Action
+                                </span>
+                                <label className="relative inline-flex items-center cursor-pointer select-none">
+                                  <input
+                                    type="checkbox"
+                                    checked={sub.allowed}
+                                    onChange={() => handleToggle(sub.module)}
+                                    className="sr-only peer"
+                                  />
+                                  <div className="w-8 h-5 bg-zinc-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#0c1b33]"></div>
+                                </label>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  )}
                 </div>
-
-                {/* Switch Toggle */}
-                <label className="relative inline-flex items-center cursor-pointer select-none ml-2">
-                  <input
-                    type="checkbox"
-                    checked={p.allowed}
-                    onChange={() => handleToggle(p.module)}
-                    className="sr-only peer"
-                  />
-                  <div className="w-10 h-6 bg-zinc-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#0c1b33]"></div>
-                </label>
-              </div>
-            );
-          })}
+              );
+            })}
         </div>
       )}
 
