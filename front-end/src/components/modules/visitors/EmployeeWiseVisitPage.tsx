@@ -96,13 +96,17 @@ function formatTime12h(timeStr: string | null | undefined): string {
   return `${hours12Str}:${minutesStr} ${ampm}`;
 }
 
+function dhakaTodayYYYYMMDD() {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Dhaka" });
+}
+
 export default function EmployeeWiseVisitPage() {
   const [reportData, setReportData] = useState<EmployeeReport[]>([]);
   const [loading, setLoading] = useState(false);
 
   // Filters State
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
+  const [fromDate, setFromDate] = useState(() => dhakaTodayYYYYMMDD());
+  const [toDate, setToDate] = useState(() => dhakaTodayYYYYMMDD());
   const [searchEmployee, setSearchEmployee] = useState("");
   const [activeSearch, setActiveSearch] = useState("");
 
@@ -142,8 +146,8 @@ export default function EmployeeWiseVisitPage() {
   };
 
   const handleResetFilters = () => {
-    setFromDate("");
-    setToDate("");
+    setFromDate(dhakaTodayYYYYMMDD());
+    setToDate(dhakaTodayYYYYMMDD());
     setSearchEmployee("");
     setActiveSearch("");
   };

@@ -20,6 +20,10 @@ import toast from "react-hot-toast";
 
 const visitorTypes = ["All Types", "Guest", "Contractor", "Official", "Interviewee", "Other"];
 
+function dhakaTodayYYYYMMDD() {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Dhaka" });
+}
+
 export default function VisitorsPage() {
   const [visitorList, setVisitorList] = useState<VisitorRecord[]>([]);
   const [loading, setLoading] = useState(false);
@@ -28,8 +32,8 @@ export default function VisitorsPage() {
   // Filters State
   const [searchQuery, setSearchQuery] = useState("");
   const [visitorTypeFilter, setVisitorTypeFilter] = useState("All Types");
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
+  const [fromDate, setFromDate] = useState(() => dhakaTodayYYYYMMDD());
+  const [toDate, setToDate] = useState(() => dhakaTodayYYYYMMDD());
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
@@ -75,8 +79,8 @@ export default function VisitorsPage() {
   const handleResetFilters = () => {
     setSearchQuery("");
     setVisitorTypeFilter("All Types");
-    setFromDate("");
-    setToDate("");
+    setFromDate(dhakaTodayYYYYMMDD());
+    setToDate(dhakaTodayYYYYMMDD());
   };
 
   const paginatedRows = useMemo(() => {
