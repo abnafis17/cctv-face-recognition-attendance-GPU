@@ -117,6 +117,8 @@ export async function registerUser(input: {
   const safeUser = {
     ...user,
     companyName: company.companyName,
+    organizationId: company.organization_id ?? null,
+    oragnizationId: company.organization_id ?? null,
   };
 
   if (!safeUser.companyId) {

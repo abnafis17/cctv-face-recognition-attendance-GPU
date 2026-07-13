@@ -142,11 +142,13 @@ export function useErpEmployees(options?: {
   autoFetch?: boolean; // fetch once on mount even if search is empty
   pageSize?: number;
   pageNumber?: number;
+  filterByOrg?: boolean;
 }) {
   const debounceMs = options?.debounceMs ?? 350;
   const autoFetch = options?.autoFetch ?? true;
-  const pageSize = options?.pageSize ?? 0;
-  const pageNumber = options?.pageNumber ?? 0;
+  const pageSize = options?.pageSize ?? 20;
+  const pageNumber = options?.pageNumber ?? 1;
+  const filterByOrg = options?.filterByOrg ?? false;
 
   const [search, setSearch] = useState(options?.initialSearch ?? "");
   const [employees, setEmployees] = useState<ErpEmployee[]>([]);
@@ -219,12 +221,15 @@ export function useErpEmployees(options?: {
         return;
       }
 
-      const payload = {
+      const payload: any = {
         pageNumber,
         pageSize,
         search: q || "",
-        organizationId: readOrganizationId(),
       };
+
+      if (filterByOrg) {
+        payload.organizationId = readOrganizationId();
+      }
 
       const res = await erpAxios.post(
         resolvedUrl,
@@ -274,7 +279,7 @@ export function useErpEmployees(options?: {
     } finally {
       setLoading(false);
     }
-  }, [readOrganizationId, pageNumber, pageSize]);
+  }, [readOrganizationId, pageNumber, pageSize, filterByOrg]);
 
   // Debounced search effect
   useEffect(() => {

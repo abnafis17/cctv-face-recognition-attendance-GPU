@@ -173,6 +173,7 @@ export default function AddVisitorPage() {
     debounceMs: 350,
     initialSearch: "",
     autoFetch: true,
+    filterByOrg: true,
   });
 
   const [departmentsList, setDepartmentsList] = useState<string[]>([]);
@@ -218,9 +219,20 @@ export default function AddVisitorPage() {
 
   // Trigger ERP search based on host search input or selected department
   useEffect(() => {
+    // If we have a selected employee and the department matches their department,
+    // and there is no active host search input, skip fetching the employee list again.
+    if (
+      selectedEmployee &&
+      (selectedEmployee.department || "").trim().toLowerCase() ===
+        (selectedDepartment || "").trim().toLowerCase() &&
+      !hostSearch.trim()
+    ) {
+      return;
+    }
+
     const q = hostSearch.trim() || selectedDepartment || "";
     setErpSearch(q);
-  }, [hostSearch, selectedDepartment, setErpSearch]);
+  }, [hostSearch, selectedDepartment, selectedEmployee, setErpSearch]);
 
   // Synchronize department change with host clearing
   useEffect(() => {
@@ -261,12 +273,22 @@ export default function AddVisitorPage() {
   }, [erpEmployees, selectedDepartment, hostSearch]);
 
   const hostOptions = useMemo(() => {
-    return filteredHostEmployees.map((e) => ({
+    const options = filteredHostEmployees.map((e) => ({
       value: e.employeeId,
       label: `${e.employeeName} (${e.employeeId})`,
       keywords: `${e.employeeName} ${e.employeeId}`,
     }));
-  }, [filteredHostEmployees]);
+
+    if (selectedEmployee && !options.some((o) => o.value === selectedEmployee.employeeId)) {
+      options.unshift({
+        value: selectedEmployee.employeeId,
+        label: `${selectedEmployee.employeeName} (${selectedEmployee.employeeId})`,
+        keywords: `${selectedEmployee.employeeName} ${selectedEmployee.employeeId}`,
+      });
+    }
+
+    return options;
+  }, [filteredHostEmployees, selectedEmployee]);
 
   const extraGuestValue = form.watch("extraGuest");
   const extraGuestsCount = extraGuestValue ? parseInt(extraGuestValue, 10) : 0;
@@ -469,8 +491,8 @@ export default function AddVisitorPage() {
             </p>
           </div>
         </div>
-        <div className="hidden items-center gap-2 text-xs font-semibold text-zinc-300 md:flex">
-          <Calendar className="h-4 w-4" />
+        <div className="hidden items-center gap-2 text-base font-semibold text-zinc-200 md:flex">
+          <Calendar className="h-5 w-5 text-zinc-300" />
           <span>
             {today.toLocaleDateString("en-US", {
               day: "2-digit",
@@ -746,30 +768,50 @@ export default function AddVisitorPage() {
                     control={form.control}
                     name="hostEmployeeId"
                     render={({ field }) => (
-                      <div className="relative w-full">
-                        <SearchableSelect
-                          value={field.value}
-                          onChange={(val) => {
-                            field.onChange(val);
-                            if (!val) {
-                              setSelectedEmployee(null);
-                              return;
-                            }
-                            const emp = erpEmployees.find((e) => e.employeeId === val);
-                            if (emp) {
-                              setSelectedEmployee(emp);
-                              if (emp.department) {
-                                form.setValue("department", emp.department);
+                      <div className="flex gap-2 w-full">
+                        <div className="flex-1 min-w-0">
+                          <SearchableSelect
+                            value={field.value}
+                            onChange={(val) => {
+                              field.onChange(val);
+                              if (!val) {
+                                setSelectedEmployee(null);
+                                return;
                               }
-                            }
-                          }}
-                          items={hostOptions}
-                          placeholder="Select host / employee"
-                          searchPlaceholder="Search name or ID..."
-                          loading={erpLoading}
-                          onSearchChange={(q) => setHostSearch(q)}
-                          className="h-10 rounded-xl border-zinc-200 bg-white pl-4 text-left font-normal shadow-none hover:bg-zinc-50"
-                        />
+                              const emp = erpEmployees.find((e) => e.employeeId === val);
+                              if (emp) {
+                                setSelectedEmployee(emp);
+                                if (emp.department) {
+                                  form.setValue("department", emp.department);
+                                }
+                              }
+                            }}
+                            items={hostOptions}
+                            placeholder="Select host / employee"
+                            searchPlaceholder="Search name or ID..."
+                            loading={erpLoading}
+                            onSearchChange={(q) => setHostSearch(q)}
+                            className="h-10 rounded-xl border-zinc-200 bg-white pl-4 text-left font-normal shadow-none hover:bg-zinc-50"
+                          />
+                        </div>
+                        {(field.value || selectedDepartment) && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              form.setValue("hostEmployeeId", "");
+                              form.setValue("department", "");
+                              setSelectedEmployee(null);
+                              setHostSearch("");
+                              toast.success("Host and department selection reset");
+                            }}
+                            className="h-10 px-3 rounded-xl border-zinc-200 text-zinc-500 hover:text-rose-600 hover:border-rose-200 hover:bg-rose-50/50 transition-colors shrink-0 flex items-center gap-1.5"
+                            title="Reset host & department selection"
+                          >
+                            <RotateCcw className="h-3.5 w-3.5" />
+                            <span className="text-xs font-semibold">Reset</span>
+                          </Button>
+                        )}
                       </div>
                     )}
                   />

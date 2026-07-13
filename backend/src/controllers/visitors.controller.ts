@@ -300,12 +300,10 @@ export async function lookupVisitor(req: Request, res: Response) {
         });
       }
 
-      const orgId = String(company.organization_id ?? "").trim();
       const payload = {
         pageNumber: 1,
         pageSize: 10,
         search: phone,
-        organizationId: orgId,
       };
 
       try {
