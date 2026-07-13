@@ -225,14 +225,93 @@ export async function bootstrap() {
       await prisma.module.create({
         data: { name: "Master Data", route: "/master-data", sortOrder: 100 }
       });
+      const settingsGroup = await prisma.module.create({
+        data: { name: "Settings", sortOrder: 110 }
+      });
       await prisma.module.create({
-        data: { name: "Settings", route: "/settings", sortOrder: 110 }
+        data: { name: "URLs", route: "/settings/urls", parentId: settingsGroup.id, sortOrder: 111 }
       });
       await prisma.module.create({
         data: { name: "Permissions", route: "/permissions", sortOrder: 120 }
       });
 
       console.log("Seeding system modules completed.");
+    } else {
+      // Migrate legacy database structure for Settings module
+      const oldSettings = await prisma.module.findFirst({
+        where: { route: "/settings" }
+      });
+
+      if (oldSettings) {
+        console.log("Migrating legacy settings module in database...");
+        
+        // Remove route from parent Settings module
+        await prisma.module.update({
+          where: { id: oldSettings.id },
+          data: { route: null }
+        });
+
+        // Ensure "URLs" submodule exists under Settings parent module
+        let urlsSubModule = await prisma.module.findFirst({
+          where: { route: "/settings/urls", parentId: oldSettings.id }
+        });
+
+        if (!urlsSubModule) {
+          urlsSubModule = await prisma.module.create({
+            data: {
+              name: "URLs",
+              route: "/settings/urls",
+              parentId: oldSettings.id,
+              sortOrder: 111
+            }
+          });
+          console.log("Created URLs submodule under Settings.");
+        }
+
+        // Migrate any existing permissions mapped to "/settings" to "/settings/urls"
+        const oldPermissions = await prisma.permission.findMany({
+          where: { module: "/settings" }
+        });
+
+        if (oldPermissions.length > 0) {
+          console.log(`Migrating ${oldPermissions.length} permissions from /settings to /settings/urls...`);
+          for (const perm of oldPermissions) {
+            const companyId = perm.companyId || "";
+            // Check if /settings/urls permission already exists
+            const existingPerm = await prisma.permission.findUnique({
+              where: {
+                companyId_role_module: {
+                  companyId: companyId,
+                  role: perm.role,
+                  module: "/settings/urls"
+                }
+              }
+            });
+
+            if (!existingPerm) {
+              await prisma.permission.create({
+                data: {
+                  companyId: perm.companyId,
+                  role: perm.role,
+                  module: "/settings/urls",
+                  allowed: perm.allowed
+                }
+              });
+            } else {
+              await prisma.permission.update({
+                where: { id: existingPerm.id },
+                data: { allowed: perm.allowed }
+              });
+            }
+          }
+
+          // Clean up old permissions
+          await prisma.permission.deleteMany({
+            where: { module: "/settings" }
+          });
+          console.log("Settings permissions migration completed.");
+        }
+      }
     }
 
     // Ensure Employee action submodules exist (Edit, Re-enroll Face, Delete)

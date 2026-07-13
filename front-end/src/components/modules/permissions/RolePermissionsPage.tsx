@@ -28,11 +28,13 @@ function getIconForRoute(route: string | null | undefined, label: string) {
   if (route === "/visitors/employee-wise-visit") return LucideIcons.BarChart3;
   if (route === "/visitors/visitor-wise-visit") return LucideIcons.PieChart;
   if (route === "/master-data") return LucideIcons.Database;
+  if (route === "/settings/urls") return LucideIcons.Link2;
   if (route === "/settings") return LucideIcons.Settings;
   if (route === "/permissions") return LucideIcons.ShieldCheck;
 
   if (label === "Gate Pass") return LucideIcons.IdCard;
   if (label === "Visitor") return LucideIcons.UserSearch;
+  if (label === "Settings" || label === "Setting") return LucideIcons.Settings;
 
   return LucideIcons.ShieldAlert;
 }

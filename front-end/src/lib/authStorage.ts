@@ -66,7 +66,7 @@ export function getLandingRoute(permissions: Record<string, boolean> | null | un
     "/gatepass",
     "/visitors",
     "/master-data",
-    "/settings",
+    "/settings/urls",
     "/permissions",
   ];
   if (permissions) {

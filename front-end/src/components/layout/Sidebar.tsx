@@ -17,6 +17,7 @@ import {
   Menu,
   X,
   Settings,
+  Link2,
   ChevronDown,
   ChevronUp,
   Database,
@@ -52,11 +53,13 @@ function getIconForRoute(route: string | null | undefined, label: string) {
   if (route === "/visitors/employee-wise-visit") return LucideIcons.BarChart3;
   if (route === "/visitors/visitor-wise-visit") return LucideIcons.PieChart;
   if (route === "/master-data") return LucideIcons.Database;
+  if (route === "/settings/urls") return LucideIcons.Link2;
   if (route === "/settings") return LucideIcons.Settings;
   if (route === "/permissions") return LucideIcons.ShieldCheck;
 
   if (label === "Gate Pass") return LucideIcons.IdCard;
   if (label === "Visitor") return LucideIcons.UserSearch;
+  if (label === "Settings" || label === "Setting") return LucideIcons.Settings;
 
   return LucideIcons.ShieldAlert;
 }
@@ -101,7 +104,13 @@ const staticNav: NavItem[] = [
     ],
   },
   { href: "/master-data", label: "Master Data", icon: Database },
-  { href: "/settings", label: "Settings", icon: Settings },
+  {
+    label: "Settings",
+    icon: Settings,
+    subItems: [
+      { href: "/settings/urls", label: "URLs", icon: Link2 },
+    ],
+  },
   { href: "/permissions", label: "Permissions", icon: ShieldCheck },
 ];
 
@@ -148,6 +157,9 @@ function SidebarContent({
     }
     if (pathname.startsWith("/gatepass")) {
       setOpenMenus((prev) => ({ ...prev, "Gate Pass": true }));
+    }
+    if (pathname.startsWith("/settings")) {
+      setOpenMenus((prev) => ({ ...prev, Settings: true }));
     }
   }, [pathname]);
 
