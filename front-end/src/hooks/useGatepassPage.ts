@@ -1502,7 +1502,11 @@ export function useGatepassPage() {
       nextErrors.purpose = "Purpose is required";
     }
 
-    if (nextErrors.leaveType || nextErrors.purpose) {
+    if (rowsNeedingOutSubmission.length > 0 && isShortLeave && !approxReturnTime.trim()) {
+      nextErrors.approxReturnTime = "Approx. return time is required";
+    }
+
+    if (nextErrors.leaveType || nextErrors.purpose || nextErrors.approxReturnTime) {
       setFormErrors(nextErrors);
       return;
     }

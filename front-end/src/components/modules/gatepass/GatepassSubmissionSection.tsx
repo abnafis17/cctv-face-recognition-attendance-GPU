@@ -227,17 +227,31 @@ export default function GatepassSubmissionSection({
           {leaveTypeId === "short leave" && (
             <div className="w-full space-y-1">
               <label className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block">
-                Approx. Return <span className="text-zinc-300 font-normal">(minute)</span>
+                Approx. Return <span className="text-rose-500">*</span> <span className="text-zinc-300 font-normal">(minute)</span>
               </label>
               <Input
                 type="number"
                 min="1"
                 value={approxReturnTime}
                 disabled={submitting || !hasQueue}
-                onChange={(event) => setApproxReturnTime(event.target.value)}
+                onChange={(event) => {
+                  setApproxReturnTime(event.target.value);
+                  setFormErrors((current) => ({
+                    ...current,
+                    approxReturnTime: undefined,
+                  }));
+                }}
                 placeholder="e.g. 30, 60"
-                className="h-9 rounded-md border-zinc-200 bg-white text-[11px] text-zinc-855 shadow-none hover:border-zinc-300 focus-visible:ring-1 focus-visible:ring-zinc-400 focus-visible:ring-offset-0 transition-colors px-3"
+                className={cn(
+                  "h-9 rounded-md bg-white text-[11px] text-zinc-855 shadow-none hover:border-zinc-300 focus-visible:ring-1 focus-visible:ring-zinc-400 focus-visible:ring-offset-0 transition-colors px-3",
+                  formErrors.approxReturnTime ? "border-rose-300 ring-rose-500" : "border-zinc-200"
+                )}
               />
+              {formErrors.approxReturnTime && (
+                <span className="text-[9px] font-semibold text-rose-655 block mt-0.5">
+                  {formErrors.approxReturnTime}
+                </span>
+              )}
             </div>
           )}
         </div>

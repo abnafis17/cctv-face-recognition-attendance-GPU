@@ -100,6 +100,7 @@ export type RecognizedGatepassRow = RecognizedPerson & {
 export type FormErrors = {
   leaveType?: string;
   purpose?: string;
+  approxReturnTime?: string;
 };
 
 export type GatepassCamera = CameraOption;
