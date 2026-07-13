@@ -1,6 +1,29 @@
 import { Request, Response } from "express";
 import { Prisma } from "@prisma/client";
 import { ZodError } from "zod";
+import axios from "axios";
+
+const AI_BASE = (process.env.AI_BASE_URL || "http://127.0.0.1:8000").replace(/\/$/, "");
+
+function requestAiCameraStop(cameraId: string) {
+  const timeoutMs = Number(process.env.AI_STOP_TIMEOUT_MS || 5000);
+  axios
+    .post(`${AI_BASE}/camera/stop`, null, {
+      params: { camera_id: cameraId },
+      timeout: timeoutMs,
+    })
+    .catch((error: unknown) => {
+      const anyError = error as any;
+      const detail =
+        anyError?.response?.data?.error ||
+        anyError?.response?.data?.message ||
+        anyError?.message ||
+        "Unknown AI error";
+      console.warn(
+        `AI STOP CAMERA FAILED during deletion: camera=${cameraId} detail=${detail}`
+      );
+    });
+}
 import {
   cameraAuthorizedEmployeesUpdateSchema,
   cameraBoundingBoxTrackingEventSchema,
@@ -222,6 +245,13 @@ export async function deleteCamera(req: Request, res: Response) {
 
     const camera = await deleteCompanyCamera(companyId, anyId);
     if (!camera) return res.status(404).json({ error: "Camera not found" });
+
+    if (camera.id) {
+      requestAiCameraStop(camera.id);
+    }
+    if (camera.camId && camera.camId !== camera.id) {
+      requestAiCameraStop(camera.camId);
+    }
 
     return res.json({
       ok: true,
