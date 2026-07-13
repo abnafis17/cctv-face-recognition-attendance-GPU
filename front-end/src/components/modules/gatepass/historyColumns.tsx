@@ -163,6 +163,59 @@ export function getHistoryColumns(
       size: 110,
     },
     {
+      id: "duration",
+      header: () => (
+        <div className="w-full px-1 py-2 text-center font-bold">Duration</div>
+      ),
+      cell: ({ row }) => {
+        const rec = row.original;
+        if (rec.status !== "returned" || !rec.rawOutTime || !rec.rawInTime) {
+          return (
+            <div className="px-1 py-2 text-center text-zinc-400 font-medium">
+              --
+            </div>
+          );
+        }
+
+        const outDate = new Date(rec.rawOutTime);
+        const inDate = new Date(rec.rawInTime);
+        if (isNaN(outDate.getTime()) || isNaN(inDate.getTime())) {
+          return (
+            <div className="px-1 py-2 text-center text-zinc-400 font-medium">
+              --
+            </div>
+          );
+        }
+
+        const diffMs = inDate.getTime() - outDate.getTime();
+        if (diffMs <= 0) {
+          return (
+            <div className="px-1 py-2 text-center font-medium text-zinc-900">
+              0 min
+            </div>
+          );
+        }
+
+        const diffMins = Math.round(diffMs / (1000 * 60));
+        const hours = Math.floor(diffMins / 60);
+        const mins = diffMins % 60;
+
+        let displayVal = "";
+        if (hours > 0) {
+          displayVal = `${hours} hr ${mins} min`;
+        } else {
+          displayVal = `${diffMins} min`;
+        }
+
+        return (
+          <div className="px-1 py-2 text-center font-medium text-zinc-900">
+            {displayVal}
+          </div>
+        );
+      },
+      size: 110,
+    },
+    {
       id: "status",
       header: () => (
         <div className="w-full px-1 py-2 text-center font-bold">Status</div>
