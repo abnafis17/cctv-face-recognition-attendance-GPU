@@ -41,6 +41,7 @@ interface TanstackDataTableProps<TData>
   headerCellClassName?: string;
   emptyState?: React.ReactNode;
   getRowClassName?: (row: Row<TData>) => string;
+  getCellClassName?: (columnId: string, row: Row<TData>) => string;
 }
 
 export function TanstackDataTable<TData>({
@@ -58,6 +59,7 @@ export function TanstackDataTable<TData>({
   freezeClassName,
   emptyState,
   getRowClassName,
+  getCellClassName,
 }: TanstackDataTableProps<TData>) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
@@ -207,13 +209,14 @@ export function TanstackDataTable<TData>({
                   {row.getAllCells().map((cell) => (
                     <TableCell
                       key={cell.id}
-                      className={
+                      className={cn(
                         isBorderless
                           ? "border-none"
                           : isBorderBottomOnly
                           ? "border-b border-gray-100"
-                          : "border border-gray-100"
-                      }
+                          : "border border-gray-100",
+                        getCellClassName ? getCellClassName(cell.column.id, row) : ""
+                      )}
                       style={{
                         height: cellHeight || "auto", // ✅ apply height to each cell
                         verticalAlign: "middle", // optional: ensure content is vertically centered

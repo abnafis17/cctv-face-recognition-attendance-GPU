@@ -167,21 +167,24 @@ export function getHistoryColumns(
       header: () => (
         <div className="w-full px-1 py-2 text-center font-bold">Status</div>
       ),
-      cell: ({ row }) => (
-        <div className="flex justify-center px-1 py-2">
-          <Badge
-            variant="outline"
-            className={cn(
-              "rounded-full",
-              row.original.status === "returned"
-                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                : "border-rose-200 bg-rose-50 text-rose-700",
-            )}
-          >
-            {statusLabel(row.original.status)}
-          </Badge>
-        </div>
-      ),
+      cell: ({ row }) => {
+        const rec = row.original;
+        return (
+          <div className="flex justify-center px-1 py-2">
+            <Badge
+              variant="outline"
+              className={cn(
+                "rounded-full bg-white font-semibold px-2.5 py-0.5 shadow-sm",
+                rec.status === "returned"
+                  ? "border-emerald-200 text-emerald-700"
+                  : "border-rose-200 text-rose-700"
+              )}
+            >
+              {rec.status === "returned" ? "Returned" : "Out"}
+            </Badge>
+          </div>
+        );
+      },
       size: 120,
     },
     {

@@ -487,7 +487,9 @@ export default function GatepassHistoryLogPage() {
             className="w-full"
             freezeClassName="w-full max-w-full overflow-x-auto overflow-y-hidden rounded-none"
             emptyState="No gatepass records found for the selected criteria."
-            getRowClassName={(row) => {
+            getRowClassName={() => ""}
+            getCellClassName={(columnId, row) => {
+              if (columnId !== "status") return "";
               const rec = row.original;
               if (!rec.returnTime || !rec.rawOutTime) return "";
               const outDate = new Date(rec.rawOutTime);
@@ -498,15 +500,15 @@ export default function GatepassHistoryLogPage() {
                 if (!isNaN(inDate.getTime())) {
                   const diffMins = (inDate.getTime() - outDate.getTime()) / (1000 * 60);
                   if (diffMins <= rec.returnTime) {
-                    return "bg-emerald-50/70 hover:bg-emerald-100/70 text-emerald-950 transition-colors";
+                    return "bg-emerald-200 text-emerald-950 font-semibold";
                   } else {
-                    return "bg-rose-50/70 hover:bg-rose-100/70 text-rose-950 transition-colors";
+                    return "bg-rose-200 text-rose-950 font-semibold";
                   }
                 }
               } else if (rec.status !== "returned") {
                 const diffMins = (now - outDate.getTime()) / (1000 * 60);
                 if (diffMins > rec.returnTime) {
-                  return "bg-rose-50/70 hover:bg-rose-100/70 text-rose-950 transition-colors";
+                  return "bg-rose-200 text-rose-950 font-semibold";
                 }
               }
               return "";
