@@ -53,6 +53,7 @@ export async function registerApi(input: {
   email: string;
   password: string;
   companyName: string;
+  organization_id?: string;
   role?: string;
 }) {
   try {
@@ -60,6 +61,7 @@ export async function registerApi(input: {
       ...input,
       name: input.name?.trim() ? input.name.trim() : undefined,
       companyName: input.companyName.trim(),
+      organization_id: input.organization_id?.trim() ? input.organization_id.trim() : undefined,
       role: input.role?.trim() ? input.role.trim() : undefined,
     };
 
