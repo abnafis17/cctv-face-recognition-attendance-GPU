@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SearchableSelect } from "@/components/reusable/SearchableSelect";
 import type { Camera } from "../types";
-import { VideoOff, Play } from "lucide-react";
+import { VideoOff, Play, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export const SetupPanel = React.memo(function SetupPanel({
@@ -19,8 +19,10 @@ export const SetupPanel = React.memo(function SetupPanel({
   // ERP employee selection
   selectedErpEmployeeId,
   setSelectedErpEmployeeId,
-  hierarchyAvailability,
-  hierarchyOptions,
+  departmentFilter,
+  setDepartmentFilter,
+  departmentsList,
+  erpLoading,
   unit,
   setUnit,
   department,
@@ -30,7 +32,6 @@ export const SetupPanel = React.memo(function SetupPanel({
   line,
   setLine,
   erpItems,
-  erpLoading,
   erpError,
   erpSearch,
   setErpSearch,
@@ -48,6 +49,7 @@ export const SetupPanel = React.memo(function SetupPanel({
 
   tts,
   setTts,
+  handleReset,
 }: {
   cameraId: string;
   setCameraId: (v: string) => void;
@@ -57,18 +59,10 @@ export const SetupPanel = React.memo(function SetupPanel({
 
   selectedErpEmployeeId: string;
   setSelectedErpEmployeeId: (v: string) => void;
-  hierarchyAvailability: {
-    hasUnit: boolean;
-    hasDepartment: boolean;
-    hasSection: boolean;
-    hasLine: boolean;
-  };
-  hierarchyOptions: {
-    units: string[];
-    departments: string[];
-    sections: string[];
-    lines: string[];
-  };
+  departmentFilter: string;
+  setDepartmentFilter: (v: string) => void;
+  departmentsList: Array<{ id: string; name: string }>;
+  erpLoading: boolean;
   unit: string;
   setUnit: (v: string) => void;
   department: string;
@@ -78,7 +72,6 @@ export const SetupPanel = React.memo(function SetupPanel({
   line: string;
   setLine: (v: string) => void;
   erpItems: Array<{ value: string; label: string; keywords?: string }>;
-  erpLoading: boolean;
   erpError: string | null;
   erpSearch: string;
   setErpSearch: (q: string) => void;
@@ -96,6 +89,7 @@ export const SetupPanel = React.memo(function SetupPanel({
 
   tts: boolean;
   setTts: (v: boolean) => void;
+  handleReset: () => void;
 }) {
   const hierarchyLocked = busy || lockEmployeeIdentity;
 
@@ -162,121 +156,65 @@ export const SetupPanel = React.memo(function SetupPanel({
               </div>
             )}
 
-            {/* Hierarchy Selection */}
+            {/* Department Filter */}
             <div className="rounded-md border border-zinc-150 bg-zinc-50/50 p-4 space-y-3">
               <div>
                 <div className="text-xs font-bold text-zinc-700">Hierarchy Filter</div>
                 <div className="text-[11px] text-zinc-500 mt-0.5">
-                  Select in order to narrow down the employee search list.
+                  Select department to narrow down the employee search list.
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {hierarchyAvailability.hasUnit && (
-                  <div>
-                    <Label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Unit</Label>
-                    <select
-                      className="mt-1.5 h-9 w-full rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-750 outline-none hover:border-zinc-300 focus:ring-1 focus:ring-zinc-400 transition-all"
-                      value={unit}
-                      onChange={(e) => {
-                        setUnit(e.target.value);
-                        setDepartment("");
-                        setSection("");
-                        setLine("");
-                        setSelectedErpEmployeeId("");
-                      }}
-                      disabled={hierarchyLocked}
-                    >
-                      <option value="">All units</option>
-                      {hierarchyOptions.units.map((v) => (
-                        <option key={v} value={v}>{v}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                {hierarchyAvailability.hasDepartment && (
-                  <div>
-                    <Label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Department</Label>
-                    <select
-                      className="mt-1.5 h-9 w-full rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-750 outline-none hover:border-zinc-300 focus:ring-1 focus:ring-zinc-400 transition-all"
-                      value={department}
-                      onChange={(e) => {
-                        setDepartment(e.target.value);
-                        setSection("");
-                        setLine("");
-                        setSelectedErpEmployeeId("");
-                      }}
-                      disabled={hierarchyLocked}
-                    >
-                      <option value="">All departments</option>
-                      {hierarchyOptions.departments.map((v) => (
-                        <option key={v} value={v}>{v}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                {hierarchyAvailability.hasSection && (
-                  <div>
-                    <Label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Section</Label>
-                    <select
-                      className="mt-1.5 h-9 w-full rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-750 outline-none hover:border-zinc-300 focus:ring-1 focus:ring-zinc-400 transition-all"
-                      value={section}
-                      onChange={(e) => {
-                        setSection(e.target.value);
-                        setLine("");
-                        setSelectedErpEmployeeId("");
-                      }}
-                      disabled={hierarchyLocked}
-                    >
-                      <option value="">All sections</option>
-                      {hierarchyOptions.sections.map((v) => (
-                        <option key={v} value={v}>{v}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                {hierarchyAvailability.hasLine && (
-                  <div>
-                    <Label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Line</Label>
-                    <select
-                      className="mt-1.5 h-9 w-full rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-750 outline-none hover:border-zinc-300 focus:ring-1 focus:ring-zinc-400 transition-all"
-                      value={line}
-                      onChange={(e) => {
-                        setLine(e.target.value);
-                        setSelectedErpEmployeeId("");
-                      }}
-                      disabled={hierarchyLocked}
-                    >
-                      <option value="">All lines</option>
-                      {hierarchyOptions.lines.map((v) => (
-                        <option key={v} value={v}>{v}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
+              <div>
+                <Label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Department</Label>
+                <select
+                  className="mt-1.5 h-9 w-full rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-750 outline-none hover:border-zinc-300 focus:ring-1 focus:ring-zinc-400 transition-all cursor-pointer"
+                  value={departmentFilter}
+                  onChange={(e) => {
+                    setDepartmentFilter(e.target.value);
+                    setSelectedErpEmployeeId("");
+                  }}
+                  disabled={busy || lockEmployeeIdentity}
+                >
+                  <option value="">All departments</option>
+                  {departmentsList.map((v) => (
+                    <option key={v.id} value={v.id}>{v.name}</option>
+                  ))}
+                </select>
               </div>
             </div>
 
             {/* ERP Search Dropdown */}
             <div>
               <Label className="text-[10px] font-bold text-zinc-450 uppercase tracking-wider block">Select from ERP (search by Name or ID)</Label>
-              <div className="mt-1.5">
-                <SearchableSelect
-                  value={selectedErpEmployeeId}
-                  items={erpItems}
-                  placeholder="Search employee..."
-                  searchPlaceholder="Type name or ID..."
-                  disabled={busy || lockEmployeeIdentity}
-                  loading={erpLoading}
-                  onSearchChange={(q) => setErpSearch(q)}
-                  onChange={(empId) => {
-                    setSelectedErpEmployeeId(empId);
-                    onPickEmployee(empId);
-                  }}
-                />
+              <div className="mt-1.5 flex gap-2">
+                <div className="flex-1 min-w-0">
+                  <SearchableSelect
+                    value={selectedErpEmployeeId}
+                    items={erpItems}
+                    placeholder="Search employee..."
+                    searchPlaceholder="Type name or ID..."
+                    disabled={busy || lockEmployeeIdentity}
+                    loading={erpLoading}
+                    onSearchChange={(q) => setErpSearch(q)}
+                    onChange={(empId) => {
+                      setSelectedErpEmployeeId(empId);
+                      onPickEmployee(empId);
+                    }}
+                  />
+                </div>
+                {(selectedErpEmployeeId || departmentFilter || employeeId || name || unit || department || section || line) && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleReset}
+                    className="h-9 px-3 rounded-md border-zinc-200 text-zinc-500 hover:text-rose-600 hover:border-rose-200 hover:bg-rose-50/50 transition-colors shrink-0 flex items-center gap-1.5 cursor-pointer"
+                    title="Reset all fields"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    <span className="text-xs font-semibold">Reset</span>
+                  </Button>
+                )}
               </div>
               {erpError ? (
                 <div className="text-xs text-red-600 mt-2">{erpError}</div>
@@ -287,7 +225,7 @@ export const SetupPanel = React.memo(function SetupPanel({
               )}
             </div>
 
-            {/* Manual ID & Name Fields */}
+            {/* Employee Details Fields */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1">
                 <Label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Employee ID</Label>
@@ -296,7 +234,7 @@ export const SetupPanel = React.memo(function SetupPanel({
                   onChange={(e) => setEmployeeId(e.target.value)}
                   placeholder="EMP001"
                   disabled={busy || lockEmployeeIdentity}
-                  className="h-9 rounded-md border-zinc-200 bg-white text-xs text-zinc-850 shadow-none hover:border-zinc-300 focus-visible:ring-1 focus-visible:ring-zinc-400 focus-visible:ring-offset-0 transition-colors px-3"
+                  className="h-9 rounded-md border-zinc-200 bg-white text-xs text-zinc-855 shadow-none hover:border-zinc-300 focus-visible:ring-1 focus-visible:ring-zinc-400 focus-visible:ring-offset-0 transition-colors px-3"
                 />
               </div>
 
@@ -306,6 +244,50 @@ export const SetupPanel = React.memo(function SetupPanel({
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="John Doe"
+                  disabled={busy || lockEmployeeIdentity}
+                  className="h-9 rounded-md border-zinc-200 bg-white text-xs text-zinc-855 shadow-none hover:border-zinc-300 focus-visible:ring-1 focus-visible:ring-zinc-400 focus-visible:ring-offset-0 transition-colors px-3"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Unit</Label>
+                <Input
+                  value={unit}
+                  onChange={(e) => setUnit(e.target.value)}
+                  placeholder="e.g. Pakiza Apparels Limited"
+                  disabled={busy || lockEmployeeIdentity}
+                  className="h-9 rounded-md border-zinc-200 bg-white text-xs text-zinc-855 shadow-none hover:border-zinc-300 focus-visible:ring-1 focus-visible:ring-zinc-400 focus-visible:ring-offset-0 transition-colors px-3"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Department</Label>
+                <Input
+                  value={department}
+                  onChange={(e) => setDepartment(e.target.value)}
+                  placeholder="e.g. All over Printing"
+                  disabled={busy || lockEmployeeIdentity}
+                  className="h-9 rounded-md border-zinc-200 bg-white text-xs text-zinc-855 shadow-none hover:border-zinc-300 focus-visible:ring-1 focus-visible:ring-zinc-400 focus-visible:ring-offset-0 transition-colors px-3"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Section</Label>
+                <Input
+                  value={section}
+                  onChange={(e) => setSection(e.target.value)}
+                  placeholder="e.g. Printing (AOP)"
+                  disabled={busy || lockEmployeeIdentity}
+                  className="h-9 rounded-md border-zinc-200 bg-white text-xs text-zinc-855 shadow-none hover:border-zinc-300 focus-visible:ring-1 focus-visible:ring-zinc-400 focus-visible:ring-offset-0 transition-colors px-3"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Line</Label>
+                <Input
+                  value={line}
+                  onChange={(e) => setLine(e.target.value)}
+                  placeholder="e.g. AOP"
                   disabled={busy || lockEmployeeIdentity}
                   className="h-9 rounded-md border-zinc-200 bg-white text-xs text-zinc-855 shadow-none hover:border-zinc-300 focus-visible:ring-1 focus-visible:ring-zinc-400 focus-visible:ring-offset-0 transition-colors px-3"
                 />

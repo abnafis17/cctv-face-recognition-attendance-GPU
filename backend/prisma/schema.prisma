@@ -106,6 +106,12 @@ model Employee {
   line       String?
   companyId  String?
   empPicUrl  String?
+  deptId        String?
+  sectionId     String?
+  designationId String?
+  designation   String?
+  unitId        String?
+  lineId        String?
   company    Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
