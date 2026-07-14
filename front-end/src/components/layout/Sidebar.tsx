@@ -435,6 +435,12 @@ function SidebarContent({
           compact ? "px-2 pb-3 pt-3" : "p-3",
         )}
       >
+        {!compact && identity.companyName && (
+          <div className="mb-3 px-2 text-[11px] font-bold text-zinc-500 uppercase tracking-wider truncate text-center" title={identity.companyName}>
+            {identity.companyName}
+          </div>
+        )}
+
         <button
           onClick={onLogout}
           title={compact ? "Logout" : undefined}
@@ -450,7 +456,7 @@ function SidebarContent({
         </button>
 
         {!compact && (
-          <div className="mt-3 px-1 text-center text-xs text-zinc-500">
+          <div className="mt-3 px-1 text-center text-[10px] text-zinc-400">
             (c) {new Date().getFullYear()} Pakiza Software Ltd
           </div>
         )}
