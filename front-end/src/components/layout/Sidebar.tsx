@@ -238,7 +238,7 @@ function SidebarContent({
     <>
       <div
         className={cn(
-          "shrink-0 border-b border-zinc-100",
+          "shrink-0 border-b border-zinc-150 bg-[#f8fafc]",
           compact ? "p-4 flex items-center justify-center" : "px-5 py-4 flex items-center justify-between gap-3",
         )}
       >
@@ -285,7 +285,7 @@ function SidebarContent({
 
       <nav
         className={cn(
-          "flex-1 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]",
+          "flex-1 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] bg-white",
           compact ? "px-2 py-3" : "px-3 py-4",
         )}
         style={{ WebkitOverflowScrolling: "touch" }}
@@ -431,7 +431,7 @@ function SidebarContent({
 
       <div
         className={cn(
-          "shrink-0 border-t border-zinc-100",
+          "shrink-0 border-t border-zinc-150 bg-[#f8fafc]",
           compact ? "px-2 pb-3 pt-3" : "p-3",
         )}
       >
@@ -567,7 +567,7 @@ export default function Sidebar() {
         <aside
           id="mobile-sidebar"
           className={cn(
-            "ui-readable absolute inset-y-0 left-0 flex w-[85vw] max-w-[330px] flex-col bg-white pt-[env(safe-area-inset-top)] text-zinc-800 shadow-2xl transition-transform duration-300 ease-out border-r border-zinc-100",
+            "ui-readable absolute inset-y-0 left-0 flex w-[85vw] max-w-[330px] flex-col bg-white pt-[env(safe-area-inset-top)] text-zinc-800 shadow-[5px_0_30px_rgba(0,0,0,0.12)] transition-transform duration-300 ease-out border-r border-zinc-150",
             mobileOpen ? "translate-x-0" : "-translate-x-full",
           )}
         >
@@ -578,14 +578,16 @@ export default function Sidebar() {
 
       {/* Togglable Desktop Sidebar */}
       <aside className={cn(
-        "ui-readable hidden h-dvh flex-col border-r border-zinc-100 bg-white text-zinc-800 md:flex transition-all duration-350 ease-in-out shrink-0 shadow-[2px_0_12px_rgba(15,23,42,0.02)]",
+        "ui-readable hidden h-dvh flex-col bg-slate-50 p-3 md:flex transition-all duration-350 ease-in-out shrink-0",
         isCollapsed ? "w-20" : "w-72"
       )}>
-        <SidebarContent 
-          compact={isCollapsed} 
-          isCollapsed={isCollapsed} 
-          onToggleCollapse={toggleCollapse} 
-        />
+        <div className="flex flex-col h-full bg-white rounded-2xl border border-zinc-200/80 shadow-[0_8px_30px_rgb(0,0,0,0.04),_0_1px_3px_rgba(0,0,0,0.02)] overflow-hidden">
+          <SidebarContent 
+            compact={isCollapsed} 
+            isCollapsed={isCollapsed} 
+            onToggleCollapse={toggleCollapse} 
+          />
+        </div>
       </aside>
     </>
   );
