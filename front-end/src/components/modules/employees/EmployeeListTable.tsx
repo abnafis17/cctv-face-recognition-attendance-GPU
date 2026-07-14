@@ -42,6 +42,13 @@ type EmployeeUpdatePayload = {
   section?: string | null;
   department?: string | null;
   line?: string | null;
+  deptId?: string | null;
+  sectionId?: string | null;
+  designationId?: string | null;
+  designation?: string | null;
+  unitId?: string | null;
+  lineId?: string | null;
+  empPicUrl?: string | null;
 };
 
 function normalizeApiError(error: unknown, fallback: string): string {
