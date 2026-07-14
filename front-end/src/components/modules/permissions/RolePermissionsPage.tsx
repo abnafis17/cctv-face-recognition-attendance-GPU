@@ -29,6 +29,7 @@ function getIconForRoute(route: string | null | undefined, label: string) {
   if (route === "/visitors/visitor-wise-visit") return LucideIcons.PieChart;
   if (route === "/master-data") return LucideIcons.Database;
   if (route === "/settings/urls") return LucideIcons.Link2;
+  if (route === "/settings/users") return LucideIcons.Users;
   if (route === "/settings") return LucideIcons.Settings;
   if (route === "/permissions") return LucideIcons.ShieldCheck;
 

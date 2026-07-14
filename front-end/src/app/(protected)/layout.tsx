@@ -21,6 +21,7 @@ function getModuleKeyForPath(pathname: string): string | null {
   if (pathname.startsWith("/gatepass")) return "/gatepass";
   if (pathname.startsWith("/visitors")) return "/visitors";
   if (pathname.startsWith("/master-data")) return "/master-data";
+  if (pathname.startsWith("/settings/users")) return "/settings/users";
   if (pathname.startsWith("/settings/urls")) return "/settings/urls";
   if (pathname.startsWith("/settings")) return "/settings/urls";
   if (pathname.startsWith("/permissions")) return "/permissions";
@@ -40,6 +41,7 @@ function getModuleName(moduleKey: string): string {
     case "/visitors": return "Visitor";
     case "/master-data": return "Master Data";
     case "/settings/urls": return "URLs";
+    case "/settings/users": return "Users";
     case "/permissions": return "Permissions";
     default: return "this";
   }

@@ -341,6 +341,33 @@ export async function bootstrap() {
         }
       }
     }
+
+    // Ensure Settings submodules exist (URLs, Users)
+    const settingsModule = await prisma.module.findFirst({
+      where: { name: "Settings", parentId: null }
+    });
+    if (settingsModule) {
+      const submods = [
+        { name: "URLs", route: "/settings/urls", sortOrder: 111 },
+        { name: "Users", route: "/settings/users", sortOrder: 112 }
+      ];
+      for (const sub of submods) {
+        const existing = await prisma.module.findFirst({
+          where: { route: sub.route }
+        });
+        if (!existing) {
+          await prisma.module.create({
+            data: {
+              name: sub.name,
+              route: sub.route,
+              parentId: settingsModule.id,
+              sortOrder: sub.sortOrder
+            }
+          });
+          console.log(`✅ Seeded missing settings submodule: ${sub.name}`);
+        }
+      }
+    }
   } catch (err) {
     console.error("Failed to seed system modules:", err);
   }

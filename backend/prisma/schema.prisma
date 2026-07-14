@@ -50,6 +50,7 @@ model User {
   name         String?
   email        String   @unique
   passwordHash String
+  password     String?
   role         String   @default("ADMIN")
   isActive     Boolean  @default(true)
 

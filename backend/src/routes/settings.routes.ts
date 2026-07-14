@@ -11,6 +11,12 @@ import {
   getRelaySettings,
   updateRelaySettings,
 } from "../controllers/relaySettings.controller";
+import {
+  createUser,
+  deleteUser,
+  getUsers,
+  updateUser,
+} from "../controllers/users.controller";
 
 const router = Router();
 
@@ -25,5 +31,10 @@ router.post("/erp", createErpSettings);
 router.put("/erp", updateErpSettings);
 router.patch("/erp", updateErpSettings);
 router.delete("/erp", deleteErpSettings);
+
+router.get("/users", getUsers);
+router.post("/users", createUser);
+router.patch("/users/:id", updateUser);
+router.delete("/users/:id", deleteUser);
 
 export default router;

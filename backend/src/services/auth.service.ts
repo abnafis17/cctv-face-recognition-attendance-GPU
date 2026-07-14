@@ -101,6 +101,7 @@ export async function registerUser(input: {
       name: input.name ?? null,
       email: input.email,
       passwordHash,
+      password: input.password,
       companyId: company.id,
       role: input.role ?? "ADMIN",
     },
