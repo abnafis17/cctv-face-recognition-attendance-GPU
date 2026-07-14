@@ -125,7 +125,7 @@ export default function RolePermissionsPage() {
           <span className="text-zinc-400 text-xs font-semibold mt-2">Loading module list...</span>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
           {permissions
             .filter((p) => !p.module.startsWith("/employees/"))
             .map((p) => {
