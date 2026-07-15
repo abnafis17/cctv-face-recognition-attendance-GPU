@@ -246,7 +246,8 @@ export function getHistoryColumns(
         <div className="w-full px-1 py-2 text-center font-bold">ERP Status</div>
       ),
       cell: ({ row }) => {
-        const erpStatus = (row.original.erpStatus || "pending").toLowerCase();
+        const rec = row.original;
+        const erpStatus = (rec.erpStatus || "pending").toLowerCase();
         let badgeClass = "border-amber-200 bg-amber-50 text-amber-700";
         if (erpStatus === "approved") {
           badgeClass = "border-emerald-200 bg-emerald-50 text-emerald-700";
@@ -257,14 +258,31 @@ export function getHistoryColumns(
         }
 
         return (
-          <div className="flex justify-center px-1 py-2">
+          <div className="flex flex-col items-center justify-center px-1 py-2 gap-0.5">
             <Badge variant="outline" className={cn("rounded-full font-semibold px-2 py-0.5", badgeClass)}>
               {erpStatus.toUpperCase()}
             </Badge>
+            {erpStatus === "pending" && (rec.approvedByName || rec.approvedByDesignation) && (
+              <div className="flex flex-col items-center text-center leading-normal mt-1">
+                <span className="text-[9px] uppercase font-bold text-zinc-400 tracking-wider whitespace-nowrap">
+                  Submitted To
+                </span>
+                {rec.approvedByName && (
+                  <span className="text-xs font-semibold text-zinc-700 mt-0.5 whitespace-nowrap">
+                    {rec.approvedByName}
+                  </span>
+                )}
+                {rec.approvedByDesignation && (
+                  <span className="text-[10px] text-zinc-500 font-medium whitespace-nowrap">
+                    {rec.approvedByDesignation}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         );
       },
-      size: 130,
+      size: 180,
     },
     {
       id: "requestedAt",
