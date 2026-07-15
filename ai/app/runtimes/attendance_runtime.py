@@ -1018,13 +1018,13 @@ class AttendanceRuntime:
         return endpoint if endpoint.startswith("/") else f"/{endpoint}"
 
     def _erp_settings_for_company(
-        self, company_id: Optional[str]
-    ) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+        self, company_id: Optional[str], url_type: str = "attendance"
+    ) -> Tuple[Optional[str], Optional[str], Optional[str], bool]:
         cid = str(company_id or "").strip()
         if not cid:
-            return None, None, None
+            return None, None, None, True
 
-        key = self._gallery_key(cid)
+        key = f"{self._gallery_key(cid)}:{url_type}"
         now = time.time()
         ttl = float(self._erp_settings_cache_ttl_s)
 
@@ -1038,11 +1038,12 @@ class AttendanceRuntime:
             endpoint = self._normalize_erp_endpoint(
                 cached.get("erp_attendance_endpoint")
             )
-            return base_url, prefix, endpoint
+            is_active = bool(cached.get("is_active", True))
+            return base_url, prefix, endpoint, is_active
 
         client = self._client_for_company(cid)
         try:
-            data = client.get_erp_settings()
+            data = client.get_erp_settings(url_type=url_type)
             base_url = self._normalize_relay_url(
                 data.get("erpBaseUrl") or data.get("erp_base_url")
             )
@@ -1052,13 +1053,21 @@ class AttendanceRuntime:
             endpoint = self._normalize_erp_endpoint(
                 data.get("erpAttendanceEndpoint") or data.get("erp_attendance_endpoint")
             )
+            is_active = data.get("isActive")
+            if is_active is None:
+                is_active = data.get("is_active")
+            if is_active is None:
+                is_active = True
+            is_active = bool(is_active)
+
             self._erp_settings_cache_by_company[key] = {
                 "erp_base_url": base_url,
                 "erp_prefix": prefix,
                 "erp_attendance_endpoint": endpoint,
+                "is_active": is_active,
             }
             self._erp_settings_last_fetch_by_company[key] = now
-            return base_url, prefix, endpoint
+            return base_url, prefix, endpoint, is_active
         except Exception as e:
             self._erp_settings_last_fetch_by_company[key] = now
             if has_cached:
@@ -1067,21 +1076,22 @@ class AttendanceRuntime:
                 endpoint = self._normalize_erp_endpoint(
                     cached.get("erp_attendance_endpoint")
                 )
-                return base_url, prefix, endpoint
-            print(f"[ERP] settings load failed company={cid or 'default'} err={e}")
-            return None, None, None
+                is_active = bool(cached.get("is_active", True))
+                return base_url, prefix, endpoint, is_active
+            print(f"[ERP] settings load failed company={cid or 'default'} type={url_type} err={e}")
+            return None, None, None, True
 
     def _erp_queue_for_company(
-        self, company_id: Optional[str]
+        self, company_id: Optional[str], url_type: str = "attendance"
     ) -> Optional[ERPPushQueue]:
         cid = str(company_id or "").strip()
         if not cid:
             return None
 
-        base_url, configured_prefix, configured_endpoint = (
-            self._erp_settings_for_company(cid)
+        base_url, configured_prefix, configured_endpoint, is_active = (
+            self._erp_settings_for_company(cid, url_type)
         )
-        map_key = self._gallery_key(cid)
+        map_key = f"{self._gallery_key(cid)}:{url_type}"
         is_abs_endpoint = bool(
             configured_endpoint
             and str(configured_endpoint).lower().startswith(("http://", "https://"))
@@ -1091,7 +1101,7 @@ class AttendanceRuntime:
             # Keep a harmless placeholder base so ERPClientConfig stays valid.
             base_url = "http://127.0.0.1"
 
-        if not base_url:
+        if (not base_url) or (not is_active):
             old_queue: Optional[ERPPushQueue] = None
             with self._erp_queue_lock:
                 old_queue = self._erp_queues_by_company.pop(map_key, None)
@@ -1140,11 +1150,12 @@ class AttendanceRuntime:
                 timeout_s=float(self._erp_timeout_s),
                 api_version=str(self._erp_api_version),
                 attendance_endpoint=endpoint,
+                url_type=url_type,
             )
             erp_client = ERPClient(erp_cfg)
 
             def _erp_err(e: Exception, job: ERPPushJob):
-                print(f"[ERP] push failed company={cid} err={e} | job={job}")
+                print(f"[ERP] push failed company={cid} type={url_type} err={e} | job={job}")
 
             queue = ERPPushQueue(erp_client, on_error=_erp_err)
             self._erp_queues_by_company[map_key] = queue
@@ -1494,7 +1505,8 @@ class AttendanceRuntime:
             attendance_date = datetime.now().strftime("%d/%m/%Y")
             in_time = datetime.now().strftime("%H:%M:%S")
 
-            erp_queue = self._erp_queue_for_company(company_id)
+            # First ERP queue
+            erp_queue = self._erp_queue_for_company(company_id, "attendance")
             if erp_queue is not None:
                 erp_job = ERPPushJob(
                     attendance_date=attendance_date,
@@ -1504,7 +1516,21 @@ class AttendanceRuntime:
                 )
                 ok = erp_queue.enqueue(erp_job)
                 print(
-                    f"[ERP] queued ok={ok} emp={erp_job.emp_id} date={erp_job.attendance_date} in={erp_job.in_time}"
+                    f"[ERP 1] queued ok={ok} emp={erp_job.emp_id} date={erp_job.attendance_date} in={erp_job.in_time}"
+                )
+
+            # Second ERP queue
+            erp_queue_two = self._erp_queue_for_company(company_id, "attendance_two")
+            if erp_queue_two is not None:
+                erp_job_two = ERPPushJob(
+                    attendance_date=attendance_date,
+                    emp_id=str(job.employee_id),
+                    in_time=in_time,
+                    in_location=str(job.camera_name),
+                )
+                ok_two = erp_queue_two.enqueue(erp_job_two)
+                print(
+                    f"[ERP 2] queued ok={ok_two} emp={erp_job_two.emp_id} date={erp_job_two.attendance_date} in={erp_job_two.in_time}"
                 )
 
             self._relay_http(

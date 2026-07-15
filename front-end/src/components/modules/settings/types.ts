@@ -22,6 +22,7 @@ export type ErpSettingsResponse = {
   erpBaseUrl?: string | null;
   erpPrefix?: string | null;
   erpAttendanceEndpoint?: string | null;
+  isActive?: boolean | null;
   createdAt?: string | null;
   updatedAt?: string | null;
 };
@@ -32,6 +33,7 @@ export type ErpApiRow = {
   erpBaseUrl: string | null;
   erpPrefix: string | null;
   erpAttendanceEndpoint: string | null;
+  isActive: boolean | null;
   createdAt: string;
   updatedAt: string;
 };

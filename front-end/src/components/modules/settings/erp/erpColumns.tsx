@@ -92,6 +92,29 @@ export function buildErpColumns({
       size: 460,
     },
     {
+      id: "isActive",
+      header: () => (
+        <div className="w-full px-1 py-2 text-center font-bold">Status</div>
+      ),
+      cell: ({ row }) => {
+        const active = row.original.isActive !== false;
+        return (
+          <div className="flex justify-center px-1 py-2">
+            <span
+              className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${
+                active
+                  ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-600/20"
+                  : "bg-zinc-100 text-zinc-700 ring-1 ring-zinc-600/20"
+              }`}
+            >
+              {active ? "Active" : "Inactive"}
+            </span>
+          </div>
+        );
+      },
+      size: 100,
+    },
+    {
       id: "createdAt",
       header: () => (
         <div className="w-full px-1 py-2 text-center font-bold">Created</div>

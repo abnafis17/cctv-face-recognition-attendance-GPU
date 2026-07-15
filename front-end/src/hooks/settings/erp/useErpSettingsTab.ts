@@ -39,6 +39,7 @@ export function useErpSettingsTab() {
   const [addErpBaseUrl, setAddErpBaseUrl] = useState("");
   const [addErpPrefix, setAddErpPrefix] = useState("");
   const [addErpAttendanceEndpoint, setAddErpAttendanceEndpoint] = useState("");
+  const [addErpIsActive, setAddErpIsActive] = useState(true);
 
   const [editOpen, setEditOpen] = useState(false);
   const [editRow, setEditRow] = useState<ErpApiRow | null>(null);
@@ -47,6 +48,7 @@ export function useErpSettingsTab() {
   const [editErpPrefix, setEditErpPrefix] = useState("");
   const [editErpAttendanceEndpoint, setEditErpAttendanceEndpoint] =
     useState("");
+  const [editErpIsActive, setEditErpIsActive] = useState(true);
 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedForDelete, setSelectedForDelete] = useState<ErpApiRow | null>(
@@ -84,6 +86,7 @@ export function useErpSettingsTab() {
     setAddErpBaseUrl("");
     setAddErpPrefix("");
     setAddErpAttendanceEndpoint("");
+    setAddErpIsActive(true);
   }, []);
 
   const submitAdd = useCallback(
@@ -107,6 +110,7 @@ export function useErpSettingsTab() {
           erpBaseUrl,
           erpPrefix,
           erpAttendanceEndpoint,
+          isActive: addErpIsActive,
         });
         toast.success("ERP URLs added");
         clearAddForm();
@@ -122,6 +126,7 @@ export function useErpSettingsTab() {
       addErpBaseUrl,
       addErpPrefix,
       addErpUrlType,
+      addErpIsActive,
       clearAddForm,
       fetchErpSettings,
     ],
@@ -133,6 +138,7 @@ export function useErpSettingsTab() {
     setEditErpBaseUrl(row.erpBaseUrl ?? "");
     setEditErpPrefix(row.erpPrefix ?? "");
     setEditErpAttendanceEndpoint(row.erpAttendanceEndpoint ?? "");
+    setEditErpIsActive(row.isActive ?? true);
     setEditOpen(true);
   }, []);
 
@@ -143,6 +149,7 @@ export function useErpSettingsTab() {
     setEditErpBaseUrl("");
     setEditErpPrefix("");
     setEditErpAttendanceEndpoint("");
+    setEditErpIsActive(true);
   }, []);
 
   const submitEdit = useCallback(
@@ -170,6 +177,7 @@ export function useErpSettingsTab() {
           erpBaseUrl,
           erpPrefix,
           erpAttendanceEndpoint,
+          isActive: editErpIsActive,
         });
         toast.success("ERP URLs updated");
         closeEditModal();
@@ -186,6 +194,7 @@ export function useErpSettingsTab() {
       editErpBaseUrl,
       editErpPrefix,
       editErpUrlType,
+      editErpIsActive,
       editRow,
       fetchErpSettings,
     ],
@@ -275,6 +284,8 @@ export function useErpSettingsTab() {
     setAddErpPrefix,
     addErpAttendanceEndpoint,
     setAddErpAttendanceEndpoint,
+    addErpIsActive,
+    setAddErpIsActive,
 
     editOpen,
     editRow,
@@ -286,6 +297,8 @@ export function useErpSettingsTab() {
     setEditErpPrefix,
     editErpAttendanceEndpoint,
     setEditErpAttendanceEndpoint,
+    editErpIsActive,
+    setEditErpIsActive,
 
     showDeleteModal,
     selectedForDelete,

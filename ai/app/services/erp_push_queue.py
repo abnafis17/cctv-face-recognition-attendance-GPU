@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass
 from typing import Optional, Callable
 
-from ..clients.erp_client import ERPClient
+from ..clients.erp_client import ERPClient, write_erp_log, check_erp_success
 
 
 @dataclass
@@ -56,9 +56,10 @@ class ERPPushQueue:
                 continue
 
             last_err: Optional[Exception] = None
+            response_data = None
             for _ in range(self.max_retries):
                 try:
-                    self.erp.manual_attendance(
+                    response_data = self.erp.manual_attendance(
                         job.attendance_date, job.emp_id, job.in_time, job.in_location
                     )
                     last_err = None
@@ -66,6 +67,44 @@ class ERPPushQueue:
                 except Exception as e:
                     last_err = e
                     time.sleep(self.retry_sleep_s)
+
+            if last_err is None:
+                is_success, erp_status = check_erp_success(response_data)
+                try:
+                    import json
+                    resp_str = json.dumps(response_data)
+                except Exception:
+                    resp_str = str(response_data)
+
+                if self.erp.url_type == "attendance_two":
+                    try:
+                        parts = job.attendance_date.split("/")
+                        formatted_date = f"{parts[2]}-{parts[1]}-{parts[0]}"
+                    except Exception:
+                        formatted_date = job.attendance_date
+                    payload_log = f"employee_id={job.emp_id} | attendance_date={formatted_date} | time={job.in_time} | status=Present | source={job.in_location}"
+                else:
+                    payload_log = f"empId={job.emp_id} | attendanceDate={job.attendance_date} | inTime={job.in_time} | inLocation={job.in_location}"
+
+                if not is_success:
+                    last_err = RuntimeError(f"ERP returned failure status: {erp_status}")
+                    log_msg = f"PUSH REALTIME | type={self.erp.url_type} | {payload_log} | STATUS=FAILED | erp_status={erp_status} | erp_response={resp_str}"
+                else:
+                    log_msg = f"PUSH REALTIME | type={self.erp.url_type} | {payload_log} | STATUS=SUCCESS | erp_response={resp_str}"
+            else:
+                if self.erp.url_type == "attendance_two":
+                    try:
+                        parts = job.attendance_date.split("/")
+                        formatted_date = f"{parts[2]}-{parts[1]}-{parts[0]}"
+                    except Exception:
+                        formatted_date = job.attendance_date
+                    payload_log = f"employee_id={job.emp_id} | attendance_date={formatted_date} | time={job.in_time} | status=Present | source={job.in_location}"
+                else:
+                    payload_log = f"empId={job.emp_id} | attendanceDate={job.attendance_date} | inTime={job.in_time} | inLocation={job.in_location}"
+
+                log_msg = f"PUSH REALTIME | type={self.erp.url_type} | {payload_log} | STATUS=FAILED | error={str(last_err)}"
+
+            write_erp_log(log_msg)
 
             if last_err and self.on_error:
                 self.on_error(last_err, job)

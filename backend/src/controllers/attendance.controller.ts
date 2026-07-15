@@ -14,6 +14,77 @@ import {
 } from "../services/attendanceEvents";
 import { pushHeadcountEvent } from "../services/headcountEvents";
 import { getCompanyErpSettings, resolveConfiguredErpUrl } from "../services/erpSettings.service";
+import fs from "fs";
+import path from "path";
+
+function writeErpLog(message: string) {
+  try {
+    const logDir = path.join(__dirname, "../../logs");
+    if (!fs.existsSync(logDir)) {
+      fs.mkdirSync(logDir, { recursive: true });
+    }
+    const logPath = path.join(logDir, "erp-sync.log");
+    const timestamp = new Date().toISOString();
+    fs.appendFileSync(logPath, `[${timestamp}] ${message}\n`);
+  } catch (err) {
+    console.error("Failed to write to ERP log file:", err);
+  }
+}
+
+function checkErpResponse(response: any): { isSuccess: boolean; status: string } {
+  if (!response) {
+    return { isSuccess: false, status: "No response" };
+  }
+
+  if (typeof response === "object") {
+    // 1. Check for status string
+    for (const key of ["status", "Status", "STATUS"]) {
+      if (key in response) {
+        const val = String(response[key]).trim();
+        if (val.toLowerCase() === "success") {
+          return { isSuccess: true, status: "SUCCESS" };
+        } else {
+          return { isSuccess: false, status: val };
+        }
+      }
+    }
+
+    // 2. Check for boolean success fields
+    for (const key of ["success", "isSuccess", "ok", "Ok", "Success", "is_success"]) {
+      if (key in response) {
+        const val = response[key];
+        if (typeof val === "boolean") {
+          if (val) {
+            return { isSuccess: true, status: "SUCCESS" };
+          } else {
+            const msg = response.message || response.msg || response.error || "False";
+            return { isSuccess: false, status: String(msg) };
+          }
+        } else if (typeof val === "string") {
+          if (["true", "1", "success", "ok"].includes(val.toLowerCase())) {
+            return { isSuccess: true, status: "SUCCESS" };
+          } else {
+            const msg = response.message || response.msg || response.error || val;
+            return { isSuccess: false, status: String(msg) };
+          }
+        }
+      }
+    }
+
+    return { isSuccess: true, status: "SUCCESS" };
+  }
+
+  if (typeof response === "string") {
+    const val = response.trim();
+    if (val.toLowerCase() === "success") {
+      return { isSuccess: true, status: "SUCCESS" };
+    }
+    return { isSuccess: false, status: val };
+  }
+
+  return { isSuccess: true, status: "SUCCESS" };
+}
+
 
 const cameraHasAttendanceField = Prisma.dmmf.datamodel.models
   .find((m) => m.name === "Camera")
@@ -397,8 +468,15 @@ export async function dataSync(req: Request, res: Response) {
     let failedCount = 0;
     let skippedCount = 0;
 
-    const settings = await getCompanyErpSettings(companyId, "attendance");
-    const erpUrl = resolveConfiguredErpUrl(settings) || "http://172.20.60.101:7001/api/v2/Attendance/manual-attendance";
+    const settingsOne = await getCompanyErpSettings(companyId, "attendance");
+    const settingsTwo = await getCompanyErpSettings(companyId, "attendance_two");
+
+    const erpUrlOne = (settingsOne.isActive !== false)
+      ? (resolveConfiguredErpUrl(settingsOne) || "http://172.20.60.101:7001/api/v2/Attendance/manual-attendance")
+      : null;
+    const erpUrlTwo = (settingsTwo.isActive !== false)
+      ? resolveConfiguredErpUrl(settingsTwo)
+      : null;
 
     for (const row of attendanceRows) {
       const empId = row.employee?.empId;
@@ -407,30 +485,94 @@ export async function dataSync(req: Request, res: Response) {
         continue;
       }
 
-      try {
-        const payload = {
-          attendanceDate: toDDMMYYYY(row.timestamp),
-          empId,
-          inTime: toBDTimeHHMMSS(row.timestamp),
-          inLocation: "Reception_Camera",
-        };
+      let pushedAny = false;
+      let failedAny = false;
 
-        await axios.post(
-          erpUrl,
-          payload,
-          {
-            headers: {
-              Accept: "application/json",
-              "Content-Type": "application/json",
-              "x-api-version": "2.0",
-            },
-            timeout: 10000,
+      // 1) First ERP Url
+      if (erpUrlOne) {
+        try {
+          const payload = {
+            attendanceDate: toDDMMYYYY(row.timestamp),
+            empId,
+            inTime: toBDTimeHHMMSS(row.timestamp),
+            inLocation: "Reception_Camera",
+          };
+
+          const res = await axios.post(
+            erpUrlOne,
+            payload,
+            {
+              headers: {
+                Accept: "application/json",
+                "Content-Type": "application/json",
+                "x-api-version": "2.0",
+              },
+              timeout: 10000,
+            }
+          );
+          const check = checkErpResponse(res.data);
+          const respStr = JSON.stringify(res.data);
+          const payloadLog = `empId=${empId} | attendanceDate=${toDDMMYYYY(row.timestamp)} | inTime=${toBDTimeHHMMSS(row.timestamp)} | inLocation=Reception_Camera`;
+          if (check.isSuccess) {
+            pushedAny = true;
+            writeErpLog(`SYNC MANUAL | type=attendance | ${payloadLog} | STATUS=SUCCESS | erp_response=${respStr}`);
+          } else {
+            failedAny = true;
+            writeErpLog(`SYNC MANUAL | type=attendance | ${payloadLog} | STATUS=FAILED | erp_status=${check.status} | erp_response=${respStr}`);
           }
-        );
+        } catch (err: any) {
+          failedAny = true;
+          const payloadLog = `empId=${empId} | attendanceDate=${toDDMMYYYY(row.timestamp)} | inTime=${toBDTimeHHMMSS(row.timestamp)} | inLocation=Reception_Camera`;
+          writeErpLog(`SYNC MANUAL | type=attendance | ${payloadLog} | STATUS=FAILED | error=${err?.message || String(err)}`);
+        }
+      }
 
+      // 2) Second ERP Url
+      if (erpUrlTwo) {
+        const formattedDate = row.timestamp.toLocaleDateString("en-CA", { timeZone: "Asia/Dhaka" });
+        const payloadLog = `employee_id=${empId} | attendance_date=${formattedDate} | time=${toBDTimeHHMMSS(row.timestamp)} | status=Present | source=Reception_Camera`;
+        try {
+          const payload = {
+            employee_id: empId,
+            attendance_date: formattedDate,
+            time: toBDTimeHHMMSS(row.timestamp),
+            status: "Present",
+            source: "Reception_Camera",
+          };
+
+          const res = await axios.post(
+            erpUrlTwo,
+            payload,
+            {
+              headers: {
+                Accept: "application/json",
+                "Content-Type": "application/json",
+              },
+              timeout: 10000,
+            }
+          );
+          const check = checkErpResponse(res.data);
+          const respStr = JSON.stringify(res.data);
+          if (check.isSuccess) {
+            pushedAny = true;
+            writeErpLog(`SYNC MANUAL | type=attendance_two | ${payloadLog} | STATUS=SUCCESS | erp_response=${respStr}`);
+          } else {
+            failedAny = true;
+            writeErpLog(`SYNC MANUAL | type=attendance_two | ${payloadLog} | STATUS=FAILED | erp_status=${check.status} | erp_response=${respStr}`);
+          }
+        } catch (err: any) {
+          failedAny = true;
+          writeErpLog(`SYNC MANUAL | type=attendance_two | ${payloadLog} | STATUS=FAILED | error=${err?.message || String(err)}`);
+        }
+      }
+
+
+      if (pushedAny && !failedAny) {
         pushedCount += 1;
-      } catch {
+      } else if (failedAny) {
         failedCount += 1;
+      } else {
+        skippedCount += 1;
       }
     }
 

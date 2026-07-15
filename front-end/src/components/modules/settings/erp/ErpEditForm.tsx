@@ -9,6 +9,8 @@ type ErpEditFormProps = {
   setEditErpPrefix: React.Dispatch<React.SetStateAction<string>>;
   editErpAttendanceEndpoint: string;
   setEditErpAttendanceEndpoint: React.Dispatch<React.SetStateAction<string>>;
+  editErpIsActive: boolean;
+  setEditErpIsActive: React.Dispatch<React.SetStateAction<boolean>>;
   saving: boolean;
   submitEdit: (event: React.FormEvent<HTMLFormElement>) => void;
   closeEditModal: () => void;
@@ -23,6 +25,8 @@ export function ErpEditForm({
   setEditErpPrefix,
   editErpAttendanceEndpoint,
   setEditErpAttendanceEndpoint,
+  editErpIsActive,
+  setEditErpIsActive,
   saving,
   submitEdit,
   closeEditModal,
@@ -109,6 +113,19 @@ export function ErpEditForm({
           }
           disabled={saving}
         />
+      </div>
+
+      <div className="flex items-center gap-2 py-1">
+        <label className="flex items-center gap-2 text-sm font-medium text-zinc-700 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={editErpIsActive}
+            onChange={(event) => setEditErpIsActive(event.target.checked)}
+            disabled={saving}
+            className="h-4 w-4 rounded border-zinc-300 text-zinc-950 focus:ring-zinc-950"
+          />
+          Active (Enable this ERP configuration)
+        </label>
       </div>
 
       <div className="flex justify-end gap-2 pt-2">

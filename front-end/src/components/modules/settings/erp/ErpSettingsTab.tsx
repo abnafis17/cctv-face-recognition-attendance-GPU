@@ -26,6 +26,8 @@ export default function ErpSettingsTab() {
     setAddErpPrefix,
     addErpAttendanceEndpoint,
     setAddErpAttendanceEndpoint,
+    addErpIsActive,
+    setAddErpIsActive,
     editOpen,
     editErpUrlType,
     setEditErpUrlType,
@@ -35,6 +37,8 @@ export default function ErpSettingsTab() {
     setEditErpPrefix,
     editErpAttendanceEndpoint,
     setEditErpAttendanceEndpoint,
+    editErpIsActive,
+    setEditErpIsActive,
     showDeleteModal,
     setShowDeleteModal,
     setSelectedForDelete,
@@ -62,6 +66,8 @@ export default function ErpSettingsTab() {
         setAddErpPrefix={setAddErpPrefix}
         addErpAttendanceEndpoint={addErpAttendanceEndpoint}
         setAddErpAttendanceEndpoint={setAddErpAttendanceEndpoint}
+        addErpIsActive={addErpIsActive}
+        setAddErpIsActive={setAddErpIsActive}
         loading={loading}
         saving={saving}
         submitAdd={submitAdd}
@@ -132,6 +138,8 @@ export default function ErpSettingsTab() {
           setEditErpPrefix={setEditErpPrefix}
           editErpAttendanceEndpoint={editErpAttendanceEndpoint}
           setEditErpAttendanceEndpoint={setEditErpAttendanceEndpoint}
+          editErpIsActive={editErpIsActive}
+          setEditErpIsActive={setEditErpIsActive}
           saving={saving}
           submitEdit={submitEdit}
           closeEditModal={closeEditModal}
