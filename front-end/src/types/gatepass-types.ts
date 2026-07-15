@@ -40,6 +40,8 @@ export type GatepassRecord = {
   returnTime?: number | null;
   rawOutTime?: string;
   rawInTime?: string | null;
+  approvedByName?: string | null;
+  approvedByDesignation?: string | null;
 };
 
 export type GatepassApiRecord = {
@@ -64,6 +66,8 @@ export type GatepassApiRecord = {
   returnTime?: number | null;
   rawOutTime?: string;
   rawInTime?: string | null;
+  approvedByName?: string | null;
+  approvedByDesignation?: string | null;
 };
 
 export type EmployeeDirectoryRow = Employee & {

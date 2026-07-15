@@ -524,6 +524,8 @@ model GatepassTable {
 
   externalGatepassId String?
   erpStatus          String?   @default("pending")
+  approvedByName        String?
+  approvedByDesignation String?
 
   @@index([companyId, outTime])
   @@index([companyId, status, outTime])

@@ -20,6 +20,8 @@ export type GatepassSubmitSyncResult = {
   payload: Record<string, unknown>;
   errorMessage: string | null;
   gatePassId?: string | null;
+  approvedByName?: string | null;
+  approvedByDesignation?: string | null;
 };
 
 type ErpGatepassPayloadRow = {
@@ -180,18 +182,26 @@ export async function submitGatepassToErp(
     if (response.status >= 200 && response.status < 300) {
       const ackAt = new Date();
       let gatePassId: string | null = null;
+      let approvedByName: string | null = null;
+      let approvedByDesignation: string | null = null;
       const respData = response.data;
       if (respData && Array.isArray(respData.data)) {
         const matching = respData.data.find(
           (item: any) => String(item.empId) === String(input.empId)
         );
-        if (matching && matching.gatePassId) {
-          gatePassId = String(matching.gatePassId);
-        } else if (respData.data[0] && respData.data[0].gatePassId) {
-          gatePassId = String(respData.data[0].gatePassId);
+        if (matching) {
+          if (matching.gatePassId) gatePassId = String(matching.gatePassId);
+          if (matching.name) approvedByName = String(matching.name);
+          if (matching.designation) approvedByDesignation = String(matching.designation);
+        } else if (respData.data[0]) {
+          if (respData.data[0].gatePassId) gatePassId = String(respData.data[0].gatePassId);
+          if (respData.data[0].name) approvedByName = String(respData.data[0].name);
+          if (respData.data[0].designation) approvedByDesignation = String(respData.data[0].designation);
         }
-      } else if (respData && respData.gatePassId) {
-        gatePassId = String(respData.gatePassId);
+      } else if (respData) {
+        if (respData.gatePassId) gatePassId = String(respData.gatePassId);
+        if (respData.name) approvedByName = String(respData.name);
+        if (respData.designation) approvedByDesignation = String(respData.designation);
       }
 
       return {
@@ -200,6 +210,8 @@ export async function submitGatepassToErp(
         ackAt,
         errorMessage: null,
         gatePassId,
+        approvedByName,
+        approvedByDesignation,
         payload: {
           ok: true,
           url,

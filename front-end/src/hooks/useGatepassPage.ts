@@ -263,6 +263,8 @@ function mapGatepassApiRecordToViewRecord(
     returnTime: row.returnTime ? Number(row.returnTime) : null,
     rawOutTime: row.rawOutTime || row.outTime,
     rawInTime: row.rawInTime || row.inTime,
+    approvedByName: row.approvedByName,
+    approvedByDesignation: row.approvedByDesignation,
   };
 }
 
