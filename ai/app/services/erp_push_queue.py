@@ -76,13 +76,14 @@ class ERPPushQueue:
                 except Exception:
                     resp_str = str(response_data)
 
-                if self.erp.url_type == "attendance_two":
+                if self.erp.url_type in ("attendance_two", "attendance_two_log"):
                     try:
                         parts = job.attendance_date.split("/")
                         formatted_date = f"{parts[2]}-{parts[1]}-{parts[0]}"
                     except Exception:
                         formatted_date = job.attendance_date
-                    payload_log = f"employee_id={job.emp_id} | attendance_date={formatted_date} | time={job.in_time} | status=Present | source={job.in_location}"
+                    status_val = "present" if self.erp.url_type == "attendance_two_log" else "Present"
+                    payload_log = f"employee_id={job.emp_id} | attendance_date={formatted_date} | time={job.in_time} | status={status_val} | source={job.in_location}"
                 else:
                     payload_log = f"empId={job.emp_id} | attendanceDate={job.attendance_date} | inTime={job.in_time} | inLocation={job.in_location}"
 
@@ -92,13 +93,14 @@ class ERPPushQueue:
                 else:
                     log_msg = f"PUSH REALTIME | type={self.erp.url_type} | {payload_log} | STATUS=SUCCESS | erp_response={resp_str}"
             else:
-                if self.erp.url_type == "attendance_two":
+                if self.erp.url_type in ("attendance_two", "attendance_two_log"):
                     try:
                         parts = job.attendance_date.split("/")
                         formatted_date = f"{parts[2]}-{parts[1]}-{parts[0]}"
                     except Exception:
                         formatted_date = job.attendance_date
-                    payload_log = f"employee_id={job.emp_id} | attendance_date={formatted_date} | time={job.in_time} | status=Present | source={job.in_location}"
+                    status_val = "present" if self.erp.url_type == "attendance_two_log" else "Present"
+                    payload_log = f"employee_id={job.emp_id} | attendance_date={formatted_date} | time={job.in_time} | status={status_val} | source={job.in_location}"
                 else:
                     payload_log = f"empId={job.emp_id} | attendanceDate={job.attendance_date} | inTime={job.in_time} | inLocation={job.in_location}"
 

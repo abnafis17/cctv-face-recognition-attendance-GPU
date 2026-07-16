@@ -470,12 +470,16 @@ export async function dataSync(req: Request, res: Response) {
 
     const settingsOne = await getCompanyErpSettings(companyId, "attendance");
     const settingsTwo = await getCompanyErpSettings(companyId, "attendance_two");
+    const settingsTwoLog = await getCompanyErpSettings(companyId, "attendance_two_log");
 
     const erpUrlOne = (settingsOne.isActive !== false)
       ? (resolveConfiguredErpUrl(settingsOne) || "http://172.20.60.101:7001/api/v2/Attendance/manual-attendance")
       : null;
     const erpUrlTwo = (settingsTwo.isActive !== false)
       ? resolveConfiguredErpUrl(settingsTwo)
+      : null;
+    const erpUrlTwoLog = (settingsTwoLog.isActive !== false)
+      ? resolveConfiguredErpUrl(settingsTwoLog)
       : null;
 
     for (const row of attendanceRows) {
@@ -563,6 +567,45 @@ export async function dataSync(req: Request, res: Response) {
         } catch (err: any) {
           failedAny = true;
           writeErpLog(`SYNC MANUAL | type=attendance_two | ${payloadLog} | STATUS=FAILED | error=${err?.message || String(err)}`);
+        }
+      }
+
+      // 3) Third ERP Url (attendance_two_log)
+      if (erpUrlTwoLog) {
+        const formattedDate = row.timestamp.toLocaleDateString("en-CA", { timeZone: "Asia/Dhaka" });
+        const payloadLog = `employee_id=${empId} | attendance_date=${formattedDate} | time=${toBDTimeHHMMSS(row.timestamp)} | status=present | source=Reception_Camera`;
+        try {
+          const payload = {
+            employee_id: empId,
+            attendance_date: formattedDate,
+            time: toBDTimeHHMMSS(row.timestamp),
+            status: "present",
+            source: "Reception_Camera",
+          };
+
+          const res = await axios.post(
+            erpUrlTwoLog,
+            payload,
+            {
+              headers: {
+                Accept: "application/json",
+                "Content-Type": "application/json",
+              },
+              timeout: 10000,
+            }
+          );
+          const check = checkErpResponse(res.data);
+          const respStr = JSON.stringify(res.data);
+          if (check.isSuccess) {
+            pushedAny = true;
+            writeErpLog(`SYNC MANUAL | type=attendance_two_log | ${payloadLog} | STATUS=SUCCESS | erp_response=${respStr}`);
+          } else {
+            failedAny = true;
+            writeErpLog(`SYNC MANUAL | type=attendance_two_log | ${payloadLog} | STATUS=FAILED | erp_status=${check.status} | erp_response=${respStr}`);
+          }
+        } catch (err: any) {
+          failedAny = true;
+          writeErpLog(`SYNC MANUAL | type=attendance_two_log | ${payloadLog} | STATUS=FAILED | error=${err?.message || String(err)}`);
         }
       }
 

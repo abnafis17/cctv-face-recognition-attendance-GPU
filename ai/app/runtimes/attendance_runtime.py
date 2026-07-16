@@ -1533,6 +1533,20 @@ class AttendanceRuntime:
                     f"[ERP 2] queued ok={ok_two} emp={erp_job_two.emp_id} date={erp_job_two.attendance_date} in={erp_job_two.in_time}"
                 )
 
+            # Third ERP queue (attendance_two_log)
+            erp_queue_two_log = self._erp_queue_for_company(company_id, "attendance_two_log")
+            if erp_queue_two_log is not None:
+                erp_job_two_log = ERPPushJob(
+                    attendance_date=attendance_date,
+                    emp_id=str(job.employee_id),
+                    in_time=in_time,
+                    in_location=str(job.camera_name),
+                )
+                ok_two_log = erp_queue_two_log.enqueue(erp_job_two_log)
+                print(
+                    f"[ERP 3] queued ok={ok_two_log} emp={erp_job_two_log.emp_id} date={erp_job_two_log.attendance_date} in={erp_job_two_log.in_time}"
+                )
+
             self._relay_http(
                 cid,
                 True,
