@@ -127,6 +127,18 @@ export function getHistoryColumns(
       size: 180,
     },
     {
+      id: "returnTime",
+      header: () => (
+        <div className="w-full px-1 py-2 text-center font-bold">Approx. Return</div>
+      ),
+      cell: ({ row }) => (
+        <div className="px-1 py-2 text-center text-zinc-700 font-medium">
+          {row.original.returnTime ? `${row.original.returnTime} min` : "--"}
+        </div>
+      ),
+      size: 130,
+    },
+    {
       id: "outTime",
       header: () => (
         <div className="w-full px-1 py-2 text-center font-bold">Out Time</div>
@@ -151,25 +163,81 @@ export function getHistoryColumns(
       size: 110,
     },
     {
+      id: "duration",
+      header: () => (
+        <div className="w-full px-1 py-2 text-center font-bold">Duration</div>
+      ),
+      cell: ({ row }) => {
+        const rec = row.original;
+        if (rec.status !== "returned" || !rec.rawOutTime || !rec.rawInTime) {
+          return (
+            <div className="px-1 py-2 text-center text-zinc-400 font-medium">
+              --
+            </div>
+          );
+        }
+
+        const outDate = new Date(rec.rawOutTime);
+        const inDate = new Date(rec.rawInTime);
+        if (isNaN(outDate.getTime()) || isNaN(inDate.getTime())) {
+          return (
+            <div className="px-1 py-2 text-center text-zinc-400 font-medium">
+              --
+            </div>
+          );
+        }
+
+        const diffMs = inDate.getTime() - outDate.getTime();
+        if (diffMs <= 0) {
+          return (
+            <div className="px-1 py-2 text-center font-medium text-zinc-900">
+              0 min
+            </div>
+          );
+        }
+
+        const diffMins = Math.round(diffMs / (1000 * 60));
+        const hours = Math.floor(diffMins / 60);
+        const mins = diffMins % 60;
+
+        let displayVal = "";
+        if (hours > 0) {
+          displayVal = `${hours} hr ${mins} min`;
+        } else {
+          displayVal = `${diffMins} min`;
+        }
+
+        return (
+          <div className="px-1 py-2 text-center font-medium text-zinc-900">
+            {displayVal}
+          </div>
+        );
+      },
+      size: 110,
+    },
+    {
       id: "status",
       header: () => (
         <div className="w-full px-1 py-2 text-center font-bold">Status</div>
       ),
-      cell: ({ row }) => (
-        <div className="flex justify-center px-1 py-2">
-          <Badge
-            variant="outline"
-            className={cn(
-              "rounded-full",
-              row.original.status === "returned"
-                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                : "border-rose-200 bg-rose-50 text-rose-700",
-            )}
-          >
-            {statusLabel(row.original.status)}
-          </Badge>
-        </div>
-      ),
+      cell: ({ row }) => {
+        const rec = row.original;
+        return (
+          <div className="flex justify-center px-1 py-2">
+            <Badge
+              variant="outline"
+              className={cn(
+                "rounded-full bg-white font-semibold px-2.5 py-0.5 shadow-sm",
+                rec.status === "returned"
+                  ? "border-emerald-200 text-emerald-700"
+                  : "border-rose-200 text-rose-700"
+              )}
+            >
+              {rec.status === "returned" ? "Returned" : "Out"}
+            </Badge>
+          </div>
+        );
+      },
       size: 120,
     },
     {
@@ -178,7 +246,8 @@ export function getHistoryColumns(
         <div className="w-full px-1 py-2 text-center font-bold">ERP Status</div>
       ),
       cell: ({ row }) => {
-        const erpStatus = (row.original.erpStatus || "pending").toLowerCase();
+        const rec = row.original;
+        const erpStatus = (rec.erpStatus || "pending").toLowerCase();
         let badgeClass = "border-amber-200 bg-amber-50 text-amber-700";
         if (erpStatus === "approved") {
           badgeClass = "border-emerald-200 bg-emerald-50 text-emerald-700";
@@ -189,14 +258,31 @@ export function getHistoryColumns(
         }
 
         return (
-          <div className="flex justify-center px-1 py-2">
+          <div className="flex flex-col items-center justify-center px-1 py-2 gap-0.5">
             <Badge variant="outline" className={cn("rounded-full font-semibold px-2 py-0.5", badgeClass)}>
               {erpStatus.toUpperCase()}
             </Badge>
+            {erpStatus === "pending" && (rec.approvedByName || rec.approvedByDesignation) && (
+              <div className="flex flex-col items-center text-center leading-normal mt-1">
+                <span className="text-[9px] uppercase font-bold text-zinc-400 tracking-wider whitespace-nowrap">
+                  Submitted To
+                </span>
+                {rec.approvedByName && (
+                  <span className="text-xs font-semibold text-zinc-700 mt-0.5 whitespace-nowrap">
+                    {rec.approvedByName}
+                  </span>
+                )}
+                {rec.approvedByDesignation && (
+                  <span className="text-[10px] text-zinc-500 font-medium whitespace-nowrap">
+                    {rec.approvedByDesignation}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         );
       },
-      size: 130,
+      size: 180,
     },
     {
       id: "requestedAt",

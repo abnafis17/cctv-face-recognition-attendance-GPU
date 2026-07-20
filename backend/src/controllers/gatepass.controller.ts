@@ -36,8 +36,11 @@ type GatepassJoinedRow = {
   updatedAt: Date;
   passType: string | null;
   remarks: string | null;
+  returnTime: number | null;
   externalGatepassId: string | null;
   erpStatus: string | null;
+  approvedByName: string | null;
+  approvedByDesignation: string | null;
   employeePkId: string;
   employeeEmpId: string | null;
   employeeName: string;
@@ -109,8 +112,11 @@ SELECT
   gp."updatedAt",
   gp."passType",
   gp."remarks",
+  gp."returnTime",
   gp."externalGatepassId",
   gp."erpStatus",
+  gp."approvedByName",
+  gp."approvedByDesignation",
   e."id" AS "employeePkId",
   e."emp_id" AS "employeeEmpId",
   e."name" AS "employeeName",
@@ -184,8 +190,11 @@ function serializeGatepass(row: GatepassJoinedRow) {
       : null,
     passType: row.passType,
     remarks: row.remarks,
+    returnTime: row.returnTime,
     externalGatepassId: row.externalGatepassId,
     erpStatus: row.erpStatus,
+    approvedByName: row.approvedByName,
+    approvedByDesignation: row.approvedByDesignation,
   };
 }
 
@@ -210,6 +219,7 @@ function normalizeCreateInput(req: Request): GatepassCreateInput {
     recognizedAt: req.body?.recognizedAt,
     passType: req.body?.passType,
     remarks: req.body?.remarks,
+    returnTime: req.body?.returnTime,
   });
 }
 
@@ -376,7 +386,8 @@ export async function createGatepassRecord(req: Request, res: Response) {
         "createdAt",
         "updatedAt",
         "passType",
-        "remarks"
+        "remarks",
+        "returnTime"
       ) VALUES (
         ${gatepassId},
         ${companyId},
@@ -386,14 +397,15 @@ export async function createGatepassRecord(req: Request, res: Response) {
         ${trimmedPurpose},
         ${normalizedDestination},
         ${recognizedAt},
-        ${null},
-        ${"out"},
+        null,
+        'out',
         ${camera?.id ?? null},
-        ${null},
+        null,
         ${createdAt},
         ${createdAt},
         ${payload.passType ?? null},
-        ${payload.remarks ?? null}
+        ${payload.remarks ?? null},
+        ${payload.returnTime ?? null}
       )`,
     );
 
@@ -415,6 +427,8 @@ export async function createGatepassRecord(req: Request, res: Response) {
             "externalSubmitPayload" = CAST(${JSON.stringify(erpSubmit.payload)} AS jsonb),
             "externalGatepassId" = ${erpSubmit.gatePassId ?? null},
             "erpStatus" = ${erpSubmit.acknowledged ? "pending" : "failed"},
+            "approvedByName" = ${erpSubmit.approvedByName ?? null},
+            "approvedByDesignation" = ${erpSubmit.approvedByDesignation ?? null},
             "updatedAt" = ${new Date()}
           WHERE "id" = ${gatepassId}
             AND "companyId" = ${companyId}
@@ -606,6 +620,27 @@ export async function updateGatepassErpStatus(req: Request, res: Response) {
     const normalizedRefId = String(refid).trim();
     const normalizedStatus = String(status).trim().toLowerCase();
 
+    // Support flexible naming patterns for approvedByName and approvedByDesignation
+    const finalApprovedByName =
+      req.body.approvedByName ??
+      req.body.approved_by_name ??
+      req.body.approverName ??
+      req.body.approver_name ??
+      req.body.submittedToName ??
+      req.body.submitted_to_name ??
+      req.body.name ??
+      null;
+
+    const finalApprovedByDesignation =
+      req.body.approvedByDesignation ??
+      req.body.approved_by_designation ??
+      req.body.approverDesignation ??
+      req.body.approver_designation ??
+      req.body.submittedToDesignation ??
+      req.body.submitted_to_designation ??
+      req.body.designation ??
+      null;
+
     const record = await prisma.gatepassTable.findFirst({
       where: { externalGatepassId: normalizedRefId },
     });
@@ -618,6 +653,8 @@ export async function updateGatepassErpStatus(req: Request, res: Response) {
       where: { id: record.id },
       data: {
         erpStatus: normalizedStatus,
+        approvedByName: finalApprovedByName ? String(finalApprovedByName).trim() : null,
+        approvedByDesignation: finalApprovedByDesignation ? String(finalApprovedByDesignation).trim() : null,
         updatedAt: new Date(),
       },
     });

@@ -25,11 +25,13 @@ type Props = {
   leaveTypeId: string;
   destination: string;
   purpose: string;
+  approxReturnTime: string;
   formErrors: FormErrors;
   submitting: boolean;
   setLeaveTypeId: React.Dispatch<React.SetStateAction<string>>;
   setDestination: React.Dispatch<React.SetStateAction<string>>;
   setPurpose: React.Dispatch<React.SetStateAction<string>>;
+  setApproxReturnTime: React.Dispatch<React.SetStateAction<string>>;
   setFormErrors: React.Dispatch<React.SetStateAction<FormErrors>>;
   onSubmit: () => Promise<void>;
   onCancel: () => Promise<void>;
@@ -43,11 +45,13 @@ export default function GatepassSubmissionSection({
   leaveTypeId,
   destination,
   purpose,
+  approxReturnTime,
   formErrors,
   submitting,
   setLeaveTypeId,
   setDestination,
   setPurpose,
+  setApproxReturnTime,
   setFormErrors,
   onSubmit,
   onCancel,
@@ -108,12 +112,12 @@ export default function GatepassSubmissionSection({
         </div>
       </div>
 
-      {/* Form Fields in a Single Row */}
+      {/* Form Fields */}
       <div className="p-3.5">
-        <div className="flex flex-col lg:flex-row lg:items-end gap-3 w-full flex-wrap xl:flex-nowrap">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
           
           {/* Leave Type Selector */}
-          <div className="w-full lg:w-[150px] shrink-0 space-y-1">
+          <div className="w-full space-y-1">
             <label className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block">
               Leave Type <span className="text-rose-500">*</span>
             </label>
@@ -123,6 +127,7 @@ export default function GatepassSubmissionSection({
               onValueChange={(value) => {
                 setLeaveTypeId(value);
                 setPurpose("");
+                setApproxReturnTime("");
                 setFormErrors((current) => ({
                   ...current,
                   leaveType: undefined,
@@ -152,7 +157,7 @@ export default function GatepassSubmissionSection({
 
           {/* Purpose Selector (Conditional for short leave) */}
           {leaveTypeId === "short leave" && (
-            <div className="w-full lg:w-[150px] shrink-0 space-y-1 animate-in fade-in-50 slide-in-from-top-1 duration-200">
+            <div className="w-full space-y-1 animate-in fade-in-50 slide-in-from-top-1 duration-200">
               <label className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block">
                 Purpose <span className="text-rose-500">*</span>
               </label>
@@ -205,7 +210,7 @@ export default function GatepassSubmissionSection({
           )}
 
           {/* Destination (Optional) */}
-          <div className="flex-1 min-w-[150px] space-y-1">
+          <div className="w-full space-y-1">
             <label className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block">
               Destination <span className="text-zinc-300 font-normal">(Optional)</span>
             </label>
@@ -217,6 +222,38 @@ export default function GatepassSubmissionSection({
               className="h-9 rounded-md border-zinc-200 bg-white text-[11px] text-zinc-855 shadow-none hover:border-zinc-300 focus-visible:ring-1 focus-visible:ring-zinc-400 focus-visible:ring-offset-0 transition-colors px-3"
             />
           </div>
+
+          {/* Approx. Return Time */}
+          {leaveTypeId === "short leave" && (
+            <div className="w-full space-y-1">
+              <label className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block">
+                Approx. Return <span className="text-rose-500">*</span> <span className="text-zinc-300 font-normal">(minute)</span>
+              </label>
+              <Input
+                type="number"
+                min="1"
+                value={approxReturnTime}
+                disabled={submitting || !hasQueue}
+                onChange={(event) => {
+                  setApproxReturnTime(event.target.value);
+                  setFormErrors((current) => ({
+                    ...current,
+                    approxReturnTime: undefined,
+                  }));
+                }}
+                placeholder="e.g. 30, 60"
+                className={cn(
+                  "h-9 rounded-md bg-white text-[11px] text-zinc-855 shadow-none hover:border-zinc-300 focus-visible:ring-1 focus-visible:ring-zinc-400 focus-visible:ring-offset-0 transition-colors px-3",
+                  formErrors.approxReturnTime ? "border-rose-300 ring-rose-500" : "border-zinc-200"
+                )}
+              />
+              {formErrors.approxReturnTime && (
+                <span className="text-[9px] font-semibold text-rose-655 block mt-0.5">
+                  {formErrors.approxReturnTime}
+                </span>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>

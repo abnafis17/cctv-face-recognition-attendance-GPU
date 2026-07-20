@@ -60,6 +60,16 @@ export type ErpEmployee = {
   department: string; // e.g. "Business Innovation"
   section: string; // e.g. "WEB-Team"
   line: string; // e.g. "Production Line A"
+  deptId?: string;
+  mainDeptId?: string;
+  deptName?: string;
+  sectionId?: string;
+  sectionName?: string;
+  designationId?: string;
+  designation?: string;
+  unitId?: string;
+  lineId?: string;
+  picUrl?: string;
 };
 
 type ErpEmployeeApiItem = any;
@@ -123,6 +133,17 @@ function mapEmployee(item: ErpEmployeeApiItem): ErpEmployee | null {
   const departmentStr = normalizeHierarchyValue(departmentName);
   const sectionStr = normalizeHierarchyValue(sectionName);
   const lineStr = normalizeHierarchyValue(lineName);
+  
+  const deptIdStr = item?.deptId ?? item?.DeptId ?? item?.departmentId ?? item?.DepartmentId;
+  const mainDeptIdStr = item?.mainDeptId ?? item?.MainDeptId;
+  const deptNameStr = item?.deptName ?? item?.DeptName ?? item?.departmentName ?? item?.DepartmentName ?? item?.department ?? item?.Department;
+  const sectionIdStr = item?.sectionId ?? item?.SectionId;
+  const sectionNameStr = item?.sectionName ?? item?.SectionName ?? item?.section ?? item?.Section;
+  const designationIdStr = item?.designationId ?? item?.DesignationId;
+  const designationStr = item?.designation ?? item?.Designation;
+  const unitIdStr = item?.unitId ?? item?.UnitId;
+  const lineIdStr = item?.lineId ?? item?.LineId;
+  const picUrlStr = item?.picUrl ?? item?.PicUrl ?? item?.empPicUrl ?? item?.EmpPicUrl ?? item?.pic_url ?? item?.picURL;
 
   if (!idStr || !nameStr) return null;
 
@@ -133,6 +154,16 @@ function mapEmployee(item: ErpEmployeeApiItem): ErpEmployee | null {
     department: departmentStr,
     section: sectionStr,
     line: lineStr,
+    deptId: deptIdStr ? String(deptIdStr).trim() : undefined,
+    mainDeptId: mainDeptIdStr ? String(mainDeptIdStr).trim() : undefined,
+    deptName: deptNameStr ? String(deptNameStr).trim() : undefined,
+    sectionId: sectionIdStr ? String(sectionIdStr).trim() : undefined,
+    sectionName: sectionNameStr ? String(sectionNameStr).trim() : undefined,
+    designationId: designationIdStr ? String(designationIdStr).trim() : undefined,
+    designation: designationStr ? String(designationStr).trim() : undefined,
+    unitId: unitIdStr ? String(unitIdStr).trim() : undefined,
+    lineId: lineIdStr ? String(lineIdStr).trim() : undefined,
+    picUrl: picUrlStr ? String(picUrlStr).trim() : undefined,
   };
 }
 
@@ -142,11 +173,13 @@ export function useErpEmployees(options?: {
   autoFetch?: boolean; // fetch once on mount even if search is empty
   pageSize?: number;
   pageNumber?: number;
+  filterByOrg?: boolean;
 }) {
   const debounceMs = options?.debounceMs ?? 350;
   const autoFetch = options?.autoFetch ?? true;
-  const pageSize = options?.pageSize ?? 0;
-  const pageNumber = options?.pageNumber ?? 0;
+  const pageSize = options?.pageSize ?? 20;
+  const pageNumber = options?.pageNumber ?? 1;
+  const filterByOrg = options?.filterByOrg ?? false;
 
   const [search, setSearch] = useState(options?.initialSearch ?? "");
   const [employees, setEmployees] = useState<ErpEmployee[]>([]);
@@ -219,12 +252,15 @@ export function useErpEmployees(options?: {
         return;
       }
 
-      const payload = {
+      const payload: any = {
         pageNumber,
         pageSize,
         search: q || "",
-        organizationId: readOrganizationId(),
       };
+
+      if (filterByOrg) {
+        payload.organizationId = readOrganizationId();
+      }
 
       const res = await erpAxios.post(
         resolvedUrl,
@@ -274,7 +310,7 @@ export function useErpEmployees(options?: {
     } finally {
       setLoading(false);
     }
-  }, [readOrganizationId, pageNumber, pageSize]);
+  }, [readOrganizationId, pageNumber, pageSize, filterByOrg]);
 
   // Debounced search effect
   useEffect(() => {

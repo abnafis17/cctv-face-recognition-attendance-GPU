@@ -14,6 +14,7 @@ import {
   Row,
 } from "@tanstack/react-table";
 import { ArrowUp, ArrowDown } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 import {
   Table,
@@ -39,6 +40,8 @@ interface TanstackDataTableProps<TData>
   cellHeight?: number | string;
   headerCellClassName?: string;
   emptyState?: React.ReactNode;
+  getRowClassName?: (row: Row<TData>) => string;
+  getCellClassName?: (columnId: string, row: Row<TData>) => string;
 }
 
 export function TanstackDataTable<TData>({
@@ -55,6 +58,8 @@ export function TanstackDataTable<TData>({
   headerCellClassName,
   freezeClassName,
   emptyState,
+  getRowClassName,
+  getCellClassName,
 }: TanstackDataTableProps<TData>) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
@@ -196,18 +201,22 @@ export function TanstackDataTable<TData>({
                 <TableRow
                   key={row.id}
                   data-state={row.getIsSelected() && "selected"}
-                  className={isBorderless ? "border-none" : ""}
+                  className={cn(
+                    isBorderless ? "border-none" : "",
+                    getRowClassName ? getRowClassName(row) : ""
+                  )}
                 >
                   {row.getAllCells().map((cell) => (
                     <TableCell
                       key={cell.id}
-                      className={
+                      className={cn(
                         isBorderless
                           ? "border-none"
                           : isBorderBottomOnly
                           ? "border-b border-gray-100"
-                          : "border border-gray-100"
-                      }
+                          : "border border-gray-100",
+                        getCellClassName ? getCellClassName(cell.column.id, row) : ""
+                      )}
                       style={{
                         height: cellHeight || "auto", // ✅ apply height to each cell
                         verticalAlign: "middle", // optional: ensure content is vertically centered

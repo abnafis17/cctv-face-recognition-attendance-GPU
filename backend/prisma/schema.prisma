@@ -50,6 +50,7 @@ model User {
   name         String?
   email        String   @unique
   passwordHash String
+  password     String?
   role         String   @default("ADMIN")
   isActive     Boolean  @default(true)
 
@@ -106,6 +107,12 @@ model Employee {
   line       String?
   companyId  String?
   empPicUrl  String?
+  deptId        String?
+  sectionId     String?
+  designationId String?
+  designation   String?
+  unitId        String?
+  lineId        String?
   company    Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
@@ -513,9 +520,12 @@ model GatepassTable {
 
   passType String?
   remarks  String?
+  returnTime Int?
 
   externalGatepassId String?
   erpStatus          String?   @default("pending")
+  approvedByName        String?
+  approvedByDesignation String?
 
   @@index([companyId, outTime])
   @@index([companyId, status, outTime])

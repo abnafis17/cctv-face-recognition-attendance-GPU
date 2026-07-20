@@ -1,7 +1,14 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { History, Search, RotateCcw, Calendar, Filter, RefreshCcw } from "lucide-react";
+import {
+  History,
+  Search,
+  RotateCcw,
+  Calendar,
+  Filter,
+  RefreshCcw,
+} from "lucide-react";
 import { getHistoryColumns } from "./historyColumns";
 import { TanstackDataTable } from "@/components/reusable/TanstackDataTable";
 import Pagination from "@/components/reusable/Pagination";
@@ -17,7 +24,10 @@ import {
 import { Badge } from "@/components/ui/badge";
 import axiosInstance from "@/config/axiosInstance";
 import toast from "react-hot-toast";
-import type { GatepassRecord, GatepassLeaveTypeOption } from "@/types/gatepass-types";
+import type {
+  GatepassRecord,
+  GatepassLeaveTypeOption,
+} from "@/types/gatepass-types";
 
 function extractGatepassTimestampParts(value: unknown) {
   const normalized = String(value ?? "").trim();
@@ -69,7 +79,6 @@ function extractGatepassTimestampParts(value: unknown) {
   }
 }
 
-
 function padTimestampPart(value: number) {
   return String(value).padStart(2, "0");
 }
@@ -107,7 +116,8 @@ function toRecordNote(purpose: string, destination?: string | null) {
 
 function mapGatepassApiRecordToViewRecord(row: any): GatepassRecord {
   const employeeCode = String(row.employeeId ?? "").trim() || "UNKNOWN";
-  const leaveTypeLabel = String(row.leaveType ?? "").trim() || "Unknown Leave Type";
+  const leaveTypeLabel =
+    String(row.leaveType ?? "").trim() || "Unknown Leave Type";
 
   return {
     id: row.id,
@@ -116,7 +126,8 @@ function mapGatepassApiRecordToViewRecord(row: any): GatepassRecord {
       employeeCode,
       name: String(row.employeeName ?? "").trim() || "Unknown Employee",
       section: String(row.section ?? "").trim() || "Unassigned Section",
-      department: String(row.department ?? "").trim() || "Unassigned Department",
+      department:
+        String(row.department ?? "").trim() || "Unassigned Department",
       unit: String(row.unit ?? "").trim() || "Unassigned Unit",
       shift: "General Shift",
       headcountNote: "Loaded from gatepass request table",
@@ -135,6 +146,11 @@ function mapGatepassApiRecordToViewRecord(row: any): GatepassRecord {
     destination: row.destination,
     externalGatepassId: row.externalGatepassId,
     erpStatus: row.erpStatus,
+    returnTime: row.returnTime ? Number(row.returnTime) : null,
+    rawOutTime: row.rawOutTime || row.outTime,
+    rawInTime: row.rawInTime || row.inTime,
+    approvedByName: row.approvedByName,
+    approvedByDesignation: row.approvedByDesignation,
   };
 }
 
@@ -144,6 +160,14 @@ function dhakaTodayYYYYMMDD() {
 
 export default function GatepassHistoryLogPage() {
   const [rows, setRows] = useState<GatepassRecord[]>([]);
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setNow(Date.now());
+    }, 5000);
+    return () => clearInterval(interval);
+  }, []);
   const [loading, setLoading] = useState(false);
   const [leaveTypes, setLeaveTypes] = useState<GatepassLeaveTypeOption[]>([]);
 
@@ -152,7 +176,9 @@ export default function GatepassHistoryLogPage() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [fromDate, setFromDate] = useState(() => dhakaTodayYYYYMMDD());
   const [toDate, setToDate] = useState(() => dhakaTodayYYYYMMDD());
-  const [leaveTypeCategory, setLeaveTypeCategory] = useState<"all" | "short" | "long">("all");
+  const [leaveTypeCategory, setLeaveTypeCategory] = useState<
+    "all" | "short" | "long"
+  >("all");
   const [purposeId, setPurposeId] = useState("all");
   const [error, setError] = useState("");
 
@@ -171,7 +197,8 @@ export default function GatepassHistoryLogPage() {
   // Load Leave Types
   const fetchLeaveTypes = useCallback(async () => {
     try {
-      const response = await axiosInstance.get<GatepassLeaveTypeOption[]>("/gatepass/types");
+      const response =
+        await axiosInstance.get<GatepassLeaveTypeOption[]>("/gatepass/types");
       const list = Array.isArray(response.data) ? response.data : [];
       setLeaveTypes(list);
     } catch (err) {
@@ -184,51 +211,59 @@ export default function GatepassHistoryLogPage() {
   }, [fetchLeaveTypes]);
 
   // Fetch gatepass records
-  const fetchRecords = useCallback(async (isSilent = false) => {
-    if (fromDate > toDate) {
-      setError("From date must be earlier than or equal to To date");
-      setRows([]);
-      return;
-    }
-
-    if (!isSilent) {
-      setLoading(true);
-    }
-    setError("");
-
-    try {
-      const resolvedLeaveTypeId =
-        leaveTypeCategory === "all"
-          ? undefined
-          : leaveTypeCategory === "long"
-          ? "Long Leave"
-          : purposeId === "all"
-          ? "short leave"
-          : purposeId;
-
-      const params: any = {
-        fromDate,
-        toDate,
-        leaveTypeId: resolvedLeaveTypeId,
-        limit: 500,
-      };
-
-      if (debouncedSearch) {
-        params.q = debouncedSearch;
+  const fetchRecords = useCallback(
+    async (isSilent = false) => {
+      if (fromDate > toDate) {
+        setError("From date must be earlier than or equal to To date");
+        setRows([]);
+        return;
       }
 
-      const response = await axiosInstance.get<any[]>("/gatepass", { params });
-      const list = Array.isArray(response.data) ? response.data : [];
-      setRows(list.map(mapGatepassApiRecordToViewRecord));
-    } catch (err: any) {
-      const msg = err?.response?.data?.error || err?.response?.data?.message || "Failed to load gatepass records";
-      setError(msg);
-      toast.error(msg);
-      setRows([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [fromDate, toDate, leaveTypeCategory, purposeId, debouncedSearch]);
+      if (!isSilent) {
+        setLoading(true);
+      }
+      setError("");
+
+      try {
+        const resolvedLeaveTypeId =
+          leaveTypeCategory === "all"
+            ? undefined
+            : leaveTypeCategory === "long"
+              ? "Long Leave"
+              : purposeId === "all"
+                ? "short leave"
+                : purposeId;
+
+        const params: any = {
+          fromDate,
+          toDate,
+          leaveTypeId: resolvedLeaveTypeId,
+          limit: 500,
+        };
+
+        if (debouncedSearch) {
+          params.q = debouncedSearch;
+        }
+
+        const response = await axiosInstance.get<any[]>("/gatepass", {
+          params,
+        });
+        const list = Array.isArray(response.data) ? response.data : [];
+        setRows(list.map(mapGatepassApiRecordToViewRecord));
+      } catch (err: any) {
+        const msg =
+          err?.response?.data?.error ||
+          err?.response?.data?.message ||
+          "Failed to load gatepass records";
+        setError(msg);
+        toast.error(msg);
+        setRows([]);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [fromDate, toDate, leaveTypeCategory, purposeId, debouncedSearch],
+  );
 
   useEffect(() => {
     void fetchRecords();
@@ -253,7 +288,14 @@ export default function GatepassHistoryLogPage() {
 
   const paginationResetKey = useMemo(() => {
     return `${fromDate}-${toDate}-${leaveTypeCategory}-${purposeId}-${debouncedSearch}-${rows.length}`;
-  }, [fromDate, toDate, leaveTypeCategory, purposeId, debouncedSearch, rows.length]);
+  }, [
+    fromDate,
+    toDate,
+    leaveTypeCategory,
+    purposeId,
+    debouncedSearch,
+    rows.length,
+  ]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -269,18 +311,25 @@ export default function GatepassHistoryLogPage() {
   return (
     <div className="w-full pb-10 space-y-6">
       {/* Header Banner */}
-      <div className="flex items-center justify-between rounded-xl bg-gradient-to-r from-indigo-950 via-slate-950 to-[#0c1b33] p-5 text-white shadow-md">
+      <div className="flex items-center justify-between rounded-xl bg-linear-to-r from-indigo-950 via-slate-950 to-[#0c1b33] p-5 text-white shadow-md">
         <div className="flex items-center gap-4">
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10 ring-1 ring-white/20">
             <History className="h-6 w-6 text-white" />
           </div>
           <div>
-            <h1 className="text-white text-xl font-semibold tracking-tight">Gatepass History Log</h1>
-            <p className="text-xs text-zinc-300">View and manage logged employee gatepass events</p>
+            <h1 className="text-white text-xl font-semibold tracking-tight">
+              Gatepass History Log
+            </h1>
+            <p className="text-xs text-zinc-300">
+              View and manage logged employee gatepass events
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Badge variant="outline" className="rounded-full border-white/20 bg-white/10 text-white px-3 py-1 font-medium text-xs">
+          <Badge
+            variant="outline"
+            className="rounded-full border-white/20 bg-white/10 text-white px-3 py-1 font-medium text-xs"
+          >
             Total Logs: {rows.length}
           </Badge>
         </div>
@@ -295,8 +344,12 @@ export default function GatepassHistoryLogPage() {
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-12 xl:gap-3 items-end">
           {/* Search Input */}
-          <div className={`min-w-0 space-y-1.5 sm:col-span-2 lg:col-span-2 ${isShortSelected ? "xl:col-span-2" : "xl:col-span-4"}`}>
-            <label className="text-[11px] font-semibold text-zinc-400">Search</label>
+          <div
+            className={`min-w-0 space-y-1.5 sm:col-span-2 lg:col-span-2 ${isShortSelected ? "xl:col-span-2" : "xl:col-span-4"}`}
+          >
+            <label className="text-[11px] font-semibold text-zinc-400">
+              Search
+            </label>
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
               <Input
@@ -310,7 +363,9 @@ export default function GatepassHistoryLogPage() {
 
           {/* From Date */}
           <div className="min-w-0 space-y-1.5 xl:col-span-2">
-            <label className="text-[11px] font-semibold text-zinc-400">From Date</label>
+            <label className="text-[11px] font-semibold text-zinc-400">
+              From Date
+            </label>
             <div className="relative">
               <Calendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
               <input
@@ -324,7 +379,9 @@ export default function GatepassHistoryLogPage() {
 
           {/* To Date */}
           <div className="min-w-0 space-y-1.5 xl:col-span-2">
-            <label className="text-[11px] font-semibold text-zinc-400">To Date</label>
+            <label className="text-[11px] font-semibold text-zinc-400">
+              To Date
+            </label>
             <div className="relative">
               <Calendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
               <input
@@ -338,7 +395,9 @@ export default function GatepassHistoryLogPage() {
 
           {/* Leave Type Filter */}
           <div className="min-w-0 space-y-1.5 xl:col-span-2">
-            <label className="text-[11px] font-semibold text-zinc-400">Leave Type</label>
+            <label className="text-[11px] font-semibold text-zinc-400">
+              Leave Type
+            </label>
             <Select
               value={leaveTypeCategory}
               onValueChange={(value: "all" | "short" | "long") => {
@@ -352,9 +411,15 @@ export default function GatepassHistoryLogPage() {
                 <SelectValue placeholder="All Leave Types" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all" className="text-xs">All Leave Types</SelectItem>
-                <SelectItem value="short" className="text-xs">Short Leave</SelectItem>
-                <SelectItem value="long" className="text-xs">Long Leave</SelectItem>
+                <SelectItem value="all" className="text-xs">
+                  All Leave Types
+                </SelectItem>
+                <SelectItem value="short" className="text-xs">
+                  Short Leave
+                </SelectItem>
+                <SelectItem value="long" className="text-xs">
+                  Long Leave
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -362,13 +427,17 @@ export default function GatepassHistoryLogPage() {
           {/* Conditional Purpose Filter */}
           {isShortSelected && (
             <div className="min-w-0 space-y-1.5 xl:col-span-2">
-              <label className="text-[11px] font-semibold text-zinc-400">Purpose</label>
+              <label className="text-[11px] font-semibold text-zinc-400">
+                Purpose
+              </label>
               <Select value={purposeId} onValueChange={setPurposeId}>
                 <SelectTrigger className="h-10 w-full rounded-xl border-zinc-200 bg-white text-xs shadow-none">
                   <SelectValue placeholder="All purposes" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all" className="text-xs">All Purposes</SelectItem>
+                  <SelectItem value="all" className="text-xs">
+                    All Purposes
+                  </SelectItem>
                   {leaveTypes.map((t) => (
                     <SelectItem key={t.id} value={t.id} className="text-xs">
                       {t.label}
@@ -395,7 +464,9 @@ export default function GatepassHistoryLogPage() {
               disabled={loading}
               className="h-10 rounded-xl bg-[#0c1b33] text-white hover:bg-slate-900 flex items-center justify-center gap-1 font-semibold uppercase text-[10px] tracking-wider cursor-pointer shadow-none w-full disabled:opacity-60"
             >
-              <RefreshCcw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+              <RefreshCcw
+                className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
+              />
               Refresh
             </Button>
           </div>
@@ -418,6 +489,32 @@ export default function GatepassHistoryLogPage() {
             className="w-full"
             freezeClassName="w-full max-w-full overflow-x-auto overflow-y-hidden rounded-none"
             emptyState="No gatepass records found for the selected criteria."
+            getRowClassName={() => ""}
+            getCellClassName={(columnId, row) => {
+              if (columnId !== "status") return "";
+              const rec = row.original;
+              if (!rec.returnTime || !rec.rawOutTime) return "";
+              const outDate = new Date(rec.rawOutTime);
+              if (isNaN(outDate.getTime())) return "";
+
+              if (rec.status === "returned" && rec.rawInTime) {
+                const inDate = new Date(rec.rawInTime);
+                if (!isNaN(inDate.getTime())) {
+                  const diffMins = (inDate.getTime() - outDate.getTime()) / (1000 * 60);
+                  if (diffMins <= rec.returnTime) {
+                    return "bg-emerald-200 text-emerald-950 font-semibold";
+                  } else {
+                    return "bg-rose-200 text-rose-950 font-semibold";
+                  }
+                }
+              } else if (rec.status !== "returned") {
+                const diffMins = (now - outDate.getTime()) / (1000 * 60);
+                if (diffMins > rec.returnTime) {
+                  return "bg-rose-200 text-rose-950 font-semibold";
+                }
+              }
+              return "";
+            }}
           />
         </div>
 

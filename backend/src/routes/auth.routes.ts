@@ -1,6 +1,7 @@
 // src/routes/auth.routes.ts
 import { Router, Request, Response } from "express";
 import { ZodError } from "zod";
+import axios from "axios";
 import { prisma } from "../prisma";
 import { verifyAccessToken } from "../utils/jwt";
 
@@ -86,18 +87,42 @@ authRouter.get("/roles", async (req: Request, res: Response) => {
 
 authRouter.get("/companies", async (req: Request, res: Response) => {
   try {
-    const companies = await prisma.company.findMany({
-      select: { companyName: true },
-      orderBy: { companyName: "asc" },
-    });
+    const response = await axios.post(
+      "http://172.20.60.101:7001/api/v2/Organization/GetAllHrOrginationRecord",
+      "",
+      {
+        headers: {
+          accept: "*/*",
+        },
+        timeout: 5000,
+      }
+    );
 
-    const list = companies.map((c) => c.companyName).filter(Boolean);
+    const erpData = response.data;
+    if (erpData && Array.isArray(erpData.data)) {
+      const list = erpData.data
+        .map((c: any) => ({
+          id: c.id,
+          name: c.name,
+        }))
+        .filter((c: any) => c.id && c.name);
+
+      return res.status(200).json({
+        ok: true,
+        results: list,
+      });
+    }
+
     return res.status(200).json({
       ok: true,
-      results: list,
+      results: [],
     });
   } catch (e) {
-    return sendError(res, e, "Failed to fetch companies", 500);
+    console.error("Failed to fetch ERP companies:", e);
+    return res.status(200).json({
+      ok: true,
+      results: [],
+    });
   }
 });
 

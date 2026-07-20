@@ -20,6 +20,13 @@ type Props = {
     section?: string | null;
     department?: string | null;
     line?: string | null;
+    deptId?: string | null;
+    sectionId?: string | null;
+    designationId?: string | null;
+    designation?: string | null;
+    unitId?: string | null;
+    lineId?: string | null;
+    empPicUrl?: string | null;
   }) => void;
 };
 
@@ -42,11 +49,57 @@ const EmployeeEditForm: React.FC<Props> = ({
   onClose,
   onSave,
 }) => {
+  const targetSearch = selectedUser?.empId || "";
   const {
     employees: erpEmployees,
     loading: erpLoading,
     error: erpError,
-  } = useErpEmployees({ debounceMs: 350, initialSearch: "", autoFetch: true });
+  } = useErpEmployees({ debounceMs: 350, initialSearch: targetSearch, autoFetch: true });
+
+  // When ERP search completes, if a matching employee is found, populate the fields
+  React.useEffect(() => {
+    if (erpLoading || !selectedUser?.empId) return;
+    const matched = erpEmployees.find((e) => e.employeeId === selectedUser.empId);
+    if (matched) {
+      setSelectedUser((prev) => {
+        if (!prev) return prev;
+
+        // Only update if there are differences to avoid infinite loops
+        if (
+          prev.name === matched.employeeName &&
+          prev.unit === matched.unit &&
+          prev.department === matched.department &&
+          prev.section === matched.section &&
+          prev.line === matched.line &&
+          prev.deptId === matched.deptId &&
+          prev.sectionId === matched.sectionId &&
+          prev.designationId === matched.designationId &&
+          prev.designation === matched.designation &&
+          prev.unitId === matched.unitId &&
+          prev.lineId === matched.lineId &&
+          prev.empPicUrl === matched.picUrl
+        ) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          name: matched.employeeName,
+          unit: matched.unit,
+          department: matched.department,
+          section: matched.section,
+          line: matched.line,
+          deptId: matched.deptId ?? null,
+          sectionId: matched.sectionId ?? null,
+          designationId: matched.designationId ?? null,
+          designation: matched.designation ?? null,
+          unitId: matched.unitId ?? null,
+          lineId: matched.lineId ?? null,
+          empPicUrl: matched.picUrl ?? null,
+        };
+      });
+    }
+  }, [erpEmployees, erpLoading, selectedUser?.empId, setSelectedUser]);
 
   const hierarchy = useMemo(
     () =>
@@ -258,6 +311,13 @@ const EmployeeEditForm: React.FC<Props> = ({
               section: toHierarchyWriteValue(selectedUser?.section),
               department: toHierarchyWriteValue(selectedUser?.department),
               line: toHierarchyWriteValue(selectedUser?.line),
+              deptId: toHierarchyWriteValue(selectedUser?.deptId),
+              sectionId: toHierarchyWriteValue(selectedUser?.sectionId),
+              designationId: toHierarchyWriteValue(selectedUser?.designationId),
+              designation: toHierarchyWriteValue(selectedUser?.designation),
+              unitId: toHierarchyWriteValue(selectedUser?.unitId),
+              lineId: toHierarchyWriteValue(selectedUser?.lineId),
+              empPicUrl: toHierarchyWriteValue(selectedUser?.empPicUrl),
             })
           }
         >

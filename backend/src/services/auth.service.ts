@@ -20,6 +20,7 @@ export async function registerUser(input: {
   email: string;
   password: string;
   companyName: string;
+  organization_id?: string;
   role?: string;
 }) {
   const existing = await prisma.user.findUnique({
@@ -35,14 +36,47 @@ export async function registerUser(input: {
   const passwordHash = await bcrypt.hash(input.password, 12);
 
   const companyName = input.companyName.trim();
-  const existingCompany = await prisma.company.findFirst({
-    where: { companyName: { equals: companyName, mode: "insensitive" } },
-  });
-  const company =
-    existingCompany ??
-    (await prisma.company.create({
-      data: { companyName },
-    }));
+  const organization_id = input.organization_id?.trim() || null;
+
+  let company;
+  if (organization_id) {
+    let existingCompany = await prisma.company.findFirst({
+      where: { organization_id },
+    });
+    if (!existingCompany) {
+      existingCompany = await prisma.company.findFirst({
+        where: { companyName: { equals: companyName, mode: "insensitive" } },
+      });
+      if (existingCompany) {
+        existingCompany = await prisma.company.update({
+          where: { id: existingCompany.id },
+          data: { organization_id },
+        });
+      }
+    } else if (existingCompany.companyName !== companyName) {
+      existingCompany = await prisma.company.update({
+        where: { id: existingCompany.id },
+        data: { companyName },
+      });
+    }
+
+    if (existingCompany) {
+      company = existingCompany;
+    } else {
+      company = await prisma.company.create({
+        data: { companyName, organization_id },
+      });
+    }
+  } else {
+    const existingCompany = await prisma.company.findFirst({
+      where: { companyName: { equals: companyName, mode: "insensitive" } },
+    });
+    company =
+      existingCompany ??
+      (await prisma.company.create({
+        data: { companyName },
+      }));
+  }
 
   const laptopCamId = `laptop-${company.id}`;
   await prisma.camera.upsert({
@@ -67,6 +101,7 @@ export async function registerUser(input: {
       name: input.name ?? null,
       email: input.email,
       passwordHash,
+      password: input.password,
       companyId: company.id,
       role: input.role ?? "ADMIN",
     },
@@ -83,6 +118,8 @@ export async function registerUser(input: {
   const safeUser = {
     ...user,
     companyName: company.companyName,
+    organizationId: company.organization_id ?? null,
+    oragnizationId: company.organization_id ?? null,
   };
 
   if (!safeUser.companyId) {

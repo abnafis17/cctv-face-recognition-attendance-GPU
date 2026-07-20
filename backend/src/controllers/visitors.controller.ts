@@ -89,6 +89,18 @@ function mapErpEmployee(item: any) {
     item?.company ??
     item?.Company;
 
+  const picUrl =
+    item?.picUrl ??
+    item?.PicUrl ??
+    item?.photo ??
+    item?.Photo ??
+    item?.photoUrl ??
+    item?.PhotoUrl ??
+    item?.picture ??
+    item?.Picture ??
+    item?.image ??
+    item?.Image;
+
   if (employeeId == null || employeeName == null) return null;
 
   return {
@@ -99,6 +111,7 @@ function mapErpEmployee(item: any) {
     contactNumber: String(mobile ?? "").trim(),
     emailAddress: String(email ?? "").trim(),
     companyName: String(companyName ?? "").trim(),
+    picUrl: picUrl ? String(picUrl).trim() : "",
   };
 }
 
@@ -287,12 +300,10 @@ export async function lookupVisitor(req: Request, res: Response) {
         });
       }
 
-      const orgId = String(company.organization_id ?? "").trim();
       const payload = {
         pageNumber: 1,
         pageSize: 10,
         search: phone,
-        organizationId: orgId,
       };
 
       try {
@@ -329,6 +340,7 @@ export async function lookupVisitor(req: Request, res: Response) {
               department: emp.department || "",
               visitorType: "Official",
               hostEmployeeId: emp.employeeId,
+              visitorPhoto: emp.picUrl || "",
             },
           });
         }

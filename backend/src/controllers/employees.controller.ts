@@ -216,6 +216,14 @@ export async function updateEmployee(req: Request, res: Response) {
       req.body?.department ?? req.body?.department_name ?? undefined;
     const lineRaw = req.body?.line ?? req.body?.line_name ?? undefined;
 
+    const deptIdRaw = req.body?.deptId ?? undefined;
+    const sectionIdRaw = req.body?.sectionId ?? undefined;
+    const designationIdRaw = req.body?.designationId ?? undefined;
+    const designationRaw = req.body?.designation ?? undefined;
+    const unitIdRaw = req.body?.unitId ?? undefined;
+    const lineIdRaw = req.body?.lineId ?? undefined;
+    const picUrlRaw = req.body?.empPicUrl ?? req.body?.picUrl ?? undefined;
+
     const data: {
       name?: string;
       empId?: string | null;
@@ -223,6 +231,13 @@ export async function updateEmployee(req: Request, res: Response) {
       section?: string | null;
       department?: string | null;
       line?: string | null;
+      deptId?: string | null;
+      sectionId?: string | null;
+      designationId?: string | null;
+      designation?: string | null;
+      unitId?: string | null;
+      lineId?: string | null;
+      empPicUrl?: string | null;
     } = {};
 
     if (nameRaw !== undefined) {
@@ -251,6 +266,34 @@ export async function updateEmployee(req: Request, res: Response) {
 
     if (lineRaw !== undefined) {
       data.line = normalizeHierarchyWrite(lineRaw);
+    }
+
+    if (deptIdRaw !== undefined) {
+      data.deptId = normalizeHierarchyWrite(deptIdRaw);
+    }
+
+    if (sectionIdRaw !== undefined) {
+      data.sectionId = normalizeHierarchyWrite(sectionIdRaw);
+    }
+
+    if (designationIdRaw !== undefined) {
+      data.designationId = normalizeHierarchyWrite(designationIdRaw);
+    }
+
+    if (designationRaw !== undefined) {
+      data.designation = normalizeHierarchyWrite(designationRaw);
+    }
+
+    if (unitIdRaw !== undefined) {
+      data.unitId = normalizeHierarchyWrite(unitIdRaw);
+    }
+
+    if (lineIdRaw !== undefined) {
+      data.lineId = normalizeHierarchyWrite(lineIdRaw);
+    }
+
+    if (picUrlRaw !== undefined) {
+      data.empPicUrl = normalizeHierarchyWrite(picUrlRaw);
     }
 
     if (Object.keys(data).length === 0) {

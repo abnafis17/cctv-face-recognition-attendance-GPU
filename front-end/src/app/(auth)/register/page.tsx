@@ -33,6 +33,7 @@ const schema = z.object({
     .trim()
     .min(2, "Company name must be at least 2 characters")
     .max(120, "Company name must be at most 120 characters"),
+  organization_id: z.string().trim().optional(),
   email: z.string().email("Enter a valid email"),
   password: z.string().min(8, "Password must be at least 8 characters").max(72),
   role: z.string().trim().optional(),
@@ -57,11 +58,11 @@ export default function RegisterPage() {
   const [showRolesDropdown, setShowRolesDropdown] = useState(false);
   const [rolesList, setRolesList] = useState<string[]>(["ADMIN", "GENERAL_USER", "OPERATOR"]);
   const [showCompaniesDropdown, setShowCompaniesDropdown] = useState(false);
-  const [companiesList, setCompaniesList] = useState<string[]>([]);
+  const [companiesList, setCompaniesList] = useState<{ id: string; name: string }[]>([]);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { name: "", companyName: "", email: "", password: "", role: "ADMIN" },
+    defaultValues: { name: "", companyName: "", organization_id: "", email: "", password: "", role: "ADMIN" },
     mode: "onSubmit",
   });
 
@@ -279,6 +280,18 @@ export default function RegisterPage() {
                         className="w-full bg-transparent outline-none text-xs font-semibold text-zinc-800 placeholder:text-zinc-400"
                         autoComplete="off"
                         {...companyNameRegister}
+                        onChange={(e) => {
+                          companyNameRegister.onChange(e);
+                          const value = e.target.value;
+                          const matched = companiesList.find(
+                            (c) => c.name.toLowerCase() === value.trim().toLowerCase()
+                          );
+                          if (matched) {
+                            form.setValue("organization_id", matched.id);
+                          } else {
+                            form.setValue("organization_id", "");
+                          }
+                        }}
                       />
                       <button
                         type="button"
@@ -291,18 +304,25 @@ export default function RegisterPage() {
 
                     {showCompaniesDropdown && companiesList.length > 0 && (
                       <div className="absolute left-0 right-0 mt-1 bg-white/95 backdrop-blur-md border border-zinc-200/80 rounded-md shadow-lg max-h-40 overflow-y-auto z-50 py-1">
-                        {companiesList.map((c) => (
-                          <button
-                            key={c}
-                            type="button"
-                            onMouseDown={() => {
-                              form.setValue("companyName", c);
-                            }}
-                            className="w-full text-left px-4 py-2 text-xs font-semibold text-zinc-700 hover:bg-violet-50 hover:text-violet-700 transition-colors cursor-pointer"
-                          >
-                            {c}
-                          </button>
-                        ))}
+                        {companiesList
+                          .filter((c) =>
+                            c.name
+                              .toLowerCase()
+                              .includes((form.watch("companyName") || "").toLowerCase())
+                          )
+                          .map((c) => (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onMouseDown={() => {
+                                form.setValue("companyName", c.name, { shouldValidate: true });
+                                form.setValue("organization_id", c.id);
+                              }}
+                              className="w-full text-left px-4 py-2 text-xs font-semibold text-zinc-700 hover:bg-violet-50 hover:text-violet-700 transition-colors cursor-pointer"
+                            >
+                              {c.name}
+                            </button>
+                          ))}
                       </div>
                     )}
                   </div>

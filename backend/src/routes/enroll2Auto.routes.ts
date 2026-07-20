@@ -42,20 +42,41 @@ function normalizeOptionalHierarchy(value: unknown): string | null {
 r.post("/session/start", async (req, res) => {
   try {
     const companyId = String((req as any).companyId ?? "");
-    const { employeeId, name, cameraId, reEnroll, unit, department, section, line } =
-      req.body || {};
+    const {
+      employeeId,
+      name,
+      cameraId,
+      reEnroll,
+      unit,
+      department,
+      section,
+      line,
+      deptId,
+      sectionId,
+      designationId,
+      designation,
+      unitId,
+      lineId,
+      empPicUrl,
+      picUrl,
+    } = req.body || {};
     const isReEnroll = toBoolean(reEnroll);
 
     const identifier = String(employeeId ?? "").trim();
     const employeeName = String(name ?? "").trim();
+    const targetPicUrl = empPicUrl || picUrl;
     const body = req.body || {};
     const hasUnit = Object.prototype.hasOwnProperty.call(body, "unit");
-    const hasDepartment = Object.prototype.hasOwnProperty.call(
-      body,
-      "department",
-    );
+    const hasDepartment = Object.prototype.hasOwnProperty.call(body, "department");
     const hasSection = Object.prototype.hasOwnProperty.call(body, "section");
     const hasLine = Object.prototype.hasOwnProperty.call(body, "line");
+    const hasDeptId = Object.prototype.hasOwnProperty.call(body, "deptId");
+    const hasSectionId = Object.prototype.hasOwnProperty.call(body, "sectionId");
+    const hasDesignationId = Object.prototype.hasOwnProperty.call(body, "designationId");
+    const hasDesignation = Object.prototype.hasOwnProperty.call(body, "designation");
+    const hasUnitId = Object.prototype.hasOwnProperty.call(body, "unitId");
+    const hasLineId = Object.prototype.hasOwnProperty.call(body, "lineId");
+    const hasPicUrl = Object.prototype.hasOwnProperty.call(body, "empPicUrl") || Object.prototype.hasOwnProperty.call(body, "picUrl");
 
     let employee = null as Awaited<ReturnType<typeof findEmployeeByAnyId>> | null;
     if (identifier) {
@@ -66,6 +87,13 @@ r.post("/session/start", async (req, res) => {
         department?: string | null;
         section?: string | null;
         line?: string | null;
+        deptId?: string | null;
+        sectionId?: string | null;
+        designationId?: string | null;
+        designation?: string | null;
+        unitId?: string | null;
+        lineId?: string | null;
+        empPicUrl?: string | null;
       } = {};
 
       if (hasUnit) hierarchyData.unit = normalizeOptionalHierarchy(unit);
@@ -73,6 +101,14 @@ r.post("/session/start", async (req, res) => {
         hierarchyData.department = normalizeOptionalHierarchy(department);
       if (hasSection) hierarchyData.section = normalizeOptionalHierarchy(section);
       if (hasLine) hierarchyData.line = normalizeOptionalHierarchy(line);
+      
+      if (hasDeptId) hierarchyData.deptId = normalizeOptionalHierarchy(deptId);
+      if (hasSectionId) hierarchyData.sectionId = normalizeOptionalHierarchy(sectionId);
+      if (hasDesignationId) hierarchyData.designationId = normalizeOptionalHierarchy(designationId);
+      if (hasDesignation) hierarchyData.designation = normalizeOptionalHierarchy(designation);
+      if (hasUnitId) hierarchyData.unitId = normalizeOptionalHierarchy(unitId);
+      if (hasLineId) hierarchyData.lineId = normalizeOptionalHierarchy(lineId);
+      if (hasPicUrl) hierarchyData.empPicUrl = normalizeOptionalHierarchy(targetPicUrl);
 
       if (employee) {
         employee = await prisma.employee.update({
@@ -113,6 +149,14 @@ r.post("/session/start", async (req, res) => {
               : {}),
             ...(hasSection ? { section: normalizeOptionalHierarchy(section) } : {}),
             ...(hasLine ? { line: normalizeOptionalHierarchy(line) } : {}),
+            
+            ...(hasDeptId ? { deptId: normalizeOptionalHierarchy(deptId) } : {}),
+            ...(hasSectionId ? { sectionId: normalizeOptionalHierarchy(sectionId) } : {}),
+            ...(hasDesignationId ? { designationId: normalizeOptionalHierarchy(designationId) } : {}),
+            ...(hasDesignation ? { designation: normalizeOptionalHierarchy(designation) } : {}),
+            ...(hasUnitId ? { unitId: normalizeOptionalHierarchy(unitId) } : {}),
+            ...(hasLineId ? { lineId: normalizeOptionalHierarchy(lineId) } : {}),
+            ...(hasPicUrl ? { empPicUrl: normalizeOptionalHierarchy(targetPicUrl) } : {}),
           },
         });
       }

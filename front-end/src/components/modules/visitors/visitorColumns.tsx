@@ -158,6 +158,23 @@ export function getVisitorColumns(
       size: 120,
     },
     {
+      id: "companyAddress",
+      header: () => (
+        <div className="w-full px-1 py-2 text-left font-semibold text-zinc-700">Company/Address</div>
+      ),
+      cell: ({ row }) => {
+        const isCheckingOut = checkingOutIds.has(row.original.id);
+        return renderCell(
+          isCheckingOut,
+          <div className="px-1 py-2 text-zinc-600 font-normal truncate">
+            {row.original.companyAddress || "--"}
+          </div>,
+          "w-28 h-4"
+        );
+      },
+      size: 140,
+    },
+    {
       id: "department",
       header: () => (
         <div className="w-full px-1 py-2 text-left font-semibold text-zinc-700">Department</div>

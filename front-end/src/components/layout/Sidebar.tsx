@@ -17,6 +17,7 @@ import {
   Menu,
   X,
   Settings,
+  Link2,
   ChevronDown,
   ChevronUp,
   Database,
@@ -52,11 +53,14 @@ function getIconForRoute(route: string | null | undefined, label: string) {
   if (route === "/visitors/employee-wise-visit") return LucideIcons.BarChart3;
   if (route === "/visitors/visitor-wise-visit") return LucideIcons.PieChart;
   if (route === "/master-data") return LucideIcons.Database;
+  if (route === "/settings/urls") return LucideIcons.Link2;
+  if (route === "/settings/users") return LucideIcons.Users;
   if (route === "/settings") return LucideIcons.Settings;
   if (route === "/permissions") return LucideIcons.ShieldCheck;
 
   if (label === "Gate Pass") return LucideIcons.IdCard;
   if (label === "Visitor") return LucideIcons.UserSearch;
+  if (label === "Settings" || label === "Setting") return LucideIcons.Settings;
 
   return LucideIcons.ShieldAlert;
 }
@@ -101,7 +105,14 @@ const staticNav: NavItem[] = [
     ],
   },
   { href: "/master-data", label: "Master Data", icon: Database },
-  { href: "/settings", label: "Settings", icon: Settings },
+  {
+    label: "Settings",
+    icon: Settings,
+    subItems: [
+      { href: "/settings/urls", label: "URLs", icon: Link2 },
+      { href: "/settings/users", label: "Users", icon: Users },
+    ],
+  },
   { href: "/permissions", label: "Permissions", icon: ShieldCheck },
 ];
 
@@ -149,6 +160,9 @@ function SidebarContent({
     if (pathname.startsWith("/gatepass")) {
       setOpenMenus((prev) => ({ ...prev, "Gate Pass": true }));
     }
+    if (pathname.startsWith("/settings")) {
+      setOpenMenus((prev) => ({ ...prev, Settings: true }));
+    }
   }, [pathname]);
 
   useEffect(() => {
@@ -186,11 +200,16 @@ function SidebarContent({
             label: m.name,
             icon: getIconForRoute(m.route, m.name),
             subItems: m.subModules && m.subModules.length > 0
-              ? m.subModules.map((sub: any) => ({
-                  href: sub.route,
-                  label: sub.name,
-                  icon: getIconForRoute(sub.route, sub.name)
-                }))
+              ? (() => {
+                  const filtered = m.subModules.filter((sub: any) => sub.route && !sub.route.startsWith("/employees/"));
+                  return filtered.length > 0
+                    ? filtered.map((sub: any) => ({
+                        href: sub.route,
+                        label: sub.name,
+                        icon: getIconForRoute(sub.route, sub.name)
+                      }))
+                    : undefined;
+                })()
               : undefined
           }));
           setDynamicNav(mapped);
@@ -221,7 +240,7 @@ function SidebarContent({
     <>
       <div
         className={cn(
-          "shrink-0 border-b border-zinc-100",
+          "shrink-0 border-b border-zinc-150 bg-[#f8fafc]",
           compact ? "p-4 flex items-center justify-center" : "px-5 py-4 flex items-center justify-between gap-3",
         )}
       >
@@ -268,7 +287,7 @@ function SidebarContent({
 
       <nav
         className={cn(
-          "flex-1 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]",
+          "flex-1 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] bg-white",
           compact ? "px-2 py-3" : "px-3 py-4",
         )}
         style={{ WebkitOverflowScrolling: "touch" }}
@@ -414,10 +433,16 @@ function SidebarContent({
 
       <div
         className={cn(
-          "shrink-0 border-t border-zinc-100",
+          "shrink-0 border-t border-zinc-150 bg-[#f8fafc]",
           compact ? "px-2 pb-3 pt-3" : "p-3",
         )}
       >
+        {!compact && identity.companyName && (
+          <div className="mb-3 px-2 text-[11px] font-bold text-zinc-500 uppercase tracking-wider truncate text-center" title={identity.companyName}>
+            {identity.companyName}
+          </div>
+        )}
+
         <button
           onClick={onLogout}
           title={compact ? "Logout" : undefined}
@@ -433,7 +458,7 @@ function SidebarContent({
         </button>
 
         {!compact && (
-          <div className="mt-3 px-1 text-center text-xs text-zinc-500">
+          <div className="mt-3 px-1 text-center text-[10px] text-zinc-400">
             (c) {new Date().getFullYear()} Pakiza Software Ltd
           </div>
         )}
@@ -544,7 +569,7 @@ export default function Sidebar() {
         <aside
           id="mobile-sidebar"
           className={cn(
-            "ui-readable absolute inset-y-0 left-0 flex w-[85vw] max-w-[330px] flex-col bg-white pt-[env(safe-area-inset-top)] text-zinc-800 shadow-2xl transition-transform duration-300 ease-out border-r border-zinc-100",
+            "ui-readable absolute inset-y-0 left-0 flex w-[85vw] max-w-[330px] flex-col bg-white pt-[env(safe-area-inset-top)] text-zinc-800 shadow-[5px_0_30px_rgba(0,0,0,0.12)] transition-transform duration-300 ease-out border-r border-zinc-150",
             mobileOpen ? "translate-x-0" : "-translate-x-full",
           )}
         >
@@ -555,14 +580,16 @@ export default function Sidebar() {
 
       {/* Togglable Desktop Sidebar */}
       <aside className={cn(
-        "ui-readable hidden h-dvh flex-col border-r border-zinc-100 bg-white text-zinc-800 md:flex transition-all duration-350 ease-in-out shrink-0 shadow-[2px_0_12px_rgba(15,23,42,0.02)]",
+        "ui-readable hidden h-dvh flex-col bg-slate-50 p-3 md:flex transition-all duration-350 ease-in-out shrink-0",
         isCollapsed ? "w-20" : "w-72"
       )}>
-        <SidebarContent 
-          compact={isCollapsed} 
-          isCollapsed={isCollapsed} 
-          onToggleCollapse={toggleCollapse} 
-        />
+        <div className="flex flex-col h-full bg-white rounded-2xl border border-zinc-200/80 shadow-[0_8px_30px_rgb(0,0,0,0.04),_0_1px_3px_rgba(0,0,0,0.02)] overflow-hidden">
+          <SidebarContent 
+            compact={isCollapsed} 
+            isCollapsed={isCollapsed} 
+            onToggleCollapse={toggleCollapse} 
+          />
+        </div>
       </aside>
     </>
   );
