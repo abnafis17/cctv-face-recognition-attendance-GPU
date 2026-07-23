@@ -2,7 +2,9 @@ import { randomUUID } from "crypto";
 import { Prisma } from "@prisma/client";
 import { Request, Response } from "express";
 import { ZodError } from "zod";
+import axios from "axios";
 import { prisma } from "../prisma";
+import { getCompanyErpSettings, resolveConfiguredErpUrl } from "../services/erpSettings.service";
 import { listCompanyGatepassTypes } from "../services/gatepassTypes.service";
 import { submitGatepassToErp } from "../services/gatepassSubmit.service";
 import { updateGatepassReturnToErp } from "../services/gatepassUpdate.service";
@@ -124,6 +126,7 @@ SELECT
   e."unit" AS "employeeUnit",
   e."line" AS "employeeLine",
   e."section" AS "employeeSection",
+  e."designation" AS "employeeDesignation",
   reqCam."name" AS "requestCameraName",
   retCam."name" AS "returnCameraName"
 FROM "GatepassTable" gp
@@ -666,6 +669,75 @@ export async function updateGatepassErpStatus(req: Request, res: Response) {
   } catch (error: unknown) {
     return res.status(500).json({
       error: "Failed to update gatepass ERP status",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+export async function getGatepassExternalDetails(req: Request, res: Response) {
+  try {
+    const companyId = getCompanyId(req);
+    if (!companyId) return res.status(400).json({ error: "Missing company id" });
+
+    const { id } = req.params;
+    if (!id) return res.status(400).json({ error: "Missing gatepass id" });
+
+    const record = await prisma.gatepassTable.findFirst({
+      where: {
+        id,
+        companyId,
+      },
+    });
+
+    if (!record) {
+      return res.status(404).json({ error: "Gatepass record not found" });
+    }
+
+    if (!record.externalGatepassId) {
+      return res.status(400).json({ error: "Gatepass has no external gatepass ID" });
+    }
+
+    const settings = await getCompanyErpSettings(companyId, "getgatepassdetails");
+    const url = resolveConfiguredErpUrl(settings);
+
+    if (!url) {
+      return res.status(400).json({
+        error: 'ERP URL not configured for "getgatepassdetails" in settings.',
+      });
+    }
+
+    console.log(`[ERP GET DETAILS] Calling ERP URL: ${url} for reqMasterId: ${record.externalGatepassId}`);
+
+    const response = await axios.post(
+      url,
+      {
+        reqMasterId: record.externalGatepassId,
+      },
+      {
+        headers: {
+          Accept: "*/*",
+          "Content-Type": "application/json",
+          "x-api-version": "2.0",
+        },
+        timeout: 10000,
+        validateStatus: () => true,
+      }
+    );
+
+    console.log(`[ERP GET DETAILS] ERP response status: ${response.status}`, response.data);
+
+    if (response.status >= 200 && response.status < 300) {
+      return res.json(response.data);
+    } else {
+      return res.status(response.status).json({
+        error: `ERP request failed with status ${response.status}`,
+        detail: response.data,
+      });
+    }
+  } catch (error: unknown) {
+    console.error(`[ERP GET DETAILS] Error occurred:`, error);
+    return res.status(500).json({
+      error: "Failed to get gatepass details from ERP",
       detail: error instanceof Error ? error.message : String(error),
     });
   }

@@ -1,6 +1,7 @@
 import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { Eye } from "lucide-react";
 
 import type { GatepassRecord, GatepassStatus } from "@/types/gatepass-types";
 
@@ -10,6 +11,7 @@ function statusLabel(status: GatepassStatus) {
 
 export function getHistoryColumns(
   historySkip: number,
+  onViewReport?: (record: GatepassRecord) => void,
 ): ColumnDef<GatepassRecord>[] {
   return [
     {
@@ -297,6 +299,24 @@ export function getHistoryColumns(
         </div>
       ),
       size: 130,
+    },
+    {
+      id: "action",
+      header: () => (
+        <div className="w-full px-1 py-2 text-center font-bold">Action</div>
+      ),
+      cell: ({ row }) => (
+        <div className="flex items-center justify-center px-1 py-2">
+          <button
+            onClick={() => onViewReport?.(row.original)}
+            className="p-1.5 rounded-lg text-zinc-500 hover:text-indigo-600 hover:bg-zinc-100 transition-all cursor-pointer"
+            title="View Gatepass Report"
+          >
+            <Eye className="w-4 h-4" />
+          </button>
+        </div>
+      ),
+      size: 80,
     },
   ];
 }

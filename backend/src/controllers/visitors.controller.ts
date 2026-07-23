@@ -403,8 +403,13 @@ export async function checkOutVisitor(req: Request, res: Response) {
       return res.status(400).json({ error: "Visitor is already checked out" });
     }
 
-    const today = new Date();
-    const timeString = today.toTimeString().split(" ")[0].substring(0, 5); // HH:MM
+    // Ensure BD time (UTC+6) is saved regardless of server environment timezone
+    const localToday = new Date();
+    const dhakaOffsetMs = 6 * 60 * 60 * 1000;
+    const dhakaTime = new Date(localToday.getTime() + dhakaOffsetMs);
+    const hours = String(dhakaTime.getUTCHours()).padStart(2, "0");
+    const minutes = String(dhakaTime.getUTCMinutes()).padStart(2, "0");
+    const timeString = `${hours}:${minutes}`; // HH:MM
 
     const updated = await prisma.visitor.update({
       where: { id },

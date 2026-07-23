@@ -18,6 +18,7 @@ export type GatepassEmployee = {
   unit: string;
   shift: string;
   headcountNote: string;
+  designation?: string | null;
 };
 
 export type GatepassRecord = {
@@ -42,6 +43,7 @@ export type GatepassRecord = {
   rawInTime?: string | null;
   approvedByName?: string | null;
   approvedByDesignation?: string | null;
+  updatedAt?: string;
 };
 
 export type GatepassApiRecord = {
@@ -68,6 +70,8 @@ export type GatepassApiRecord = {
   rawInTime?: string | null;
   approvedByName?: string | null;
   approvedByDesignation?: string | null;
+  designation?: string | null;
+  updatedAt?: string;
 };
 
 export type EmployeeDirectoryRow = Employee & {
