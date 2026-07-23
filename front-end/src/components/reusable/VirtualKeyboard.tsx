@@ -68,8 +68,10 @@ export function VirtualKeyboard({ className }: VirtualKeyboardProps) {
   const [activeInput, setActiveInput] = useState<HTMLElement | null>(null);
   const [inputLabel, setInputLabel] = useState<string>("");
   const [isLastInput, setIsLastInput] = useState(false);
+  const [isEnabled, setIsEnabled] = useState(true);
 
   const keyboardRef = useRef<HTMLDivElement>(null);
+  const previousInputRef = useRef<HTMLElement | null>(null);
 
   // Helper to extract a reader-friendly label from any focusable element
   const getFriendlyLabel = (el: HTMLElement) => {
@@ -105,13 +107,6 @@ export function VirtualKeyboard({ className }: VirtualKeyboardProps) {
 
       if (Math.abs(offset) < 2) return; // Already aligned
 
-      console.log("VirtualKeyboard scroll debug:", {
-        input: inputEl.tagName + "#" + (inputEl.id || inputEl.getAttribute("name")),
-        scrollParent: scrollParent.tagName + (scrollParent.className ? "." + scrollParent.className.split(" ")[0] : ""),
-        rectTop: rect.top,
-        offset: offset
-      });
-
       if (scrollParent === document.documentElement || scrollParent === document.body) {
         window.scrollTo({
           top: window.scrollY + offset,
@@ -125,13 +120,57 @@ export function VirtualKeyboard({ className }: VirtualKeyboardProps) {
       }
     };
 
-    // Run scrolling in stages to capture focus transitions and height spacer updates
     performScroll();
     setTimeout(performScroll, 50);
     setTimeout(performScroll, 150);
     setTimeout(performScroll, 300);
     setTimeout(performScroll, 500);
   };
+
+  // Sync internal state with localStorage settings for keyboard availability
+  const checkKeyboardSetting = () => {
+    if (typeof window !== "undefined") {
+      const setting = localStorage.getItem("virtual-keyboard-enabled") !== "false";
+      setIsEnabled(setting);
+      if (!setting) {
+        setIsOpen(false);
+      }
+    }
+  };
+
+  useEffect(() => {
+    checkKeyboardSetting();
+    window.addEventListener("virtualKeyboardSettingsChanged", checkKeyboardSetting);
+    return () => {
+      window.removeEventListener("virtualKeyboardSettingsChanged", checkKeyboardSetting);
+    };
+  }, []);
+
+  // Visual highlight for the active input element when typing
+  useEffect(() => {
+    if (previousInputRef.current) {
+      previousInputRef.current.style.outline = "";
+      previousInputRef.current.style.boxShadow = "";
+      previousInputRef.current.style.borderColor = "";
+    }
+
+    if (activeInput && isOpen && isEnabled && isTypeable(activeInput)) {
+      activeInput.style.outline = "none";
+      activeInput.style.borderColor = "#7c3aed"; // violet-500 outline
+      activeInput.style.boxShadow = "0 0 0 3px rgba(124, 58, 237, 0.25), 0 4px 10px rgba(124, 58, 237, 0.15)";
+      previousInputRef.current = activeInput;
+    } else {
+      previousInputRef.current = null;
+    }
+
+    return () => {
+      if (previousInputRef.current) {
+        previousInputRef.current.style.outline = "";
+        previousInputRef.current.style.boxShadow = "";
+        previousInputRef.current.style.borderColor = "";
+      }
+    };
+  }, [activeInput, isOpen, isEnabled]);
 
   // Determine if the current active field is the last input field on the page
   useEffect(() => {
@@ -146,6 +185,7 @@ export function VirtualKeyboard({ className }: VirtualKeyboardProps) {
 
   useEffect(() => {
     const handleFocusIn = (e: FocusEvent) => {
+      if (!isEnabled) return;
       const target = e.target as HTMLElement;
       
       const isInput = target.tagName === "INPUT";
@@ -155,10 +195,14 @@ export function VirtualKeyboard({ className }: VirtualKeyboardProps) {
       if (isInput || isTextarea || isDropdown) {
         setActiveInput(target);
         setInputLabel(getFriendlyLabel(target));
-        setIsOpen(true);
-
-        // Smoothly scroll the focused field into viewport alignment
-        scrollToInput(target);
+        
+        if (isTypeable(target)) {
+          setIsOpen(true);
+          scrollToInput(target);
+        } else {
+          // Collapse keyboard for select dropdowns, checkboxes, date/time pickers
+          setIsOpen(false);
+        }
       }
     };
 
@@ -181,7 +225,7 @@ export function VirtualKeyboard({ className }: VirtualKeyboardProps) {
       document.removeEventListener("focusin", handleFocusIn);
       document.removeEventListener("focusout", handleFocusOut);
     };
-  }, [activeInput]);
+  }, [activeInput, isEnabled]);
 
   // Insert key text at the cursor position and trigger React input changes
   const handleKeyPress = (key: string) => {
@@ -204,11 +248,6 @@ export function VirtualKeyboard({ className }: VirtualKeyboardProps) {
 
     // Dispatch the input event so standard React onChange handlers run
     activeInput.dispatchEvent(new Event("input", { bubbles: true }));
-
-    // Reset shift if we just typed a letter
-    if (isShift) {
-      setIsShift(false);
-    }
 
     // Refocus the input and maintain the cursor position
     activeInput.focus();
@@ -280,10 +319,10 @@ export function VirtualKeyboard({ className }: VirtualKeyboardProps) {
       const nextInput = focusable[index + 1];
       nextInput.focus();
       
-      // Force scroll alignment on next transition
-      scrollToInput(nextInput);
+      if (isTypeable(nextInput)) {
+        scrollToInput(nextInput);
+      }
     } else {
-      // Last field focused, blur and collapse keyboard
       activeInput.blur();
       setIsOpen(false);
     }
@@ -309,6 +348,8 @@ export function VirtualKeyboard({ className }: VirtualKeyboardProps) {
   // Check if keyboard is in a typable state
   const keyboardActive = isTypeable(activeInput);
 
+  if (!isEnabled) return null;
+
   return (
     <>
       {/* Spacer to push page content up so bottom inputs can scroll above the keyboard */}
@@ -320,7 +361,7 @@ export function VirtualKeyboard({ className }: VirtualKeyboardProps) {
       />
 
       {/* Floating Keyboard activation button if collapsed but an input is active */}
-      {!isOpen && activeInput && (
+      {!isOpen && activeInput && isTypeable(activeInput) && (
         <button
           type="button"
           onClick={() => {
@@ -521,7 +562,7 @@ export function VirtualKeyboard({ className }: VirtualKeyboardProps) {
                   "flex flex-1 items-center justify-center rounded-lg border text-xs font-bold h-10 md:h-12",
                   !keyboardActive
                     ? "border-zinc-100 bg-zinc-50/50 text-zinc-300 cursor-not-allowed dark:border-zinc-900 dark:bg-zinc-950/40 dark:text-zinc-700"
-                    : "border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-50 active:scale-95 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                    : "border-zinc-200 bg-white text-zinc-505 hover:bg-zinc-50 active:scale-95 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800"
                 )}
               >
                 Space
