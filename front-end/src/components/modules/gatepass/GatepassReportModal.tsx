@@ -346,198 +346,320 @@ export default function GatepassReportModal({
         <div className="flex justify-end border-b border-zinc-100 pb-3 mb-4">
           <button
             onClick={handlePrint}
-            className="flex items-center gap-2 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-all cursor-pointer"
+            disabled={loadingDetails}
+            className={`flex items-center gap-2 px-3.5 py-1.5 text-white rounded-lg text-xs font-semibold shadow-sm transition-all cursor-pointer ${
+              loadingDetails
+                ? "bg-zinc-300 opacity-80 cursor-not-allowed"
+                : "bg-indigo-600 hover:bg-indigo-700"
+            }`}
           >
-            <Printer className="w-3.5 h-3.5" />
-            Print Report
+            {loadingDetails ? (
+              <svg className="animate-spin -ml-1 mr-1 h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+            ) : (
+              <Printer className="w-3.5 h-3.5" />
+            )}
+            {loadingDetails ? "Loading Details..." : "Print Report"}
           </button>
         </div>
 
-        {/* Report Display Container (Matches Design Mockup) */}
-        <div
-          id="gatepass-report-print-area"
-          className="w-full bg-white p-6 border border-zinc-200 rounded-lg shadow-xs"
-        >
-          {/* Company Header */}
-          <div className="flex items-center justify-between border-b-2 border-zinc-100 pb-4 mb-5">
-            {/* Logo */}
-            <div className="w-44 flex items-center justify-start select-none">
-              <img
-                src={logoSrc}
-                alt="Pakiza Logo"
-                className="h-12 w-auto object-contain"
-              />
+        {loadingDetails ? (
+          /* Shimmer loading layout matching report mockup */
+          <div className="w-full bg-white p-6 border border-zinc-200 rounded-lg shadow-xs animate-pulse">
+            {/* Header Shimmer */}
+            <div className="flex items-center justify-between border-b-2 border-zinc-100 pb-4 mb-5">
+              <div className="w-44 h-12 bg-zinc-200 rounded" />
+              <div className="flex flex-col items-center flex-1 mr-44 gap-2">
+                <div className="h-6 w-64 bg-zinc-200 rounded" />
+                <div className="h-4 w-80 bg-zinc-200 rounded mt-1" />
+                <div className="h-5 w-40 bg-zinc-200 rounded mt-3" />
+              </div>
             </div>
 
-            {/* Title / Company Info */}
-            <div className="text-center flex-1 mr-44">
-              <h1 className="text-2xl font-bold text-zinc-900 tracking-tight leading-none">
-                {erpDetails?.organization || "Pakiza Apparels Limited"}
-              </h1>
-              <p className="text-xs text-zinc-500 mt-1.5 font-medium">
-                {erpDetails?.organizationAddress || "Khordo Nowpara, Rasulpur, Madhabdi, Narsingdi"}
-              </p>
-              <h2 className="text-base font-bold text-indigo-900 tracking-wide underline mt-3.5 uppercase decoration-indigo-300">
-                Gate Pass Report
-              </h2>
+            {/* Date Shimmer */}
+            <div className="h-4 w-28 bg-zinc-200 rounded mb-4" />
+
+            {/* Grid Table Shimmer */}
+            <div className="border border-zinc-200 rounded-lg overflow-hidden mb-4">
+              <div className="grid grid-cols-4 border-b border-zinc-200">
+                <div className="h-10 bg-zinc-50 border-r border-zinc-200" />
+                <div className="h-10 bg-white border-r border-zinc-200 px-3 py-2.5 flex items-center">
+                  <div className="h-4 bg-zinc-200 rounded w-3/4" />
+                </div>
+                <div className="h-10 bg-zinc-50 border-r border-zinc-200" />
+                <div className="h-10 bg-white px-3 py-2.5 flex items-center">
+                  <div className="h-4 bg-zinc-200 rounded w-1/2" />
+                </div>
+              </div>
+              <div className="grid grid-cols-4 border-b border-zinc-200">
+                <div className="h-10 bg-zinc-50 border-r border-zinc-200" />
+                <div className="h-10 bg-white border-r border-zinc-200 px-3 py-2.5 flex items-center">
+                  <div className="h-4 bg-zinc-200 rounded w-2/3" />
+                </div>
+                <div className="h-10 bg-zinc-50 border-r border-zinc-200" />
+                <div className="h-10 bg-white px-3 py-2.5 flex items-center">
+                  <div className="h-4 bg-zinc-200 rounded w-1/2" />
+                </div>
+              </div>
+              <div className="grid grid-cols-4 border-b border-zinc-200">
+                <div className="h-10 bg-zinc-50 border-r border-zinc-200" />
+                <div className="h-10 bg-white border-r border-zinc-200 px-3 py-2.5 flex items-center">
+                  <div className="h-4 bg-zinc-200 rounded w-24" />
+                </div>
+                <div className="h-10 bg-zinc-50 border-r border-zinc-200" />
+                <div className="h-10 bg-white px-3 py-2.5 flex items-center">
+                  <div className="h-4 bg-zinc-200 rounded w-3/4" />
+                </div>
+              </div>
+              <div className="grid grid-cols-4">
+                <div className="h-10 bg-zinc-50 border-r border-zinc-200" />
+                <div className="h-10 bg-white border-r border-zinc-200 px-3 py-2.5 flex items-center">
+                  <div className="h-4 bg-zinc-200 rounded w-20" />
+                </div>
+                <div className="h-10 bg-zinc-50 border-r border-zinc-200" />
+                <div className="h-10 bg-white px-3 py-2.5 flex items-center">
+                  <div className="h-4 bg-zinc-200 rounded w-20" />
+                </div>
+              </div>
+            </div>
+
+            {/* Remarks Shimmer */}
+            <div className="border border-zinc-200 rounded-lg overflow-hidden mb-6">
+              <div className="grid grid-cols-12">
+                <div className="col-span-2 h-12 bg-zinc-50 border-r border-zinc-200" />
+                <div className="col-span-10 h-12 bg-white px-3 py-3.5 flex items-center">
+                  <div className="h-4 bg-zinc-200 rounded w-1/2" />
+                </div>
+              </div>
+            </div>
+
+            {/* Signature workflow shimmer */}
+            <div className="border border-zinc-200 rounded-lg overflow-hidden">
+              <div className="grid grid-cols-5 border-b border-zinc-200 bg-zinc-50/50">
+                <div className="h-8 border-r border-zinc-200" />
+                <div className="h-8 border-r border-zinc-200" />
+                <div className="h-8 border-r border-zinc-200" />
+                <div className="h-8 border-r border-zinc-200" />
+                <div className="h-8" />
+              </div>
+              <div className="grid grid-cols-5 h-24 bg-white">
+                <div className="border-r border-zinc-200 p-3 flex flex-col items-center justify-center gap-1.5">
+                  <div className="h-4 bg-zinc-200 rounded w-5/6" />
+                  <div className="h-3 bg-zinc-100 rounded w-2/3" />
+                  <div className="h-3 bg-zinc-100 rounded w-1/2" />
+                </div>
+                <div className="border-r border-zinc-200 p-3 flex flex-col items-center justify-center gap-1.5">
+                  <div className="h-4 bg-zinc-200 rounded w-5/6" />
+                  <div className="h-3 bg-zinc-100 rounded w-2/3" />
+                  <div className="h-3 bg-zinc-100 rounded w-1/2" />
+                </div>
+                <div className="border-r border-zinc-200 p-3 flex flex-col items-center justify-center gap-1.5">
+                  <div className="h-4 bg-zinc-200 rounded w-5/6" />
+                  <div className="h-3 bg-zinc-100 rounded w-2/3" />
+                  <div className="h-3 bg-zinc-100 rounded w-1/2" />
+                </div>
+                <div className="border-r border-zinc-200 p-3 flex flex-col items-center justify-center gap-1.5">
+                  <div className="h-4 bg-zinc-200 rounded w-5/6" />
+                  <div className="h-3 bg-zinc-100 rounded w-2/3" />
+                  <div className="h-3 bg-zinc-100 rounded w-1/2" />
+                </div>
+                <div className="p-3 flex flex-col items-center justify-center gap-1.5">
+                  <div className="h-4 bg-zinc-200 rounded w-5/6" />
+                  <div className="h-3 bg-zinc-100 rounded w-2/3" />
+                  <div className="h-3 bg-zinc-100 rounded w-1/2" />
+                </div>
+              </div>
             </div>
           </div>
+        ) : (
+          /* Report Display Container (Matches Design Mockup) */
+          <div
+            id="gatepass-report-print-area"
+            className="w-full bg-white p-6 border border-zinc-200 rounded-lg shadow-xs"
+          >
+            {/* Company Header */}
+            <div className="flex items-center justify-between border-b-2 border-zinc-100 pb-4 mb-5">
+              {/* Logo */}
+              <div className="w-44 flex items-center justify-start select-none">
+                <img
+                  src={logoSrc}
+                  alt="Pakiza Logo"
+                  className="h-12 w-auto object-contain"
+                />
+              </div>
 
-          {/* Date */}
-          <div className="text-xs font-semibold text-zinc-700 mb-3">
-            Date:{" "}
-            <span className="font-normal text-zinc-900">{erpDetails?.date_ || record.outDate}</span>
-          </div>
+              {/* Title / Company Info */}
+              <div className="text-center flex-1 mr-44">
+                <h1 className="text-2xl font-bold text-zinc-900 tracking-tight leading-none">
+                  {erpDetails?.organization || "Pakiza Apparels Limited"}
+                </h1>
+                <p className="text-xs text-zinc-500 mt-1.5 font-medium">
+                  {erpDetails?.organizationAddress || "Khordo Nowpara, Rasulpur, Madhabdi, Narsingdi"}
+                </p>
+                <h2 className="text-base font-bold text-indigo-900 tracking-wide underline mt-3.5 uppercase decoration-indigo-300">
+                  Gate Pass Report
+                </h2>
+              </div>
+            </div>
 
-          {/* Details Grid Table */}
-          <table className="w-full border-collapse border border-zinc-400 text-xs">
-            <tbody>
-              <tr className="border-b border-zinc-400">
-                <td className="w-[18%] bg-zinc-100/80 border-r border-zinc-400 px-3 py-2.5 font-semibold text-zinc-700">
-                  Employee Id
-                </td>
-                <td className="w-[32%] border-r border-zinc-400 px-3 py-2.5 text-zinc-900 font-medium">
-                  {erpDetails?.empId || record.employee.employeeCode}
-                </td>
-                <td className="w-[18%] bg-zinc-100/80 border-r border-zinc-400 px-3 py-2.5 font-semibold text-zinc-700">
-                  Employee Name
-                </td>
-                <td className="w-[32%] px-3 py-2.5 text-zinc-900 font-medium">
-                  {erpDetails?.empName || record.employee.name}
-                </td>
-              </tr>
-              <tr className="border-b border-zinc-400">
-                <td className="bg-zinc-100/80 border-r border-zinc-400 px-3 py-2.5 font-semibold text-zinc-700">
-                  Department
-                </td>
-                <td className="border-r border-zinc-400 px-3 py-2.5 text-zinc-900 font-medium">
-                  {erpDetails?.deptName || record.employee.department}
-                </td>
-                <td className="bg-zinc-100/80 border-r border-zinc-400 px-3 py-2.5 font-semibold text-zinc-700">
-                  Designation
-                </td>
-                <td className="px-3 py-2.5 text-zinc-900 font-medium">
-                  {erpDetails?.designation || record.employee.designation || "--"}
-                </td>
-              </tr>
-              <tr className="border-b border-zinc-400">
-                <td className="bg-zinc-100/80 border-r border-zinc-400 px-3 py-2.5 font-semibold text-zinc-700">
-                  Doc Name
-                </td>
-                <td className="border-r border-zinc-400 px-3 py-2.5 text-zinc-900 font-medium">
-                  Gate-Pass
-                </td>
-                <td className="bg-zinc-100/80 border-r border-zinc-400 px-3 py-2.5 font-semibold text-zinc-700">
-                  Title
-                </td>
-                <td className="px-3 py-2.5 text-zinc-900 font-medium">
-                  {erpDetails?.passTitleName || record.purpose || record.type || "N/A"}
-                </td>
-              </tr>
-              <tr className="border-b border-zinc-400">
-                <td className="bg-zinc-100/80 border-r border-zinc-400 px-3 py-2.5 font-semibold text-zinc-700">
-                  Time Start
-                </td>
-                <td className="border-r border-zinc-400 px-3 py-2.5 text-zinc-900 font-medium">
-                  {erpDetails?.timeStart || record.outTime}
-                </td>
-                <td className="bg-zinc-100/80 border-r border-zinc-400 px-3 py-2.5 font-semibold text-zinc-700">
-                  Time End
-                </td>
-                <td className="px-3 py-2.5 text-zinc-900 font-medium">
-                  {erpDetails ? (erpDetails.timeEnd || "N/A") : (record.inTime !== "--" ? record.inTime : "N/A")}
-                </td>
-              </tr>
-            </tbody>
-          </table>
+            {/* Date */}
+            <div className="text-xs font-semibold text-zinc-700 mb-3">
+              Date:{" "}
+              <span className="font-normal text-zinc-900">{erpDetails?.date_ || record.outDate}</span>
+            </div>
 
-          {/* Remarks Section */}
-          <div className="mt-4">
+            {/* Details Grid Table */}
             <table className="w-full border-collapse border border-zinc-400 text-xs">
               <tbody>
-                <tr>
-                  <td className="w-[18%] bg-zinc-100/80 border-r border-zinc-400 px-3 py-3.5 font-semibold text-zinc-700">
-                    Remarks
+                <tr className="border-b border-zinc-400">
+                  <td className="w-[18%] bg-zinc-100/80 border-r border-zinc-400 px-3 py-2.5 font-semibold text-zinc-700">
+                    Employee Id
                   </td>
-                  <td className="w-[82%] px-3 py-3.5 text-zinc-900 font-medium">
-                    {erpDetails?.remarks || record.remarks || record.note || "N/A"}
+                  <td className="w-[32%] border-r border-zinc-400 px-3 py-2.5 text-zinc-900 font-medium">
+                    {erpDetails?.empId || record.employee.employeeCode}
+                  </td>
+                  <td className="w-[18%] bg-zinc-100/80 border-r border-zinc-400 px-3 py-2.5 font-semibold text-zinc-700">
+                    Employee Name
+                  </td>
+                  <td className="w-[32%] px-3 py-2.5 text-zinc-900 font-medium">
+                    {erpDetails?.empName || record.employee.name}
+                  </td>
+                </tr>
+                <tr className="border-b border-zinc-400">
+                  <td className="bg-zinc-100/80 border-r border-zinc-400 px-3 py-2.5 font-semibold text-zinc-700">
+                    Department
+                  </td>
+                  <td className="border-r border-zinc-400 px-3 py-2.5 text-zinc-900 font-medium">
+                    {erpDetails?.deptName || record.employee.department}
+                  </td>
+                  <td className="bg-zinc-100/80 border-r border-zinc-400 px-3 py-2.5 font-semibold text-zinc-700">
+                    Designation
+                  </td>
+                  <td className="px-3 py-2.5 text-zinc-900 font-medium">
+                    {erpDetails?.designation || record.employee.designation || "--"}
+                  </td>
+                </tr>
+                <tr className="border-b border-zinc-400">
+                  <td className="bg-zinc-100/80 border-r border-zinc-400 px-3 py-2.5 font-semibold text-zinc-700">
+                    Doc Name
+                  </td>
+                  <td className="border-r border-zinc-400 px-3 py-2.5 text-zinc-900 font-medium">
+                    Gate-Pass
+                  </td>
+                  <td className="bg-zinc-100/80 border-r border-zinc-400 px-3 py-2.5 font-semibold text-zinc-700">
+                    Title
+                  </td>
+                  <td className="px-3 py-2.5 text-zinc-900 font-medium">
+                    {erpDetails?.passTitleName || record.purpose || record.type || "N/A"}
+                  </td>
+                </tr>
+                <tr className="border-b border-zinc-400">
+                  <td className="bg-zinc-100/80 border-r border-zinc-400 px-3 py-2.5 font-semibold text-zinc-700">
+                    Time Start
+                  </td>
+                  <td className="border-r border-zinc-400 px-3 py-2.5 text-zinc-900 font-medium">
+                    {erpDetails?.timeStart || record.outTime}
+                  </td>
+                  <td className="bg-zinc-100/80 border-r border-zinc-400 px-3 py-2.5 font-semibold text-zinc-700">
+                    Time End
+                  </td>
+                  <td className="px-3 py-2.5 text-zinc-900 font-medium">
+                    {erpDetails ? (erpDetails.timeEnd || "N/A") : (record.inTime !== "--" ? record.inTime : "N/A")}
                   </td>
                 </tr>
               </tbody>
             </table>
-          </div>
 
-          {/* Approval Workflow Block */}
-          <table className="w-full border-collapse border border-zinc-400 text-[11px] mt-7">
-            <thead>
-              <tr className="border-b border-zinc-400 bg-zinc-50/50">
-                <th
-                  style={{ width: colWidth }}
-                  className="border-r border-zinc-400 px-2 py-2 font-bold text-zinc-800 text-center uppercase tracking-wider"
-                >
-                  Prepared By ::
-                </th>
-                {displaySlots.map((slot, idx) => {
-                  const isApproved = slot.status === "Approved";
-                  const isRejected = slot.status === "Rejected";
-                  const statusClass = isApproved
-                    ? "text-emerald-600 font-bold"
-                    : isRejected
-                      ? "text-rose-600 font-bold"
-                      : "text-amber-600 font-bold";
+            {/* Remarks Section */}
+            <div className="mt-4">
+              <table className="w-full border-collapse border border-zinc-400 text-xs">
+                <tbody>
+                  <tr>
+                    <td className="w-[18%] bg-zinc-100/80 border-r border-zinc-400 px-3 py-3.5 font-semibold text-zinc-700">
+                      Remarks
+                    </td>
+                    <td className="w-[82%] px-3 py-3.5 text-zinc-900 font-medium">
+                      {erpDetails?.remarks || record.remarks || record.note || "N/A"}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
 
-                  return (
-                    <th
+            {/* Approval Workflow Block */}
+            <table className="w-full border-collapse border border-zinc-400 text-[11px] mt-7">
+              <thead>
+                <tr className="border-b border-zinc-400 bg-zinc-50/50">
+                  <th
+                    style={{ width: colWidth }}
+                    className="border-r border-zinc-400 px-2 py-2 font-bold text-zinc-800 text-center uppercase tracking-wider"
+                  >
+                    Prepared By ::
+                  </th>
+                  {displaySlots.map((slot, idx) => {
+                    const isApproved = slot.status === "Approved";
+                    const isRejected = slot.status === "Rejected";
+                    const statusClass = isApproved
+                      ? "text-emerald-600 font-bold"
+                      : isRejected
+                        ? "text-rose-600 font-bold"
+                        : "text-amber-600 font-bold";
+
+                    return (
+                      <th
+                        key={idx}
+                        style={{ width: colWidth }}
+                        className={`px-2 py-2 font-bold text-zinc-800 text-center uppercase tracking-wider ${
+                          idx < displaySlots.length - 1 ? "border-r border-zinc-400" : ""
+                        }`}
+                      >
+                        {slot.label} ::{" "}
+                        <span className={statusClass}>
+                          {slot.status}
+                        </span>
+                      </th>
+                    );
+                  })}
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="align-top">
+                  <td className="border-r border-zinc-400 px-2 py-3.5 text-center text-zinc-900">
+                    <div className="font-semibold">
+                      {erpDetails?.prepareByName || record.employee.name}
+                    </div>
+                    <div className="text-[10px] text-zinc-500 mt-1 font-medium">
+                      {erpDetails?.prepareByDesi || record.employee.designation || "--"}
+                    </div>
+                    <div className="text-[10px] text-zinc-400 mt-2.5 font-semibold">
+                      {erpDetails?.prepareTime || record.requestedAt}
+                    </div>
+                  </td>
+                  {displaySlots.map((slot, idx) => (
+                    <td
                       key={idx}
-                      style={{ width: colWidth }}
-                      className={`px-2 py-2 font-bold text-zinc-800 text-center uppercase tracking-wider ${
+                      className={`px-2 py-3.5 text-center text-zinc-900 ${
                         idx < displaySlots.length - 1 ? "border-r border-zinc-400" : ""
                       }`}
                     >
-                      {slot.label} ::{" "}
-                      <span className={statusClass}>
-                        {slot.status}
-                      </span>
-                    </th>
-                  );
-                })}
-              </tr>
-            </thead>
-            <tbody>
-              <tr className="align-top">
-                <td className="border-r border-zinc-400 px-2 py-3.5 text-center text-zinc-900">
-                  <div className="font-semibold">
-                    {erpDetails?.prepareByName || record.employee.name}
-                  </div>
-                  <div className="text-[10px] text-zinc-500 mt-1 font-medium">
-                    {erpDetails?.prepareByDesi || record.employee.designation || "--"}
-                  </div>
-                  <div className="text-[10px] text-zinc-400 mt-2.5 font-semibold">
-                    {erpDetails?.prepareTime || record.requestedAt}
-                  </div>
-                </td>
-                {displaySlots.map((slot, idx) => (
-                  <td
-                    key={idx}
-                    className={`px-2 py-3.5 text-center text-zinc-900 ${
-                      idx < displaySlots.length - 1 ? "border-r border-zinc-400" : ""
-                    }`}
-                  >
-                    <div className="font-semibold">{slot.name || "--"}</div>
-                    <div className="text-[10px] text-zinc-500 mt-1 font-medium">
-                      {slot.designation || "--"}
-                    </div>
-                    {slot.time && (
-                      <div className="text-[10px] text-zinc-400 mt-2.5 font-semibold">
-                        {slot.time}
+                      <div className="font-semibold">{slot.name || "--"}</div>
+                      <div className="text-[10px] text-zinc-500 mt-1 font-medium">
+                        {slot.designation || "--"}
                       </div>
-                    )}
-                  </td>
-                ))}
-              </tr>
-            </tbody>
-          </table>
-        </div>
+                      {slot.time && (
+                        <div className="text-[10px] text-zinc-400 mt-2.5 font-semibold">
+                          {slot.time}
+                        </div>
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </ReusableModal>
   );
