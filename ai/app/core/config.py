@@ -24,7 +24,7 @@ os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp|fflags;nobuffe
 
 BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "http://10.81.100.175:3001").strip()
 DEFAULT_COMPANY_ID = os.getenv("BACKEND_COMPANY_ID", "cmr06hyac0004tb7uwg0m3tjo").strip()
-SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.35"))
+SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", "0.55"))
 AI_FPS = float(os.getenv("AI_FPS", "3.0"))
 MJPEG_STREAM_FPS_RAW = float(os.getenv("MJPEG_STREAM_FPS_RAW", "8.0"))
 MJPEG_STREAM_FPS_RECOGNITION = float(os.getenv("MJPEG_STREAM_FPS_RECOGNITION", "8.0"))

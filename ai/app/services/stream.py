@@ -366,7 +366,20 @@ class LiteCameraStream:
                     if has_auth_list and matched_emp_id not in self.authorized_employee_ids:
                         is_authorized = False
                     matched_track.is_authorized = is_authorized
-                    
+                else:
+                    # If it was previously recognized, but now the similarity is low,
+                    # we should reset it to Unknown to prevent locking onto a false identity.
+                    # We use a small buffer (e.g. SIMILARITY_THRESHOLD - 0.08) to prevent flickering.
+                    if matched_track.name != "Unknown" and max_score < (SIMILARITY_THRESHOLD - 0.08):
+                        logger.warning(
+                            f"[TRACK] Resetting track {matched_track.track_id} from {matched_track.name} "
+                            f"back to Unknown due to low similarity ({max_score:.2f})"
+                        )
+                        matched_track.name = "Unknown"
+                        matched_track.emp_id = None
+                        matched_track.score = -1.0
+                        matched_track.is_authorized = True
+                            
             matched_track.last_recognize_time = now
             
         if matched_track.emp_id and matched_track.is_authorized and self.attendance_enabled:
