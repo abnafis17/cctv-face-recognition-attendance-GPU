@@ -56,6 +56,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import Webcam from "react-webcam";
+import { VirtualKeyboard } from "@/components/reusable/VirtualKeyboard";
 
 const fallbackVisitorTypes = [
   "Guest",
@@ -1167,6 +1168,7 @@ export default function AddVisitorPage() {
           </DialogContent>
         </Dialog>
       )}
+      <VirtualKeyboard />
     </div>
   );
 }

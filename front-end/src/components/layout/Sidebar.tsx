@@ -486,6 +486,16 @@ export default function Sidebar() {
   };
 
   useEffect(() => {
+    if (pathname === "/visitors/add") {
+      setIsCollapsed(true);
+    } else {
+      if (typeof window !== "undefined") {
+        setIsCollapsed(localStorage.getItem("sidebar-collapsed") === "true");
+      }
+    }
+  }, [pathname]);
+
+  useEffect(() => {
     setMobileOpen(false);
   }, [pathname]);
 
