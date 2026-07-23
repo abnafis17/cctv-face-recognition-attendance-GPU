@@ -1066,7 +1066,7 @@ export default function AddVisitorPage() {
                     Remarks
                   </label>
                   <div className="relative">
-                    <FileText className="pointer-events-none absolute left-3 top-[18px] h-4 w-4 text-zinc-400" />
+                    <FileText className="pointer-events-none absolute left-3 top-4.5 h-4 w-4 text-zinc-400" />
                     <textarea
                       {...form.register("remarks")}
                       placeholder="Any additional notes..."
