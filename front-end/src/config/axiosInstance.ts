@@ -77,7 +77,7 @@ const refreshAccessToken = async (): Promise<string | null> => {
     const refreshToken = getRefreshToken();
     if (!refreshToken) throw new Error("No refresh token found");
 
-    const response = await axios.get(`${BACKEND_API_BASE}/auth/refresh`, {
+    const response = await axios.get(`${BACKEND_API_BASE}${API.GENERATE_ACCESS_TOKEN}`, {
       headers: {
         refreshtoken: `Bearer ${refreshToken}`,
         Accept: "application/json",

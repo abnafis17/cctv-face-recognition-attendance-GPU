@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import axiosInstance from "@/config/axiosInstance";
+import { API } from "@/constant/API_PATH";
 import type { Screen, Session } from "../types";
 import { friendlyAxiosError } from "../utils";
 
@@ -80,7 +81,7 @@ export function useAutoEnrollSession({
       const res = await axiosInstance.get<{
         ok: boolean;
         session: Session | null;
-      }>("/enroll2-auto/session/status");
+      }>(API.AUTO_ENROLL_SESSION_STATUS);
 
       const s = res.data?.session || null;
       setSession(s);
@@ -107,7 +108,7 @@ export function useAutoEnrollSession({
 
       // Start auto-enroll session via backend proxy (NO CORS)
       const res = await axiosInstance.post<{ ok: boolean; session: Session }>(
-        "/enroll2-auto/session/start",
+        API.AUTO_ENROLL_SESSION_START,
         {
           employeeId: employeeId.trim(),
           name: name.trim(),
@@ -153,7 +154,7 @@ export function useAutoEnrollSession({
     setBusy(true);
     try {
       // 1) stop session
-      await axiosInstance.post("/enroll2-auto/session/stop");
+      await axiosInstance.post(API.AUTO_ENROLL_SESSION_STOP);
 
       // 2) stop camera (stop fully stops everything)
       if (cameraId) {

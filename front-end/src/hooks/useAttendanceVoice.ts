@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import axiosInstance from "@/config/axiosInstance";
+import { API } from "@/constant/API_PATH";
 
 function pickSweetFemaleVoice(
   voices: SpeechSynthesisVoice[]
@@ -178,7 +179,7 @@ export function useAttendanceVoice(options: UseAttendanceVoiceOptions = {}) {
 
         try {
           const resp = await axiosInstance.get(
-            "/attendance-control/voice-events",
+            API.ATTENDANCE_CONTROL_VOICE_EVENTS,
             {
               params: { afterSeq: voiceSeqRef.current, limit, waitMs },
             }

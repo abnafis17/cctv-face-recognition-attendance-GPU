@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import axiosInstance, { erpAxios } from "@/config/axiosInstance";
+import { API } from "@/constant/API_PATH";
 import { ERP_HOST } from "@/constant";
 import { normalizeHierarchyValue } from "@/lib/employeeHierarchy";
 
@@ -183,7 +184,7 @@ export function useErpEmployees(options?: {
       // 1) Attempt to load company-wise dynamic ERP settings
       let resolvedUrl: string | null = null;
       try {
-        const erpSettingsRes = await axiosInstance.get<any[]>("/settings/erp", {
+        const erpSettingsRes = await axiosInstance.get<any[]>(API.SETTINGS_ERP, {
           params: { all: true },
           signal: abortRef.current.signal,
         });

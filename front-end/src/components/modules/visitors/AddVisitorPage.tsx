@@ -215,7 +215,7 @@ export default function AddVisitorPage() {
 
     const toastId = toast.loading("Searching for visitor/employee record...");
     try {
-      const response = await axiosInstance.get(`/visitors/lookup`, {
+      const response = await axiosInstance.get(API.VISITORS_LOOKUP, {
         params: { phone: queryVal, isEmployee: isLookupEmployee },
       });
 
@@ -293,7 +293,7 @@ export default function AddVisitorPage() {
         }
       });
 
-      const response = await axiosInstance.post("/visitors", formData, {
+      const response = await axiosInstance.post(API.VISITORS, formData, {
         headers: {
           "Content-Type": "multipart/form-data",
         },

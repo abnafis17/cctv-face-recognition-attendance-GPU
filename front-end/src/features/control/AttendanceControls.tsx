@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { fetchJSON, postJSON } from "@/lib/api";
+import { API } from "@/constant/API_PATH";
 
 export default function AttendanceControls() {
   const [running, setRunning] = useState(false);
@@ -14,7 +15,7 @@ export default function AttendanceControls() {
 
     try {
       const s = await fetchJSON<{ running: boolean }>(
-        "/attendance-control/status"
+        API.ATTENDANCE_CONTROL_STATUS
       );
       setRunning(Boolean(s?.running));
     } catch {
@@ -26,12 +27,12 @@ export default function AttendanceControls() {
   }, []);
 
   const start = useCallback(async () => {
-    await postJSON("/attendance-control/start");
+    await postJSON(API.ATTENDANCE_CONTROL_START);
     await refresh();
   }, [refresh]);
 
   const stop = useCallback(async () => {
-    await postJSON("/attendance-control/stop");
+    await postJSON(API.ATTENDANCE_CONTROL_STOP);
     await refresh();
   }, [refresh]);
 

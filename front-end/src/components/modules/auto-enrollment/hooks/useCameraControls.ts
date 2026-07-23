@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo } from "react";
 import axiosInstance from "@/config/axiosInstance";
+import { API } from "@/constant/API_PATH";
 import type { Camera } from "../types";
 
 type UseCameraControlsArgs = {
@@ -46,7 +47,7 @@ export function useCameraControls({
         ok: boolean;
         startedNow?: boolean;
         isActive?: boolean;
-      }>(`/cameras/start/${camId}`);
+      }>(`${API.CAMERAS}/start/${camId}`);
 
       await loadCameras();
 
@@ -66,7 +67,7 @@ export function useCameraControls({
         return;
       }
 
-      await axiosInstance.post(`/cameras/stop/${camId}`);
+      await axiosInstance.post(`${API.CAMERAS}/stop/${camId}`);
       await loadCameras();
     },
     [laptopCameraId, loadCameras, stopLaptopCamera]

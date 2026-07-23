@@ -10,6 +10,7 @@ import {
 } from "react";
 
 import axiosInstance from "@/config/axiosInstance";
+import { API } from "@/constant/API_PATH";
 import { useCamerasLoader } from "@/hooks/useCamerasLoader";
 import { cn } from "@/lib/utils";
 import type { Camera } from "@/types";
@@ -175,7 +176,7 @@ export function useTaskCameraWall({
       try {
         setActionCamId(camera.id);
         setErr("");
-        await axiosInstance.post(`/cameras/start/${camera.id}`);
+        await axiosInstance.post(`${API.CAMERAS}/start/${camera.id}`);
         if (onAfterStart) {
           try {
             await onAfterStart(camera);
@@ -204,7 +205,7 @@ export function useTaskCameraWall({
       try {
         setActionCamId(camera.id);
         setErr("");
-        await axiosInstance.post(`/cameras/stop/${camera.id}`);
+        await axiosInstance.post(`${API.CAMERAS}/stop/${camera.id}`);
         await load();
       } catch (error: unknown) {
         const message = normalizeApiError(error, "Failed to stop camera");

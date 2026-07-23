@@ -3,6 +3,7 @@
 import type { Dispatch, SetStateAction } from "react";
 import type { Camera } from "@/types";
 import axiosInstance from "@/config/axiosInstance";
+import { API } from "@/constant/API_PATH";
 
 type UseAttendanceToggleArgs = {
   setErr: Dispatch<SetStateAction<string>>;
@@ -21,7 +22,7 @@ export function useAttendanceToggle({ setErr }: UseAttendanceToggleArgs) {
   // ---------- Attendance toggle ----------
   async function enableAttendance(cam: Camera): Promise<boolean> {
     try {
-      await axiosInstance.post("/attendance-control/enable", {
+      await axiosInstance.post(API.ATTENDANCE_CONTROL_ENABLE, {
         cameraId: cam.id,
       });
       return true;
@@ -33,7 +34,7 @@ export function useAttendanceToggle({ setErr }: UseAttendanceToggleArgs) {
 
   async function disableAttendance(cam: Camera): Promise<boolean> {
     try {
-      await axiosInstance.post("/attendance-control/disable", {
+      await axiosInstance.post(API.ATTENDANCE_CONTROL_DISABLE, {
         cameraId: cam.id,
       });
       return true;

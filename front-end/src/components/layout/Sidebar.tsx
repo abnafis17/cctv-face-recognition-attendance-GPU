@@ -29,6 +29,7 @@ import { useEffect, useRef, useState } from "react";
 import { clearAccessToken, getAccessToken } from "@/lib/authStorage";
 import { cn } from "@/lib/utils";
 import axiosInstance from "@/config/axiosInstance";
+import { API } from "@/constant/API_PATH";
 
 interface SubNavItem {
   href: string;
@@ -184,7 +185,7 @@ function SidebarContent({
 
     const syncIdentityFromDb = async () => {
       try {
-        const res = await axiosInstance.get("/auth/me");
+        const res = await axiosInstance.get(API.ME);
         const me = res?.data?.results ?? {};
         const companyName = String(
           me?.companyName ?? me?.company?.companyName ?? "",

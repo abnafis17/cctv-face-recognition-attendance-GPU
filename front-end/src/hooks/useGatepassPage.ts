@@ -732,7 +732,7 @@ export function useGatepassPage() {
     if (!normalized) return;
 
     try {
-      await axiosInstance.post("/attendance-control/disable", {
+      await axiosInstance.post(API.ATTENDANCE_CONTROL_DISABLE, {
         cameraId: normalized,
       });
     } catch {
@@ -740,7 +740,7 @@ export function useGatepassPage() {
     }
 
     try {
-      await axiosInstance.post(`/cameras/stop/${normalized}`);
+      await axiosInstance.post(`${API.CAMERAS}/stop/${normalized}`);
     } catch {
       // best effort
     }
@@ -828,7 +828,7 @@ export function useGatepassPage() {
   }, [stopRecognitionCameraApi]);
 
   const fetchAttendanceLatestSeq = useCallback(async () => {
-    const response = await axiosInstance.get(`${API.ATTENDANCE_LIST}/events`, {
+    const response = await axiosInstance.get(API.ATTENDANCE_EVENTS, {
       params: { afterSeq: 0, limit: 1, waitMs: 0 },
     });
 
@@ -1132,8 +1132,8 @@ export function useGatepassPage() {
       }
 
       await stopRecognitionCameraApi(targetId);
-      await axiosInstance.post(`/cameras/start/${targetId}`);
-      await axiosInstance.post("/attendance-control/enable", {
+      await axiosInstance.post(`${API.CAMERAS}/start/${targetId}`);
+      await axiosInstance.post(API.ATTENDANCE_CONTROL_ENABLE, {
         cameraId: targetId,
       });
 

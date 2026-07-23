@@ -222,7 +222,7 @@ export function useHeadcountPage() {
 
       setActionCamId(cameraId);
       try {
-        await axiosInstance.post(`/cameras/${action}/${cameraId}`);
+        await axiosInstance.post(`${API.CAMERAS}/${action}/${cameraId}`);
         await fetchCameras();
       } catch (error: unknown) {
         toast.error(getApiErrorMessage(error, `Failed to ${action} camera`));

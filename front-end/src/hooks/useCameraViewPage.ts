@@ -9,6 +9,7 @@ import {
   type CSSProperties,
 } from "react";
 import axiosInstance, { AI_HOST } from "@/config/axiosInstance";
+import { API } from "@/constant/API_PATH";
 import { useAttendanceToggle } from "@/hooks/useAttendanceToggle";
 import { useCamerasLoader } from "@/hooks/useCamerasLoader";
 import { getCompanyIdFromToken } from "@/lib/authStorage";
@@ -235,7 +236,7 @@ export function useCameraViewPage() {
     async (cam: Camera) => {
       try {
         setActionCamId(cam.id);
-        await axiosInstance.post(`/cameras/start/${cam.id}`);
+        await axiosInstance.post(`${API.CAMERAS}/start/${cam.id}`);
         await load();
       } catch (error: unknown) {
         setErr(normalizeApiError(error, "Failed to start camera"));
@@ -250,7 +251,7 @@ export function useCameraViewPage() {
     async (cam: Camera) => {
       try {
         setActionCamId(cam.id);
-        await axiosInstance.post(`/cameras/stop/${cam.id}`);
+        await axiosInstance.post(`${API.CAMERAS}/stop/${cam.id}`);
         await load();
       } catch (error: unknown) {
         setErr(normalizeApiError(error, "Failed to stop camera"));

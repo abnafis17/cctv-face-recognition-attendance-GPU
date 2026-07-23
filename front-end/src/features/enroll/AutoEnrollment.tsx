@@ -9,7 +9,7 @@ import React, {
 } from "react";
 import toast from "react-hot-toast";
 
-import axiosInstance, { AI_HOST } from "@/config/axiosInstance";
+import axiosInstance, { AI_HOST, API } from "@/config/axiosInstance";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -362,7 +362,7 @@ export default function AutoEnrollment({
       const res = await axiosInstance.get<{
         ok: boolean;
         session: Session | null;
-      }>("/enroll2-auto/session/status");
+      }>(API.AUTO_ENROLL_SESSION_STATUS);
       const s = res.data?.session || null;
       setSession(s);
       setRunning(!!s && s.status === "running");
@@ -524,7 +524,7 @@ export default function AutoEnrollment({
         ok: boolean;
         startedNow?: boolean;
         isActive?: boolean;
-      }>(`/cameras/start/${camId}`);
+      }>(`${API.CAMERAS}/start/${camId}`);
       await loadCameras();
       return typeof res.data?.startedNow === "boolean"
         ? res.data.startedNow
@@ -541,7 +541,7 @@ export default function AutoEnrollment({
         stopLaptopCamera();
         return;
       }
-      await axiosInstance.post(`/cameras/stop/${camId}`);
+      await axiosInstance.post(`${API.CAMERAS}/stop/${camId}`);
       await loadCameras();
     },
     [laptopCameraId, loadCameras, stopLaptopCamera],
@@ -561,7 +561,7 @@ export default function AutoEnrollment({
 
       // Start auto-enroll session via backend proxy (NO CORS)
       const res = await axiosInstance.post<{ ok: boolean; session: Session }>(
-        "/enroll2-auto/session/start",
+        API.AUTO_ENROLL_SESSION_START,
         { employeeId: employeeId.trim(), name: name.trim(), cameraId },
       );
 
@@ -588,7 +588,7 @@ export default function AutoEnrollment({
     setBusy(true);
     try {
       // 1) stop session
-      await axiosInstance.post("/enroll2-auto/session/stop");
+      await axiosInstance.post(API.AUTO_ENROLL_SESSION_STOP);
 
       // 2) stop camera (stop fully stops everything)
       if (cameraId) {

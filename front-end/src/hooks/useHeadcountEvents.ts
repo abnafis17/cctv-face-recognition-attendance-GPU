@@ -44,7 +44,7 @@ export function useHeadcountEvents(options: UseHeadcountEventsOptions = {}) {
 
     async function syncLatest() {
       try {
-        const resp = await axiosInstance.get(`${API.HEADCOUNT_LIST}/events`, {
+        const resp = await axiosInstance.get(API.HEADCOUNT_EVENTS, {
           params: { afterSeq: 0, limit: 1, waitMs: 0 },
         });
         const latest = Number(resp?.data?.latest_seq || 0) || 0;
@@ -63,7 +63,7 @@ export function useHeadcountEvents(options: UseHeadcountEventsOptions = {}) {
         inFlightRef.current = true;
 
         try {
-          const resp = await axiosInstance.get(`${API.HEADCOUNT_LIST}/events`, {
+          const resp = await axiosInstance.get(API.HEADCOUNT_EVENTS, {
             params: { afterSeq: seqRef.current, limit, waitMs },
           });
           if (cancelled) return;

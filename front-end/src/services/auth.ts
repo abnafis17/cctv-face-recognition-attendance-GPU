@@ -1,17 +1,11 @@
 import axiosInstance from "@/config/axiosInstance";
+import { API } from "@/constant/API_PATH";
 import {
   setTokens,
   clearAccessToken,
   getRefreshToken,
   setUser,
 } from "@/lib/authStorage";
-
-// Adjust to your backend API path constants if you have them.
-const AUTH = {
-  LOGIN: "/auth/login",
-  REGISTER: "/auth/register",
-  LOGOUT: "/auth/logout",
-};
 
 type AuthUser = {
   id: string;
@@ -32,7 +26,7 @@ type AuthResponse = {
 
 export async function loginApi(input: { email: string; password: string }) {
   try {
-    const res = await axiosInstance.post(AUTH.LOGIN, input, {
+    const res = await axiosInstance.post(API.LOGIN, input, {
       _skipAuth: true,
     } as any);
 
@@ -61,7 +55,7 @@ export async function registerApi(input: {
       companyName: input.companyName.trim(),
     };
 
-    const res = await axiosInstance.post(AUTH.REGISTER, payload, {
+    const res = await axiosInstance.post(API.SIGNUP, payload, {
       _skipAuth: true,
     } as any);
 
@@ -83,7 +77,7 @@ export async function logoutApi() {
   try {
     const refreshToken = getRefreshToken();
     if (refreshToken) {
-      await axiosInstance.post(AUTH.LOGOUT, { refreshToken });
+      await axiosInstance.post(API.LOGOUT, { refreshToken });
     }
   } catch {
     // ignore

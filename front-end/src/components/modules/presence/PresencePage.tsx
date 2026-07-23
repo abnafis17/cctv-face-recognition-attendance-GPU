@@ -12,6 +12,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import toast from "react-hot-toast";
 
 import axiosInstance, { AI_HOST } from "@/config/axiosInstance";
+import { API } from "@/constant/API_PATH";
 import { cn } from "@/lib/utils";
 import type { Camera } from "@/types";
 import { getCompanyIdFromToken } from "@/lib/authStorage";
@@ -185,7 +186,7 @@ export default function PresencePage() {
       if (!cameraId) return;
       setActionCamId(cameraId);
       try {
-        await axiosInstance.post(`/presence-control/${action}/${cameraId}`);
+        await axiosInstance.post(`${API.PRESENCE_CONTROL}/${action}/${cameraId}`);
         await fetchCameras();
       } catch (error: unknown) {
         toast.error(normalizeApiError(error, `Failed to ${action} camera`));
