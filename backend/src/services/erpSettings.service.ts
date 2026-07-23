@@ -113,7 +113,6 @@ export async function listCompanyErpSettings(
   companyId: string
 ): Promise<ErpSettingsDto[]> {
   const rows = await prisma.companyErpSetting.findMany({
-    where: { companyId },
     orderBy: [{ urlType: "asc" }, { createdAt: "asc" }],
     select: {
       id: true,
@@ -126,7 +125,17 @@ export async function listCompanyErpSettings(
     },
   });
 
-  return rows.map(toErpSettingsDto);
+  // Deduplicate by urlType to ensure one config per type is returned globally
+  const uniqueRows: typeof rows = [];
+  const seenTypes = new Set<string>();
+  for (const row of rows) {
+    if (!seenTypes.has(row.urlType)) {
+      seenTypes.add(row.urlType);
+      uniqueRows.push(row);
+    }
+  }
+
+  return uniqueRows.map(toErpSettingsDto);
 }
 
 export async function getCompanyErpSettings(
@@ -134,12 +143,9 @@ export async function getCompanyErpSettings(
   urlType?: string | null
 ): Promise<ErpSettingsDto> {
   const resolvedUrlType = normalizeErpUrlType(urlType);
-  const row = await prisma.companyErpSetting.findUnique({
+  const row = await prisma.companyErpSetting.findFirst({
     where: {
-      companyId_urlType: {
-        companyId,
-        urlType: resolvedUrlType,
-      },
+      urlType: resolvedUrlType,
     },
     select: {
       id: true,
@@ -175,10 +181,23 @@ export async function createCompanyErpSettings(
   companyId: string,
   payload: ErpSettingsCreateInput
 ): Promise<ErpSettingsDto> {
+  const resolvedUrlType = normalizeErpUrlType(payload.urlType);
+  
+  // Check if this urlType is already configured globally
+  const existing = await prisma.companyErpSetting.findFirst({
+    where: { urlType: resolvedUrlType }
+  });
+  
+  if (existing) {
+    const err = new Error("ERP URLs for this url_type already exist.");
+    (err as any).code = "P2002";
+    throw err;
+  }
+
   const row = await prisma.companyErpSetting.create({
     data: {
       companyId,
-      urlType: normalizeErpUrlType(payload.urlType),
+      urlType: resolvedUrlType,
       erpBaseUrl: payload.erpBaseUrl !== undefined ? payload.erpBaseUrl : null,
       erpPrefix: payload.erpPrefix !== undefined ? payload.erpPrefix : null,
       erpAttendanceEndpoint:
@@ -207,18 +226,15 @@ async function findCompanyErpSettingTarget(
   const id = String(target.id ?? "").trim();
   if (id) {
     const row = await prisma.companyErpSetting.findFirst({
-      where: { id, companyId },
+      where: { id },
       select: { id: true },
     });
     return row ? { id: row.id } : null;
   }
 
-  const row = await prisma.companyErpSetting.findUnique({
+  const row = await prisma.companyErpSetting.findFirst({
     where: {
-      companyId_urlType: {
-        companyId,
-        urlType: normalizeErpUrlType(target.urlType),
-      },
+      urlType: normalizeErpUrlType(target.urlType),
     },
     select: { id: true },
   });
