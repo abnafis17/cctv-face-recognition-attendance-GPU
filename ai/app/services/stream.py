@@ -379,7 +379,7 @@ class LiteCameraStream:
                         matched_track.emp_id = None
                         matched_track.score = -1.0
                         matched_track.is_authorized = True
-                            
+                    
             matched_track.last_recognize_time = now
             
         if matched_track.emp_id and matched_track.is_authorized and self.attendance_enabled:
