@@ -15,6 +15,7 @@ import { getAccessToken, getLandingRouteFromStorage } from "@/lib/authStorage";
 import AuthSidePanel from "@/components/modules/auth/AuthSidePanel";
 import PulsingLogo from "@/components/modules/auth/PulsingLogo";
 import "@/components/modules/auth/authStyles.css";
+import { VirtualKeyboard } from "@/components/reusable/VirtualKeyboard";
 
 const schema = z.object({
   email: z.string().email("Enter a valid email"),
@@ -303,6 +304,7 @@ export default function LoginPage() {
           </div>
         </div>
       </div>
+      <VirtualKeyboard />
     </div>
   );
 }
