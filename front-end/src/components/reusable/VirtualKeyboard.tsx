@@ -158,8 +158,6 @@ export function VirtualKeyboard({ className }: VirtualKeyboardProps) {
       const wrapper = activeInput.closest('[data-slot="command-input-wrapper"]') as HTMLElement | null;
       const targetEl = wrapper || activeInput;
       targetEl.style.outline = "none";
-      targetEl.style.borderColor = "#7c3aed"; // violet-500 outline
-      targetEl.style.boxShadow = "0 0 0 2px rgba(124, 58, 237, 0.25)";
       previousInputRef.current = targetEl;
     } else {
       previousInputRef.current = null;
@@ -173,6 +171,32 @@ export function VirtualKeyboard({ className }: VirtualKeyboardProps) {
       }
     };
   }, [activeInput, isOpen, isEnabled]);
+
+  const previousScrollParentRef = useRef<HTMLElement | null>(null);
+
+  // Dynamic layout padding push for scroll parent when keyboard opens
+  useEffect(() => {
+    if (previousScrollParentRef.current) {
+      previousScrollParentRef.current.style.paddingBottom = "";
+      previousScrollParentRef.current = null;
+    }
+
+    if (isOpen && isEnabled && activeInput && isTypeable(activeInput)) {
+      const scrollParent = getScrollParent(activeInput) || document.documentElement || document.body;
+      if (scrollParent) {
+        scrollParent.style.paddingBottom = "340px";
+        previousScrollParentRef.current = scrollParent;
+        scrollToInput(activeInput);
+      }
+    }
+
+    return () => {
+      if (previousScrollParentRef.current) {
+        previousScrollParentRef.current.style.paddingBottom = "";
+        previousScrollParentRef.current = null;
+      }
+    };
+  }, [isOpen, activeInput, isEnabled]);
 
   // Determine if the current active field is the last input field on the page
   useEffect(() => {
