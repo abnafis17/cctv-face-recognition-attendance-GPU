@@ -162,6 +162,7 @@ export default function AddVisitorPage() {
       purposeOfVisit: "",
       department: "",
       hostEmployeeId: "",
+      hostEmployeeName: "",
       idProofType: "",
       idProofNumber: "",
       vehicleNumber: "",
@@ -459,6 +460,7 @@ export default function AddVisitorPage() {
       purposeOfVisit: "Meeting",
       department: "",
       hostEmployeeId: "",
+      hostEmployeeName: "",
       idProofType: "NID",
       idProofNumber: "",
       vehicleNumber: "",
@@ -814,14 +816,20 @@ export default function AddVisitorPage() {
                               field.onChange(val);
                               if (!val) {
                                 setSelectedEmployee(null);
+                                form.setValue("hostEmployeeName", "");
                                 return;
                               }
-                              const emp = erpEmployees.find((e) => e.employeeId === val);
+                              const emp =
+                                erpEmployees.find((e) => e.employeeId === val) ||
+                                (selectedEmployee && selectedEmployee.employeeId === val
+                                  ? selectedEmployee
+                                  : null);
                               if (emp) {
                                 setSelectedEmployee(emp);
                                 if (emp.department) {
                                   form.setValue("department", emp.department);
                                 }
+                                form.setValue("hostEmployeeName", emp.employeeName);
                               }
                             }}
                             items={hostOptions}
@@ -838,6 +846,7 @@ export default function AddVisitorPage() {
                             variant="outline"
                             onClick={() => {
                               form.setValue("hostEmployeeId", "");
+                              form.setValue("hostEmployeeName", "");
                               form.setValue("department", "");
                               setSelectedEmployee(null);
                               setHostSearch("");

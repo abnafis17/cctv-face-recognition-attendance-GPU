@@ -8,6 +8,7 @@ export interface VisitorFormData {
   purposeOfVisit: string;
   department: string;
   hostEmployeeId: string;
+  hostEmployeeName?: string;
   
   idProofType: string;
   idProofNumber?: string;

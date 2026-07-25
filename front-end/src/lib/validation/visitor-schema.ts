@@ -17,6 +17,7 @@ export const visitorSchema = z.object({
   purposeOfVisit: z.string().min(1, "Purpose of visit is required"),
   department: z.string().min(1, "Department is required"),
   hostEmployeeId: z.string().min(1, "Host / employee name is required"),
+  hostEmployeeName: z.string().min(1, "Host name is required"),
   
   idProofType: z.string().min(1, "ID proof type is required"),
   idProofNumber: z.string().optional().or(z.literal("")),

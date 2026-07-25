@@ -13,6 +13,7 @@ export interface VisitorRecord {
   department: string;
   hostEmployeeId: string;
   hostName?: string | null;
+  hostEmployeeName?: string | null;
   idProofType: string;
   idProofNumber?: string | null;
   vehicleNumber?: string | null;
