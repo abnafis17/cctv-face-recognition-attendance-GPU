@@ -80,7 +80,24 @@ export function SearchableSelect({
         </Button>
       </PopoverTrigger>
 
-      <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+      <PopoverContent
+        style={{ width: "var(--radix-popover-trigger-width)" }}
+        className="p-0 shadow-2xl rounded-2xl border border-zinc-200/80 bg-white overflow-hidden"
+        align="start"
+        sideOffset={6}
+        onPointerDownOutside={(e) => {
+          const target = e.target as HTMLElement | null;
+          if (target?.closest?.('[data-virtual-keyboard="true"]')) {
+            e.preventDefault();
+          }
+        }}
+        onFocusOutside={(e) => {
+          const target = e.target as HTMLElement | null;
+          if (target?.closest?.('[data-virtual-keyboard="true"]')) {
+            e.preventDefault();
+          }
+        }}
+      >
         <Command shouldFilter={false}>
           <CommandInput
             placeholder={searchPlaceholder}
