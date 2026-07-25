@@ -550,6 +550,7 @@ model Visitor {
   department        String
   hostEmployeeId    String
   hostEmployeeName  String   @default("")
+  hostPicUrl        String?
   idProofType       String
   idProofNumber     String?
   vehicleNumber     String?

@@ -50,6 +50,7 @@ interface EmployeeReport {
   employeeId: string;
   employeeName: string;
   department: string;
+  hostPicUrl?: string | null;
   totalVisits: number;
   uniqueVisitors: number;
   lastVisit: string;
@@ -400,15 +401,23 @@ export default function EmployeeWiseVisitPage() {
                       {index + 1}
                     </div>
                     {/* User icon avatar from mockup */}
-                    <div
-                      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
-                        isEmpExpanded
-                          ? "bg-white/10 text-white"
-                          : "bg-blue-50 text-blue-600 border border-blue-100/50"
-                      }`}
-                    >
-                      <Users className="h-5 w-5" />
-                    </div>
+                    {emp.hostPicUrl ? (
+                      <img
+                        src={emp.hostPicUrl}
+                        alt={emp.employeeName}
+                        className="h-10 w-10 shrink-0 rounded-full object-cover border border-zinc-200"
+                      />
+                    ) : (
+                      <div
+                        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
+                          isEmpExpanded
+                            ? "bg-white/10 text-white"
+                            : "bg-blue-50 text-blue-600 border border-blue-100/50"
+                        }`}
+                      >
+                        <Users className="h-5 w-5" />
+                      </div>
+                    )}
                     <div>
                       <h3 className={`font-semibold text-[15px] ${isEmpExpanded ? "text-white" : "text-zinc-800"}`}>
                         {emp.employeeName}

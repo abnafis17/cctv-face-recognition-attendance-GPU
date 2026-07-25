@@ -163,6 +163,7 @@ export default function AddVisitorPage() {
       department: "",
       hostEmployeeId: "",
       hostEmployeeName: "",
+      hostPicUrl: "",
       idProofType: "",
       idProofNumber: "",
       vehicleNumber: "",
@@ -288,6 +289,7 @@ export default function AddVisitorPage() {
       value: e.employeeId,
       label: `${e.employeeName} (${e.employeeId})`,
       keywords: `${e.employeeName} ${e.employeeId}`,
+      image: e.picUrl || undefined,
     }));
 
     if (selectedEmployee && !options.some((o) => o.value === selectedEmployee.employeeId)) {
@@ -295,6 +297,7 @@ export default function AddVisitorPage() {
         value: selectedEmployee.employeeId,
         label: `${selectedEmployee.employeeName} (${selectedEmployee.employeeId})`,
         keywords: `${selectedEmployee.employeeName} ${selectedEmployee.employeeId}`,
+        image: selectedEmployee.picUrl || undefined,
       });
     }
 
@@ -461,6 +464,7 @@ export default function AddVisitorPage() {
       department: "",
       hostEmployeeId: "",
       hostEmployeeName: "",
+      hostPicUrl: "",
       idProofType: "NID",
       idProofNumber: "",
       vehicleNumber: "",
@@ -817,6 +821,7 @@ export default function AddVisitorPage() {
                               if (!val) {
                                 setSelectedEmployee(null);
                                 form.setValue("hostEmployeeName", "");
+                                form.setValue("hostPicUrl", "");
                                 return;
                               }
                               const emp =
@@ -830,6 +835,7 @@ export default function AddVisitorPage() {
                                   form.setValue("department", emp.department);
                                 }
                                 form.setValue("hostEmployeeName", emp.employeeName);
+                                form.setValue("hostPicUrl", emp.picUrl || "");
                               }
                             }}
                             items={hostOptions}
@@ -847,6 +853,7 @@ export default function AddVisitorPage() {
                             onClick={() => {
                               form.setValue("hostEmployeeId", "");
                               form.setValue("hostEmployeeName", "");
+                              form.setValue("hostPicUrl", "");
                               form.setValue("department", "");
                               setSelectedEmployee(null);
                               setHostSearch("");

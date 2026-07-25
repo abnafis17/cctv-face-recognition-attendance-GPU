@@ -14,6 +14,7 @@ export interface VisitorRecord {
   hostEmployeeId: string;
   hostName?: string | null;
   hostEmployeeName?: string | null;
+  hostPicUrl?: string | null;
   idProofType: string;
   idProofNumber?: string | null;
   vehicleNumber?: string | null;
@@ -265,23 +266,37 @@ export function getVisitorColumns(
       cell: ({ row }) => {
         const isCheckingOut = checkingOutIds.has(row.original.id);
         const hostName = row.original.hostName;
+        const hostPicUrl = row.original.hostPicUrl;
         return renderCell(
           isCheckingOut,
-          <div className="px-1 py-2 text-left">
-            {hostName ? (
-              <>
-                <div className="font-medium text-zinc-800 truncate">
-                  {hostName}
-                </div>
-                <div className="text-[11px] text-zinc-400 font-normal truncate">
-                  ({row.original.hostEmployeeId})
-                </div>
-              </>
+          <div className="flex items-center gap-2.5 px-1 py-1 text-left min-w-0">
+            {hostPicUrl ? (
+              <img
+                src={hostPicUrl}
+                alt={hostName || "Host"}
+                className="h-8 w-8 rounded-full object-cover border border-zinc-200/80 shrink-0"
+              />
             ) : (
-              <div className="font-medium text-zinc-800 truncate">
-                {row.original.hostEmployeeId}
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-50 border border-zinc-200 text-zinc-400">
+                <User className="h-4 w-4" />
               </div>
             )}
+            <div className="min-w-0">
+              {hostName ? (
+                <>
+                  <div className="font-medium text-zinc-800 truncate">
+                    {hostName}
+                  </div>
+                  <div className="text-[11px] text-zinc-400 font-normal truncate">
+                    ({row.original.hostEmployeeId})
+                  </div>
+                </>
+              ) : (
+                <div className="font-medium text-zinc-800 truncate">
+                  {row.original.hostEmployeeId}
+                </div>
+              )}
+            </div>
           </div>,
           "w-28 h-8"
         );

@@ -23,6 +23,7 @@ type ItemBase = {
   value: string;
   label: string;
   keywords?: string; // optional extra search text
+  image?: string; // optional item image
 };
 
 export function SearchableSelect({
@@ -73,9 +74,18 @@ export function SearchableSelect({
           disabled={disabled}
           className={cn("w-full justify-between", className)}
         >
-          <span className="truncate">
-            {selected ? selected.label : placeholder}
-          </span>
+          <div className="flex items-center gap-2 truncate min-w-0">
+            {selected && selected.image && (
+              <img
+                src={selected.image}
+                alt={selected.label}
+                className="h-5 w-5 rounded-full object-cover shrink-0 border border-zinc-200"
+              />
+            )}
+            <span className="truncate">
+              {selected ? selected.label : placeholder}
+            </span>
+          </div>
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-60" />
         </Button>
       </PopoverTrigger>
@@ -123,11 +133,20 @@ export function SearchableSelect({
                   >
                     <Check
                       className={cn(
-                        "mr-2 h-4 w-4",
+                        "mr-2 h-4 w-4 shrink-0",
                         value === item.value ? "opacity-100" : "opacity-0"
                       )}
                     />
-                    <span className="truncate">{item.label}</span>
+                    <div className="flex items-center gap-2 truncate min-w-0">
+                      {item.image && (
+                        <img
+                          src={item.image}
+                          alt={item.label}
+                          className="h-6 w-6 rounded-full object-cover shrink-0 border border-zinc-200"
+                        />
+                      )}
+                      <span className="truncate">{item.label}</span>
+                    </div>
                   </CommandItem>
                 ))}
               </CommandGroup>

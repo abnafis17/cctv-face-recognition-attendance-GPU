@@ -140,6 +140,7 @@ export async function createVisitorRecord(req: Request, res: Response) {
         department: payload.department,
         hostEmployeeId: payload.hostEmployeeId,
         hostEmployeeName: payload.hostEmployeeName,
+        hostPicUrl: payload.hostPicUrl ?? null,
         idProofType: payload.idProofType,
         idProofNumber: payload.idProofNumber ?? null,
         vehicleNumber: payload.vehicleNumber ?? null,
@@ -459,12 +460,14 @@ export async function getEmployeeWiseReport(req: Request, res: Response) {
       const hostId = visitor.hostEmployeeId;
       const employeeName = visitor.hostEmployeeName || `Employee (${hostId})`;
       const department = visitor.department || "N/A";
+      const hostPicUrl = visitor.hostPicUrl || null;
 
       if (!reportMap.has(hostId)) {
         reportMap.set(hostId, {
           employeeId: hostId,
           employeeName,
           department,
+          hostPicUrl,
           visits: [],
         });
       }
@@ -530,6 +533,7 @@ export async function getEmployeeWiseReport(req: Request, res: Response) {
         employeeId: group.employeeId,
         employeeName: group.employeeName,
         department: group.department,
+        hostPicUrl: group.hostPicUrl,
         totalVisits,
         uniqueVisitors,
         lastVisit,
@@ -636,6 +640,7 @@ export async function getVisitorWiseReport(req: Request, res: Response) {
         visitorPassNo: visit.visitorPassNo,
         hostName,
         hostDepartment,
+        hostPicUrl: visit.hostPicUrl,
       });
     }
 
