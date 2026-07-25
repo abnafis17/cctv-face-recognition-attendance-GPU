@@ -155,10 +155,10 @@ export function VirtualKeyboard({ className }: VirtualKeyboardProps) {
     }
 
     if (activeInput && isOpen && isEnabled && isTypeable(activeInput)) {
-      activeInput.style.outline = "none";
-      activeInput.style.borderColor = "#7c3aed"; // violet-500 outline
-      activeInput.style.boxShadow = "0 0 0 3px rgba(124, 58, 237, 0.25), 0 4px 10px rgba(124, 58, 237, 0.15)";
-      previousInputRef.current = activeInput;
+      const wrapper = activeInput.closest('[data-slot="command-input-wrapper"]') as HTMLElement | null;
+      const targetEl = wrapper || activeInput;
+      targetEl.style.outline = "none";
+      previousInputRef.current = targetEl;
     } else {
       previousInputRef.current = null;
     }
@@ -171,6 +171,32 @@ export function VirtualKeyboard({ className }: VirtualKeyboardProps) {
       }
     };
   }, [activeInput, isOpen, isEnabled]);
+
+  const previousScrollParentRef = useRef<HTMLElement | null>(null);
+
+  // Dynamic layout padding push for scroll parent when keyboard opens
+  useEffect(() => {
+    if (previousScrollParentRef.current) {
+      previousScrollParentRef.current.style.paddingBottom = "";
+      previousScrollParentRef.current = null;
+    }
+
+    if (isOpen && isEnabled && activeInput && isTypeable(activeInput)) {
+      const scrollParent = getScrollParent(activeInput) || document.documentElement || document.body;
+      if (scrollParent) {
+        scrollParent.style.paddingBottom = "340px";
+        previousScrollParentRef.current = scrollParent;
+        scrollToInput(activeInput);
+      }
+    }
+
+    return () => {
+      if (previousScrollParentRef.current) {
+        previousScrollParentRef.current.style.paddingBottom = "";
+        previousScrollParentRef.current = null;
+      }
+    };
+  }, [isOpen, activeInput, isEnabled]);
 
   // Determine if the current active field is the last input field on the page
   useEffect(() => {
@@ -380,6 +406,7 @@ export function VirtualKeyboard({ className }: VirtualKeyboardProps) {
       {/* Main Keyboard Panel */}
       <div
         ref={keyboardRef}
+        data-virtual-keyboard="true"
         className={cn(
           "fixed bottom-0 left-0 right-0 z-50 transform border-t border-zinc-200/50 bg-white/95 px-4 pb-6 pt-3 shadow-2xl backdrop-blur-md transition-all duration-300 ease-out select-none dark:border-zinc-800/50 dark:bg-zinc-950/95 md:px-8",
           isOpen ? "translate-y-0 opacity-100" : "translate-y-full opacity-0 pointer-events-none"
@@ -401,6 +428,10 @@ export function VirtualKeyboard({ className }: VirtualKeyboardProps) {
               {keyboardActive && activeInput && (activeInput as HTMLInputElement).value?.length > 0 && (
                 <button
                   type="button"
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    handleClear();
+                  }}
                   onMouseDown={(e) => {
                     e.preventDefault();
                     handleClear();
@@ -413,6 +444,10 @@ export function VirtualKeyboard({ className }: VirtualKeyboardProps) {
               )}
               <button
                 type="button"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  setIsOpen(false);
+                }}
                 onMouseDown={(e) => {
                   e.preventDefault();
                   setIsOpen(false);
@@ -434,6 +469,10 @@ export function VirtualKeyboard({ className }: VirtualKeyboardProps) {
                   <button
                     type="button"
                     disabled={!keyboardActive}
+                    onPointerDown={(e) => {
+                      e.preventDefault();
+                      setIsShift(!isShift);
+                    }}
                     onMouseDown={(e) => {
                       e.preventDefault();
                       setIsShift(!isShift);
@@ -458,6 +497,10 @@ export function VirtualKeyboard({ className }: VirtualKeyboardProps) {
                       key={key}
                       type="button"
                       disabled={!keyboardActive}
+                      onPointerDown={(e) => {
+                        e.preventDefault();
+                        handleKeyPress(key);
+                      }}
                       onMouseDown={(e) => {
                         e.preventDefault();
                         handleKeyPress(key);
@@ -479,6 +522,10 @@ export function VirtualKeyboard({ className }: VirtualKeyboardProps) {
                   <button
                     type="button"
                     disabled={!keyboardActive}
+                    onPointerDown={(e) => {
+                      e.preventDefault();
+                      handleBackspace();
+                    }}
                     onMouseDown={(e) => {
                       e.preventDefault();
                       handleBackspace();
@@ -502,6 +549,10 @@ export function VirtualKeyboard({ className }: VirtualKeyboardProps) {
               <button
                 type="button"
                 disabled={!keyboardActive}
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  setLayout(layout === "default" ? "symbols" : "default");
+                }}
                 onMouseDown={(e) => {
                   e.preventDefault();
                   setLayout(layout === "default" ? "symbols" : "default");
@@ -520,6 +571,10 @@ export function VirtualKeyboard({ className }: VirtualKeyboardProps) {
               <button
                 type="button"
                 disabled={!keyboardActive}
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  handleKeyPress("@");
+                }}
                 onMouseDown={(e) => {
                   e.preventDefault();
                   handleKeyPress("@");
@@ -536,6 +591,10 @@ export function VirtualKeyboard({ className }: VirtualKeyboardProps) {
               <button
                 type="button"
                 disabled={!keyboardActive}
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  handleKeyPress(".com");
+                }}
                 onMouseDown={(e) => {
                   e.preventDefault();
                   handleKeyPress(".com");
@@ -554,6 +613,10 @@ export function VirtualKeyboard({ className }: VirtualKeyboardProps) {
               <button
                 type="button"
                 disabled={!keyboardActive}
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  handleKeyPress(" ");
+                }}
                 onMouseDown={(e) => {
                   e.preventDefault();
                   handleKeyPress(" ");
@@ -572,6 +635,10 @@ export function VirtualKeyboard({ className }: VirtualKeyboardProps) {
               <button
                 type="button"
                 disabled={!keyboardActive}
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  handleKeyPress(".");
+                }}
                 onMouseDown={(e) => {
                   e.preventDefault();
                   handleKeyPress(".");
@@ -589,6 +656,10 @@ export function VirtualKeyboard({ className }: VirtualKeyboardProps) {
               {/* Next / Done key */}
               <button
                 type="button"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  handleNext();
+                }}
                 onMouseDown={(e) => {
                   e.preventDefault();
                   handleNext();

@@ -162,6 +162,8 @@ export default function AddVisitorPage() {
       purposeOfVisit: "",
       department: "",
       hostEmployeeId: "",
+      hostEmployeeName: "",
+      hostPicUrl: "",
       idProofType: "",
       idProofNumber: "",
       vehicleNumber: "",
@@ -287,6 +289,7 @@ export default function AddVisitorPage() {
       value: e.employeeId,
       label: `${e.employeeName} (${e.employeeId})`,
       keywords: `${e.employeeName} ${e.employeeId}`,
+      image: e.picUrl || undefined,
     }));
 
     if (selectedEmployee && !options.some((o) => o.value === selectedEmployee.employeeId)) {
@@ -294,6 +297,7 @@ export default function AddVisitorPage() {
         value: selectedEmployee.employeeId,
         label: `${selectedEmployee.employeeName} (${selectedEmployee.employeeId})`,
         keywords: `${selectedEmployee.employeeName} ${selectedEmployee.employeeId}`,
+        image: selectedEmployee.picUrl || undefined,
       });
     }
 
@@ -459,6 +463,8 @@ export default function AddVisitorPage() {
       purposeOfVisit: "Meeting",
       department: "",
       hostEmployeeId: "",
+      hostEmployeeName: "",
+      hostPicUrl: "",
       idProofType: "NID",
       idProofNumber: "",
       vehicleNumber: "",
@@ -814,14 +820,22 @@ export default function AddVisitorPage() {
                               field.onChange(val);
                               if (!val) {
                                 setSelectedEmployee(null);
+                                form.setValue("hostEmployeeName", "");
+                                form.setValue("hostPicUrl", "");
                                 return;
                               }
-                              const emp = erpEmployees.find((e) => e.employeeId === val);
+                              const emp =
+                                erpEmployees.find((e) => e.employeeId === val) ||
+                                (selectedEmployee && selectedEmployee.employeeId === val
+                                  ? selectedEmployee
+                                  : null);
                               if (emp) {
                                 setSelectedEmployee(emp);
                                 if (emp.department) {
                                   form.setValue("department", emp.department);
                                 }
+                                form.setValue("hostEmployeeName", emp.employeeName);
+                                form.setValue("hostPicUrl", emp.picUrl || "");
                               }
                             }}
                             items={hostOptions}
@@ -838,6 +852,8 @@ export default function AddVisitorPage() {
                             variant="outline"
                             onClick={() => {
                               form.setValue("hostEmployeeId", "");
+                              form.setValue("hostEmployeeName", "");
+                              form.setValue("hostPicUrl", "");
                               form.setValue("department", "");
                               setSelectedEmployee(null);
                               setHostSearch("");

@@ -36,6 +36,7 @@ interface VisitRecord {
   visitorPassNo: string;
   hostName: string;
   hostDepartment: string;
+  hostPicUrl?: string | null;
 }
 
 interface VisitorReport {
@@ -502,11 +503,26 @@ export default function VisitorWiseVisitPage() {
                                 </Badge>
                               </td>
                               <td className="py-3 px-3">
-                                <div className="font-medium text-zinc-800 text-[13px]">
-                                  {record.hostName}
-                                </div>
-                                <div className="text-[11px] text-zinc-400 font-normal mt-0.5">
-                                  {record.hostDepartment}
+                                <div className="flex items-center gap-3">
+                                  {record.hostPicUrl ? (
+                                    <img
+                                      src={record.hostPicUrl}
+                                      alt={record.hostName}
+                                      className="h-8 w-8 rounded-full object-cover border border-zinc-200 shrink-0"
+                                    />
+                                  ) : (
+                                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 border border-zinc-200 text-zinc-400">
+                                      <User className="h-4 w-4" />
+                                    </div>
+                                  )}
+                                  <div>
+                                    <div className="font-medium text-zinc-800 text-[13px] leading-tight">
+                                      {record.hostName}
+                                    </div>
+                                    <div className="text-[11px] text-zinc-400 font-normal mt-0.5">
+                                      {record.hostDepartment}
+                                    </div>
+                                  </div>
                                 </div>
                               </td>
                               <td className="py-3 px-3">

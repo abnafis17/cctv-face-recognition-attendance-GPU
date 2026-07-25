@@ -208,6 +208,23 @@ export function useErpEmployees(options?: {
     }
   }, []);
 
+  const readCompanyName = useCallback((): string => {
+    if (typeof window === "undefined") return "";
+
+    try {
+      const raw = localStorage.getItem("userInfo");
+      if (!raw) return "";
+      const userInfo = JSON.parse(raw);
+      return String(
+        userInfo?.companyName ??
+          userInfo?.company?.companyName ??
+          "",
+      ).trim();
+    } catch {
+      return "";
+    }
+  }, []);
+
   const fetchEmployees = useCallback(async (q: string) => {
     setLoading(true);
     setError("");
@@ -260,6 +277,7 @@ export function useErpEmployees(options?: {
 
       if (filterByOrg) {
         payload.organizationId = readOrganizationId();
+        payload.flag = readCompanyName();
       }
 
       const res = await erpAxios.post(

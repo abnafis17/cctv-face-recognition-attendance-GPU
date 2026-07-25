@@ -139,6 +139,8 @@ export async function createVisitorRecord(req: Request, res: Response) {
         purposeOfVisit: payload.purposeOfVisit,
         department: payload.department,
         hostEmployeeId: payload.hostEmployeeId,
+        hostEmployeeName: payload.hostEmployeeName,
+        hostPicUrl: payload.hostPicUrl ?? null,
         idProofType: payload.idProofType,
         idProofNumber: payload.idProofNumber ?? null,
         vehicleNumber: payload.vehicleNumber ?? null,
@@ -209,33 +211,10 @@ export async function listVisitorRecords(req: Request, res: Response) {
       take: limit,
     });
 
-    // Resolve employee host names
-    const uniqueHostIds = Array.from(new Set(visitors.map((v) => v.hostEmployeeId).filter(Boolean)));
-    const empMap = new Map<string, string>();
-
-    if (uniqueHostIds.length > 0) {
-      const employees = await prisma.employee.findMany({
-        where: {
-          companyId,
-          empId: { in: uniqueHostIds },
-        },
-        select: {
-          empId: true,
-          name: true,
-        },
-      });
-      for (const emp of employees) {
-        if (emp.empId) {
-          empMap.set(emp.empId, emp.name);
-        }
-      }
-    }
-
     const visitorsWithHostName = visitors.map((visitor) => {
-      const hostName = visitor.hostEmployeeId ? empMap.get(visitor.hostEmployeeId) : null;
       return {
         ...visitor,
-        hostName,
+        hostName: visitor.hostEmployeeName,
       };
     });
 
@@ -461,59 +440,34 @@ export async function getEmployeeWiseReport(req: Request, res: Response) {
     });
 
     // Extract all unique hostEmployeeId values
-    const uniqueHostIds = Array.from(new Set(visitors.map((v) => v.hostEmployeeId).filter(Boolean)));
-
-    if (uniqueHostIds.length === 0) {
-      return res.json([]);
-    }
-
-    // Fetch matching local employees
-    const employeeQuery: any = {
-      companyId,
-      empId: { in: uniqueHostIds },
-    };
-
-    let employees = await prisma.employee.findMany({
-      where: employeeQuery,
-    });
-
-    // If q is provided, filter employees by name/ID
+    let filteredVisitors = visitors;
     if (q) {
       const searchStr = String(q).trim().toLowerCase();
-      employees = employees.filter((e) =>
-        e.name.toLowerCase().includes(searchStr) ||
-        (e.empId && e.empId.toLowerCase().includes(searchStr))
+      filteredVisitors = visitors.filter((v) =>
+        (v.hostEmployeeName && v.hostEmployeeName.toLowerCase().includes(searchStr)) ||
+        (v.hostEmployeeId && v.hostEmployeeId.toLowerCase().includes(searchStr))
       );
     }
 
-    // Map of employee info for quick lookup
-    const empMap = new Map<string, typeof employees[0]>();
-    for (const emp of employees) {
-      if (emp.empId) {
-        empMap.set(emp.empId, emp);
-      }
+    if (filteredVisitors.length === 0) {
+      return res.json([]);
     }
 
     // Group visitors by hostEmployeeId
     const reportMap = new Map<string, any>();
 
-    for (const visitor of visitors) {
+    for (const visitor of filteredVisitors) {
       const hostId = visitor.hostEmployeeId;
-      // Filter out if q filter is active and host is not in the matched employees map
-      if (q && !empMap.has(hostId)) {
-        continue;
-      }
-
-      // If no employee search filter was active, we may display employee name even if not found in db
-      const emp = empMap.get(hostId);
-      const employeeName = emp?.name || `Employee (${hostId})`;
-      const department = emp?.department || visitor.department || "N/A";
+      const employeeName = visitor.hostEmployeeName || `Employee (${hostId})`;
+      const department = visitor.department || "N/A";
+      const hostPicUrl = visitor.hostPicUrl || null;
 
       if (!reportMap.has(hostId)) {
         reportMap.set(hostId, {
           employeeId: hostId,
           employeeName,
           department,
+          hostPicUrl,
           visits: [],
         });
       }
@@ -579,6 +533,7 @@ export async function getEmployeeWiseReport(req: Request, res: Response) {
         employeeId: group.employeeId,
         employeeName: group.employeeName,
         department: group.department,
+        hostPicUrl: group.hostPicUrl,
         totalVisits,
         uniqueVisitors,
         lastVisit,
@@ -639,33 +594,6 @@ export async function getVisitorWiseReport(req: Request, res: Response) {
       return res.json([]);
     }
 
-    // Extract all unique hostEmployeeId values to map employee info
-    const uniqueHostIds = Array.from(new Set(visitors.map((v) => v.hostEmployeeId).filter(Boolean)));
-
-    const empMap = new Map<string, { name: string; department: string }>();
-
-    if (uniqueHostIds.length > 0) {
-      const employees = await prisma.employee.findMany({
-        where: {
-          companyId,
-          empId: { in: uniqueHostIds },
-        },
-        select: {
-          empId: true,
-          name: true,
-          department: true,
-        },
-      });
-      for (const emp of employees) {
-        if (emp.empId) {
-          empMap.set(emp.empId, {
-            name: emp.name,
-            department: emp.department || "",
-          });
-        }
-      }
-    }
-
     // Group visitor records by contactNumber
     const visitorMap = new Map<string, any>();
 
@@ -699,9 +627,8 @@ export async function getVisitorWiseReport(req: Request, res: Response) {
         vData.hostsMetSet.add(visit.hostEmployeeId);
       }
 
-      const hostInfo = visit.hostEmployeeId ? empMap.get(visit.hostEmployeeId) : null;
-      const hostName = hostInfo?.name || `Employee (${visit.hostEmployeeId || "N/A"})`;
-      const hostDepartment = hostInfo?.department || visit.department || "N/A";
+      const hostName = visit.hostEmployeeName || `Employee (${visit.hostEmployeeId || "N/A"})`;
+      const hostDepartment = visit.department || "N/A";
 
       vData.history.push({
         id: visit.id,
@@ -713,6 +640,7 @@ export async function getVisitorWiseReport(req: Request, res: Response) {
         visitorPassNo: visit.visitorPassNo,
         hostName,
         hostDepartment,
+        hostPicUrl: visit.hostPicUrl,
       });
     }
 
