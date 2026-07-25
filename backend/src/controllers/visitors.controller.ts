@@ -141,11 +141,13 @@ export async function createVisitorRecord(req: Request, res: Response) {
         hostEmployeeId: payload.hostEmployeeId,
         hostEmployeeName: payload.hostEmployeeName,
         hostPicUrl: payload.hostPicUrl ?? null,
-        idProofType: payload.idProofType,
+        idProofType: payload.idProofType || "NID",
         idProofNumber: payload.idProofNumber ?? null,
         vehicleNumber: payload.vehicleNumber ?? null,
         extraGuest: payload.extraGuest ?? null,
-        visitorPassNo: payload.visitorPassNo,
+        visitorPassNo:
+          payload.visitorPassNo ||
+          `PASS-${Math.floor(100000 + Math.random() * 900000)}`,
         dateOfVisit: payload.dateOfVisit,
         timeIn: payload.timeIn,
         entryAuthorizedBy: payload.entryAuthorizedBy ?? null,
@@ -154,6 +156,52 @@ export async function createVisitorRecord(req: Request, res: Response) {
       },
     });
 
+    if (
+      payload.faceEmbedding &&
+      Array.isArray(payload.faceEmbedding) &&
+      payload.faceEmbedding.length > 0
+    ) {
+      // Check if a face template already exists for a visitor with this contact number
+      const existingTemplate = await prisma.visitorFaceTemplate.findFirst({
+        where: {
+          companyId,
+          visitor: {
+            contactNumber: payload.contactNumber,
+          },
+        },
+      });
+
+      if (existingTemplate) {
+        // Update existing face template with the new high-quality photo & embedding
+        await prisma.visitorFaceTemplate.update({
+          where: { id: existingTemplate.id },
+          data: {
+            embedding: payload.faceEmbedding,
+            photoUrl: visitorPhoto ?? existingTemplate.photoUrl,
+            updatedAt: new Date(),
+          },
+        });
+      } else {
+        await prisma.visitorFaceTemplate.create({
+          data: {
+            visitorId: visitor.id,
+            companyId,
+            modelName: "face-api",
+            embedding: payload.faceEmbedding,
+            photoUrl: visitorPhoto ?? null,
+          },
+        });
+      }
+
+      // Update all past visitor records for this phone number with the latest high-quality photo
+      if (visitorPhoto) {
+        await prisma.visitor.updateMany({
+          where: { companyId, contactNumber: payload.contactNumber },
+          data: { visitorPhoto },
+        });
+      }
+    }
+
     return res.status(201).json({
       ok: true,
       visitor,
@@ -161,7 +209,45 @@ export async function createVisitorRecord(req: Request, res: Response) {
   } catch (error: unknown) {
     if (error instanceof ZodError) return respondValidationError(res, error);
     return res.status(500).json({
-      error: "Failed to save visitor record",
+      error: "Failed to create visitor record",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+export async function deleteVisitorRecord(req: Request, res: Response) {
+  try {
+    const companyId = getCompanyId(req);
+    if (!companyId) return res.status(400).json({ error: "Missing company ID" });
+
+    const { id } = req.params;
+    if (!id) return res.status(400).json({ error: "Visitor ID is required" });
+
+    const visitor = await prisma.visitor.findFirst({
+      where: { id, companyId },
+    });
+
+    if (!visitor) {
+      return res.status(404).json({ error: "Visitor record not found" });
+    }
+
+    // 1. Delete all associated VisitorFaceTemplate records (Cascade delete)
+    await prisma.visitorFaceTemplate.deleteMany({
+      where: { visitorId: id },
+    });
+
+    // 2. Delete the Visitor record itself
+    await prisma.visitor.delete({
+      where: { id },
+    });
+
+    return res.json({
+      ok: true,
+      message: "Visitor record and corresponding face template deleted successfully",
+    });
+  } catch (error: unknown) {
+    return res.status(500).json({
+      error: "Failed to delete visitor record",
       detail: error instanceof Error ? error.message : String(error),
     });
   }
@@ -667,5 +753,89 @@ export async function getVisitorWiseReport(req: Request, res: Response) {
     });
   }
 }
+
+function computeEuclideanDistance(v1: number[], v2: number[]): number {
+  if (!v1 || !v2 || v1.length !== v2.length) return Infinity;
+  let sum = 0;
+  for (let i = 0; i < v1.length; i++) {
+    const diff = v1[i] - v2[i];
+    sum += diff * diff;
+  }
+  return Math.sqrt(sum);
+}
+
+export async function recognizeVisitorFace(req: Request, res: Response) {
+  try {
+    const companyId = getCompanyId(req);
+    if (!companyId) return res.status(400).json({ error: "Missing company ID" });
+
+    const { embedding } = req.body || {};
+    if (!Array.isArray(embedding) || embedding.length === 0) {
+      return res.status(400).json({ error: "embedding array is required" });
+    }
+
+    const templates = await prisma.visitorFaceTemplate.findMany({
+      where: { companyId },
+      include: {
+        visitor: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    let bestMatch: any = null;
+    let minDistance = Infinity;
+
+    for (const t of templates) {
+      if (!t.embedding || t.embedding.length !== embedding.length) continue;
+      const dist = computeEuclideanDistance(embedding, t.embedding);
+      if (dist < minDistance) {
+        minDistance = dist;
+        bestMatch = t.visitor;
+      }
+    }
+
+    // Threshold for face-api.js descriptors (standard ~0.55)
+    const THRESHOLD = 0.55;
+
+    if (bestMatch && minDistance <= THRESHOLD) {
+      return res.json({
+        recognized: true,
+        type: "visitor",
+        distance: minDistance,
+        visitor: {
+          id: bestMatch.id,
+          visitorName: bestMatch.visitorName,
+          contactNumber: bestMatch.contactNumber,
+          emailAddress: bestMatch.emailAddress,
+          companyAddress: bestMatch.companyAddress,
+          visitorType: bestMatch.visitorType,
+          purposeOfVisit: bestMatch.purposeOfVisit,
+          department: bestMatch.department,
+          hostEmployeeId: bestMatch.hostEmployeeId,
+          hostEmployeeName: bestMatch.hostEmployeeName,
+          hostPicUrl: bestMatch.hostPicUrl,
+          idProofType: bestMatch.idProofType,
+          idProofNumber: bestMatch.idProofNumber,
+          vehicleNumber: bestMatch.vehicleNumber,
+          extraGuest: bestMatch.extraGuest,
+          visitorPassNo: bestMatch.visitorPassNo,
+          visitorPhoto: bestMatch.visitorPhoto,
+          remarks: bestMatch.remarks,
+        },
+      });
+    }
+
+    return res.json({
+      recognized: false,
+      distance: minDistance < Infinity ? minDistance : null,
+    });
+  } catch (error: unknown) {
+    return res.status(500).json({
+      error: "Failed to recognize visitor face",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 
 

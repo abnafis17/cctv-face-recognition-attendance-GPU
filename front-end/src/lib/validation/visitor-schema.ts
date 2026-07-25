@@ -20,7 +20,7 @@ export const visitorSchema = z.object({
   hostEmployeeName: z.string().min(1, "Host name is required"),
   hostPicUrl: z.string().optional().or(z.literal("")),
   
-  idProofType: z.string().min(1, "ID proof type is required"),
+  idProofType: z.string().optional().or(z.literal("")),
   idProofNumber: z.string().optional().or(z.literal("")),
   vehicleNumber: z.string().optional().or(z.literal("")),
   extraGuest: z.string().optional().or(z.literal("")),
@@ -34,13 +34,13 @@ export const visitorSchema = z.object({
   visitorPhoto: z.string().optional().or(z.literal("")),
 }).superRefine((data, ctx) => {
   const extraCount = data.extraGuest ? parseInt(data.extraGuest, 10) : 0;
-  if (extraCount > 0) {
+  if (extraCount > 0 && data.visitorPassNo) {
     const passes = data.visitorPassNo
       .split(",")
       .map((p) => p.trim())
       .filter(Boolean);
     const expectedCount = extraCount + 1;
-    if (passes.length !== expectedCount) {
+    if (passes.length > 0 && passes.length !== expectedCount) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: `Please enter exactly ${expectedCount} pass numbers (1 self + ${extraCount} extra guest${extraCount > 1 ? "s" : ""}) separated by commas.`,
