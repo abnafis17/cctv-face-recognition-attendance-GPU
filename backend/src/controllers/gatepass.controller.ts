@@ -268,26 +268,37 @@ export async function listGatepassRecords(req: Request, res: Response) {
     if (!companyId) return res.status(400).json({ error: "Missing company id" });
 
     const query = normalizeListQuery(req);
-    const fromDateStr =
-      query.fromDate || query.date || query.toDate || dhakaTodayYYYYMMDD();
-    const toDateStr =
-      query.toDate || query.date || query.fromDate || dhakaTodayYYYYMMDD();
-
-    if (fromDateStr > toDateStr) {
-      return res.status(400).json({
-        error: "fromDate must be earlier than or equal to toDate",
-      });
-    }
-
-    const { start } = dhakaDayRange(fromDateStr);
-    const { end } = dhakaDayRange(toDateStr);
     const limit = query.limit || 300;
 
     const whereClauses: Prisma.Sql[] = [
       Prisma.sql`gp."companyId" = ${companyId}`,
-      Prisma.sql`gp."outTime" >= ${start}`,
-      Prisma.sql`gp."outTime" < ${end}`,
     ];
+
+    if (query.fromDate || query.toDate) {
+      const fromDateStr = query.fromDate || query.toDate || dhakaTodayYYYYMMDD();
+      const toDateStr = query.toDate || query.fromDate || dhakaTodayYYYYMMDD();
+      if (fromDateStr > toDateStr) {
+        return res.status(400).json({
+          error: "fromDate must be earlier than or equal to toDate",
+        });
+      }
+      const { start } = dhakaDayRange(fromDateStr);
+      const { end } = dhakaDayRange(toDateStr);
+      whereClauses.push(Prisma.sql`gp."outTime" >= ${start} AND gp."outTime" < ${end}`);
+    } else if (query.date) {
+      const { start } = dhakaDayRange(query.date);
+      const { end } = dhakaDayRange(query.date);
+      whereClauses.push(
+        Prisma.sql`((gp."outTime" >= ${start} AND gp."outTime" < ${end}) OR (gp."status" = 'out' AND gp."inTime" IS NULL))`
+      );
+    } else {
+      const todayStr = dhakaTodayYYYYMMDD();
+      const { start } = dhakaDayRange(todayStr);
+      const { end } = dhakaDayRange(todayStr);
+      whereClauses.push(
+        Prisma.sql`((gp."outTime" >= ${start} AND gp."outTime" < ${end}) OR (gp."status" = 'out' AND gp."inTime" IS NULL))`
+      );
+    }
 
     if (query.leaveTypeId) {
       if (query.leaveTypeId === "Long Leave") {
@@ -502,6 +513,7 @@ export async function markGatepassReturn(req: Request, res: Response) {
         outTimeClock: string | null;
         leaveTypeId: string | null;
         leaveType: string;
+        returnTime: number | null;
       }>
     >(
       Prisma.sql`
@@ -510,7 +522,8 @@ export async function markGatepassReturn(req: Request, res: Response) {
           "outTime",
           TO_CHAR("outTime", 'HH24:MI:SS') AS "outTimeClock",
           "leaveTypeId",
-          "leaveType"
+          "leaveType",
+          "returnTime"
         FROM "GatepassTable"
         WHERE "companyId" = ${companyId}
           AND "employeeId" = ${employee.id}
@@ -524,6 +537,16 @@ export async function markGatepassReturn(req: Request, res: Response) {
 
     if (!openGatepass) {
       return res.json({ ok: true, updated: false, reason: "no_open_gatepass" });
+    }
+
+    if (openGatepass.returnTime !== null) {
+      const outTimeMs = new Date(openGatepass.outTime).getTime();
+      const limitMs = outTimeMs + (openGatepass.returnTime + 60) * 60 * 1000;
+      const recognizedTimeMs = new Date(recognizedAt).getTime();
+
+      if (recognizedTimeMs > limitMs) {
+        return res.json({ ok: true, updated: false, reason: "no_open_gatepass" });
+      }
     }
 
     await prisma.$executeRaw(
