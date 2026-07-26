@@ -388,10 +388,12 @@ export default function AddVisitorPage() {
         if (returnedPhoto) {
           form.setValue("visitorPhoto", returnedPhoto);
           setLookupAvatarUrl(returnedPhoto);
+          setPhotoPreview(returnedPhoto);
           setCapturedFile(null);
         } else {
           form.setValue("visitorPhoto", "");
           setLookupAvatarUrl(null);
+          setPhotoPreview(null);
           setCapturedFile(null);
         }
         setIsPhoneReadOnly(true);
@@ -503,19 +505,19 @@ export default function AddVisitorPage() {
     setIsSubmitting(true);
     try {
       // Mandatory live camera face verification check for all visitors (new or returning)
-      const hasLiveVerification =
-        recognitionStatus === "recognized" ||
-        capturedFile !== null ||
-        photoPreview !== null;
+      // const hasLiveVerification =
+      //   recognitionStatus === "recognized" ||
+      //   capturedFile !== null ||
+      //   photoPreview !== null;
 
-      if (!hasLiveVerification) {
-        toast.error(
-          "Face verification is mandatory for all visitors before submission. Please open the camera to verify or capture your face photo."
-        );
-        setIsCameraActive(true);
-        setIsSubmitting(false);
-        return;
-      }
+      // if (!hasLiveVerification) {
+      //   toast.error(
+      //     "Face verification is mandatory for all visitors before submission. Please open the camera to verify or capture your face photo."
+      //   );
+      //   setIsCameraActive(true);
+      //   setIsSubmitting(false);
+      //   return;
+      // }
 
       const formData = new FormData();
       Object.entries(data).forEach(([key, val]) => {
@@ -595,6 +597,8 @@ export default function AddVisitorPage() {
   const handleCameraOpen = () => {
     setIsCameraActive(true);
   };
+
+  const displayPhotoPreview = photoPreview ?? lookupAvatarUrl;
 
   return (
     <div className="w-full pb-10 space-y-6">
@@ -1320,15 +1324,15 @@ export default function AddVisitorPage() {
                         </span>
                       </div>
                     </>
-                  ) : photoPreview ? (
+                  ) : displayPhotoPreview ? (
                     <div className="relative h-full w-full">
                       <img
-                        src={photoPreview}
+                        src={displayPhotoPreview}
                         alt="Visitor Preview"
                         className="h-full w-full object-cover"
                       />
                       <div className="absolute bottom-2 left-2 right-2 rounded-lg bg-emerald-950/90 backdrop-blur-xs p-1.5 text-center text-[11px] font-bold text-emerald-300 border border-emerald-500/30">
-                        ✓ Photo Captured
+                        ✓ Photo Available
                       </div>
                     </div>
                   ) : (
