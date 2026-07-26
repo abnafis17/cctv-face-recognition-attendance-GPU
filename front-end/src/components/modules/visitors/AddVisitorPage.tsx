@@ -170,6 +170,8 @@ export default function AddVisitorPage() {
       hostEmployeeId: "",
       hostEmployeeName: "",
       hostPicUrl: "",
+      hostDesignationId: "",
+      hostDesignationName: "",
       idProofType: "",
       idProofNumber: "",
       vehicleNumber: "",
@@ -567,6 +569,8 @@ export default function AddVisitorPage() {
       hostEmployeeId: "",
       hostEmployeeName: "",
       hostPicUrl: "",
+      hostDesignationId: "",
+      hostDesignationName: "",
       idProofType: "",
       idProofNumber: "",
       vehicleNumber: "",
@@ -1000,6 +1004,8 @@ export default function AddVisitorPage() {
                                 setSelectedEmployee(null);
                                 form.setValue("hostEmployeeName", "");
                                 form.setValue("hostPicUrl", "");
+                                form.setValue("hostDesignationId", "");
+                                form.setValue("hostDesignationName", "");
                                 return;
                               }
                               const emp =
@@ -1014,6 +1020,8 @@ export default function AddVisitorPage() {
                                 }
                                 form.setValue("hostEmployeeName", emp.employeeName);
                                 form.setValue("hostPicUrl", emp.picUrl || "");
+                                form.setValue("hostDesignationId", emp.designationId || "");
+                                form.setValue("hostDesignationName", emp.designation || "");
                               }
                             }}
                             items={hostOptions}
@@ -1032,6 +1040,8 @@ export default function AddVisitorPage() {
                               form.setValue("hostEmployeeId", "");
                               form.setValue("hostEmployeeName", "");
                               form.setValue("hostPicUrl", "");
+                              form.setValue("hostDesignationId", "");
+                              form.setValue("hostDesignationName", "");
                               form.setValue("department", "");
                               setSelectedEmployee(null);
                               setHostSearch("");

@@ -141,6 +141,8 @@ export async function createVisitorRecord(req: Request, res: Response) {
         hostEmployeeId: payload.hostEmployeeId,
         hostEmployeeName: payload.hostEmployeeName,
         hostPicUrl: payload.hostPicUrl ?? null,
+        host_designation_id: payload.hostDesignationId ?? null,
+        host_designation_name: payload.hostDesignationName ?? null,
         idProofType: payload.idProofType || "NID",
         idProofNumber: payload.idProofNumber ?? null,
         vehicleNumber: payload.vehicleNumber ?? null,

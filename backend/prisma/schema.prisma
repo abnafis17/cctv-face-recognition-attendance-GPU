@@ -563,6 +563,9 @@ model Visitor {
   remarks           String?
   visitorPhoto      String?  @db.Text
 
+  host_designation_id   String?
+  host_designation_name String?
+
   status            String   @default("checked_in")
   timeOut           String?
 

@@ -15,6 +15,8 @@ export interface VisitorRecord {
   hostName?: string | null;
   hostEmployeeName?: string | null;
   hostPicUrl?: string | null;
+  host_designation_id?: string | null;
+  host_designation_name?: string | null;
   idProofType: string;
   idProofNumber?: string | null;
   vehicleNumber?: string | null;
@@ -289,6 +291,11 @@ export function getVisitorColumns(
                   <div className="font-medium text-zinc-800 truncate">
                     {hostName}
                   </div>
+                  {row.original.host_designation_name && (
+                    <div className="text-[11px] text-zinc-500 font-medium truncate">
+                      {row.original.host_designation_name}
+                    </div>
+                  )}
                   <div className="text-[11px] text-zinc-400 font-normal truncate">
                     ({row.original.hostEmployeeId})
                   </div>

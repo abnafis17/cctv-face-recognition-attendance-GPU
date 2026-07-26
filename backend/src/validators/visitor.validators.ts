@@ -27,6 +27,8 @@ export const visitorCreateSchema = z.object({
   hostEmployeeId: requiredTrimmedString(191, "Host employee is required"),
   hostEmployeeName: requiredTrimmedString(255, "Host employee name is required"),
   hostPicUrl: optionalTrimmedString(1000).optional(),
+  hostDesignationId: optionalTrimmedString(255).optional(),
+  hostDesignationName: optionalTrimmedString(255).optional(),
   idProofType: optionalTrimmedString(100).optional(),
   idProofNumber: optionalTrimmedString(100).optional(),
   vehicleNumber: optionalTrimmedString(100).optional(),

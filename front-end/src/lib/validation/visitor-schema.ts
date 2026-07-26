@@ -19,6 +19,8 @@ export const visitorSchema = z.object({
   hostEmployeeId: z.string().min(1, "Host / employee name is required"),
   hostEmployeeName: z.string().min(1, "Host name is required"),
   hostPicUrl: z.string().optional().or(z.literal("")),
+  hostDesignationId: z.string().optional().or(z.literal("")),
+  hostDesignationName: z.string().optional().or(z.literal("")),
   
   idProofType: z.string().optional().or(z.literal("")),
   idProofNumber: z.string().optional().or(z.literal("")),
