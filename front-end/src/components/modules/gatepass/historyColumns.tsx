@@ -237,9 +237,26 @@ export function getHistoryColumns(
           displayVal = `${diffMins} min`;
         }
 
+        const overtimeMins = rec.returnTime && diffMins > rec.returnTime ? diffMins - rec.returnTime : 0;
+        let displayOvertime = "";
+        if (overtimeMins > 0) {
+          const otHours = Math.floor(overtimeMins / 60);
+          const otMins = overtimeMins % 60;
+          if (otHours > 0) {
+            displayOvertime = `+${otHours} hr ${otMins} min`;
+          } else {
+            displayOvertime = `+${overtimeMins} min`;
+          }
+        }
+
         return (
-          <div className="px-1 py-2 text-center font-medium text-zinc-900">
-            {displayVal}
+          <div className="flex flex-col items-center justify-center px-1 py-1">
+            <span className="font-medium text-zinc-900">{displayVal}</span>
+            {overtimeMins > 0 && (
+              <span className="text-[10px] text-red-500 font-bold mt-1 bg-rose-50 border border-rose-100 rounded-full px-2 py-0.5 whitespace-nowrap">
+                {displayOvertime} Overtime
+              </span>
+            )}
           </div>
         );
       },
