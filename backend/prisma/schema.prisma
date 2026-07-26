@@ -40,6 +40,7 @@ model Company {
   otRequisitions OtRequisition[]
   gatepassRows    GatepassTable[]
   visitors        Visitor[]
+  visitorFaceTemplates VisitorFaceTemplate[]
   visitorTypes    VisitorType[]
   purposeOfVisits PurposeOfVisit[]
   permissions     Permission[]
@@ -568,8 +569,29 @@ model Visitor {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
+  templates         VisitorFaceTemplate[]
+
   @@index([companyId])
   @@index([contactNumber])
+}
+
+model VisitorFaceTemplate {
+  id          String   @id @default(cuid())
+  visitorId   String
+  visitor     Visitor  @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+
+  companyId   String?
+  company     Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  modelName   String   @default("face-api")
+  embedding   Float[]
+  photoUrl    String?  @db.Text
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([visitorId])
+  @@index([companyId])
 }
 
 model VisitorType {
@@ -597,3 +619,4 @@ model PurposeOfVisit {
   @@unique([companyId, name])
   @@index([companyId])
 }
+

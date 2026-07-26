@@ -27,7 +27,7 @@ export const visitorCreateSchema = z.object({
   hostEmployeeId: requiredTrimmedString(191, "Host employee is required"),
   hostEmployeeName: requiredTrimmedString(255, "Host employee name is required"),
   hostPicUrl: optionalTrimmedString(1000).optional(),
-  idProofType: requiredTrimmedString(100, "ID proof type is required"),
+  idProofType: optionalTrimmedString(100).optional(),
   idProofNumber: optionalTrimmedString(100).optional(),
   vehicleNumber: optionalTrimmedString(100).optional(),
   extraGuest: optionalTrimmedString(32).optional(),
@@ -37,6 +37,19 @@ export const visitorCreateSchema = z.object({
   entryAuthorizedBy: optionalTrimmedString(255).optional(),
   remarks: optionalTrimmedString(1000).optional(),
   visitorPhoto: z.string().optional().nullable(),
+  faceEmbedding: z.preprocess((val) => {
+    if (val === undefined || val === null || val === "") return undefined;
+    if (typeof val === "string") {
+      try {
+        const parsed = JSON.parse(val);
+        if (Array.isArray(parsed)) return parsed.map(Number);
+      } catch {
+        return undefined;
+      }
+    }
+    if (Array.isArray(val)) return val.map(Number);
+    return undefined;
+  }, z.array(z.number()).optional().nullable()),
 });
 
 export const visitorListQuerySchema = z.object({

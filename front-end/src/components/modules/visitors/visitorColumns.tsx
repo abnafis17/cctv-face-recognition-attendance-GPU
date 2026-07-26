@@ -1,6 +1,6 @@
 import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "@/components/ui/badge";
-import { User, LogOut } from "lucide-react";
+import { User, LogOut, Trash2 } from "lucide-react";
 
 export interface VisitorRecord {
   id: string;
@@ -71,7 +71,9 @@ function renderCell(isCheckingOut: boolean, children: React.ReactNode, shimmerCl
 export function getVisitorColumns(
   skip: number,
   onCheckout: (id: string) => void,
+  onDelete: (id: string) => void,
   checkingOutIds: Set<string>,
+  deletingIds?: Set<string>
 ): ColumnDef<VisitorRecord>[] {
   return [
     {
@@ -80,9 +82,9 @@ export function getVisitorColumns(
         <div className="w-full px-1 py-2 text-center font-semibold text-zinc-700">SL</div>
       ),
       cell: (info) => {
-        const isCheckingOut = checkingOutIds.has(info.row.original.id);
+        const isCheckingOut = checkingOutIds.has(info.row.original.id) || (deletingIds && deletingIds.has(info.row.original.id));
         return renderCell(
-          isCheckingOut,
+          !!isCheckingOut,
           <div className="px-1 py-2 text-center text-zinc-500 font-normal">
             {skip + info.row.index + 1}
           </div>,
@@ -97,9 +99,9 @@ export function getVisitorColumns(
         <div className="w-full px-1 py-2 text-center font-semibold text-zinc-700">Photo</div>
       ),
       cell: ({ row }) => {
-        const isCheckingOut = checkingOutIds.has(row.original.id);
+        const isCheckingOut = checkingOutIds.has(row.original.id) || (deletingIds && deletingIds.has(row.original.id));
         return renderCell(
-          isCheckingOut,
+          !!isCheckingOut,
           <div className="flex justify-center px-1 py-1">
             {row.original.visitorPhoto ? (
               <img
@@ -124,9 +126,9 @@ export function getVisitorColumns(
         <div className="w-full px-1 py-2 text-left font-semibold text-zinc-700">Visitor</div>
       ),
       cell: ({ row }) => {
-        const isCheckingOut = checkingOutIds.has(row.original.id);
+        const isCheckingOut = checkingOutIds.has(row.original.id) || (deletingIds && deletingIds.has(row.original.id));
         return renderCell(
-          isCheckingOut,
+          !!isCheckingOut,
           <div className="px-1 py-2">
             <div className="font-medium text-zinc-800 truncate">
               {row.original.visitorName}
@@ -148,9 +150,9 @@ export function getVisitorColumns(
         <div className="w-full px-1 py-2 text-left font-semibold text-zinc-700">Contact</div>
       ),
       cell: ({ row }) => {
-        const isCheckingOut = checkingOutIds.has(row.original.id);
+        const isCheckingOut = checkingOutIds.has(row.original.id) || (deletingIds && deletingIds.has(row.original.id));
         return renderCell(
-          isCheckingOut,
+          !!isCheckingOut,
           <div className="px-1 py-2 text-zinc-600 font-normal">
             {row.original.contactNumber}
           </div>,
@@ -165,9 +167,9 @@ export function getVisitorColumns(
         <div className="w-full px-1 py-2 text-left font-semibold text-zinc-700">Company/Address</div>
       ),
       cell: ({ row }) => {
-        const isCheckingOut = checkingOutIds.has(row.original.id);
+        const isCheckingOut = checkingOutIds.has(row.original.id) || (deletingIds && deletingIds.has(row.original.id));
         return renderCell(
-          isCheckingOut,
+          !!isCheckingOut,
           <div className="px-1 py-2 text-zinc-600 font-normal truncate">
             {row.original.companyAddress || "--"}
           </div>,
@@ -182,9 +184,9 @@ export function getVisitorColumns(
         <div className="w-full px-1 py-2 text-left font-semibold text-zinc-700">Department</div>
       ),
       cell: ({ row }) => {
-        const isCheckingOut = checkingOutIds.has(row.original.id);
+        const isCheckingOut = checkingOutIds.has(row.original.id) || (deletingIds && deletingIds.has(row.original.id));
         return renderCell(
-          isCheckingOut,
+          !!isCheckingOut,
           <div className="px-1 py-2 text-zinc-600 font-normal truncate">
             {row.original.department}
           </div>,
@@ -199,9 +201,9 @@ export function getVisitorColumns(
         <div className="w-full px-1 py-2 text-left font-semibold text-zinc-700">Purpose</div>
       ),
       cell: ({ row }) => {
-        const isCheckingOut = checkingOutIds.has(row.original.id);
+        const isCheckingOut = checkingOutIds.has(row.original.id) || (deletingIds && deletingIds.has(row.original.id));
         return renderCell(
-          isCheckingOut,
+          !!isCheckingOut,
           <div className="px-1 py-2 text-zinc-600 font-normal truncate">
             {row.original.purposeOfVisit}
           </div>,
@@ -216,9 +218,9 @@ export function getVisitorColumns(
         <div className="w-full px-1 py-2 text-center font-semibold text-zinc-700">Type</div>
       ),
       cell: ({ row }) => {
-        const isCheckingOut = checkingOutIds.has(row.original.id);
+        const isCheckingOut = checkingOutIds.has(row.original.id) || (deletingIds && deletingIds.has(row.original.id));
         return renderCell(
-          isCheckingOut,
+          !!isCheckingOut,
           <div className="flex justify-center px-1 py-2">
             <Badge
               variant="outline"
@@ -238,13 +240,13 @@ export function getVisitorColumns(
         <div className="w-full px-1 py-2 text-center font-semibold text-zinc-700">Date & Time</div>
       ),
       cell: ({ row }) => {
-        const isCheckingOut = checkingOutIds.has(row.original.id);
+        const isCheckingOut = checkingOutIds.has(row.original.id) || (deletingIds && deletingIds.has(row.original.id));
         const formattedDate = formatDate(row.original.dateOfVisit);
         const timeIn12 = formatTime12h(row.original.timeIn);
         const timeOut12 = row.original.status === "checked_out" ? formatTime12h(row.original.timeOut) : "--";
         
         return renderCell(
-          isCheckingOut,
+          !!isCheckingOut,
           <div className="px-1 py-2 text-center">
             <div className="text-zinc-700 font-normal">
               {formattedDate}
@@ -264,11 +266,11 @@ export function getVisitorColumns(
         <div className="w-full px-1 py-2 text-left font-semibold text-zinc-700">Host/Employee</div>
       ),
       cell: ({ row }) => {
-        const isCheckingOut = checkingOutIds.has(row.original.id);
+        const isCheckingOut = checkingOutIds.has(row.original.id) || (deletingIds && deletingIds.has(row.original.id));
         const hostName = row.original.hostName;
         const hostPicUrl = row.original.hostPicUrl;
         return renderCell(
-          isCheckingOut,
+          !!isCheckingOut,
           <div className="flex items-center gap-2.5 px-1 py-1 text-left min-w-0">
             {hostPicUrl ? (
               <img
@@ -309,10 +311,10 @@ export function getVisitorColumns(
         <div className="w-full px-1 py-2 text-center font-semibold text-zinc-700">Status</div>
       ),
       cell: ({ row }) => {
-        const isCheckingOut = checkingOutIds.has(row.original.id);
+        const isCheckingOut = checkingOutIds.has(row.original.id) || (deletingIds && deletingIds.has(row.original.id));
         const isCheckedIn = row.original.status !== "checked_out";
         return renderCell(
-          isCheckingOut,
+          !!isCheckingOut,
           <div className="flex justify-center px-1 py-2">
             <Badge
               variant="outline"
@@ -336,30 +338,32 @@ export function getVisitorColumns(
         <div className="w-full px-1 py-2 text-center font-semibold text-zinc-700">Action</div>
       ),
       cell: ({ row }) => {
-        const isCheckingOut = checkingOutIds.has(row.original.id);
+        const isCheckingOut = checkingOutIds.has(row.original.id) || (deletingIds && deletingIds.has(row.original.id));
         const isCheckedIn = row.original.status !== "checked_out";
-        if (!isCheckedIn) {
-          return (
-            <div className="text-center text-zinc-400 font-normal px-1 py-2 text-sm">
-              -
-            </div>
-          );
-        }
         return renderCell(
-          isCheckingOut,
-          <div className="flex justify-center px-1 py-1">
+          !!isCheckingOut,
+          <div className="flex items-center justify-center gap-1.5 px-1 py-1">
+            {isCheckedIn && (
+              <button
+                onClick={() => onCheckout(row.original.id)}
+                className="flex items-center gap-1 rounded-lg border border-emerald-500 bg-white px-2.5 py-1 text-xs font-medium text-emerald-600 transition-all hover:bg-emerald-50 active:scale-95 cursor-pointer shadow-sm"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+                Checkout
+              </button>
+            )}
             <button
-              onClick={() => onCheckout(row.original.id)}
-              className="flex items-center gap-1.5 rounded-lg border border-emerald-500 bg-white px-3 py-1 text-xs font-medium text-emerald-600 transition-all hover:bg-emerald-50 active:scale-95 cursor-pointer shadow-sm"
+              onClick={() => onDelete(row.original.id)}
+              title="Delete visitor & face template"
+              className="flex items-center gap-1 rounded-lg border border-rose-200 bg-white px-2 py-1 text-xs font-medium text-rose-600 transition-all hover:bg-rose-50 hover:border-rose-300 active:scale-95 cursor-pointer shadow-sm"
             >
-              <LogOut className="h-3.5 w-3.5" />
-              Checkout
+              <Trash2 className="h-3.5 w-3.5" />
             </button>
           </div>,
-          "w-24 h-8 mx-auto rounded-lg"
+          "w-28 h-8 mx-auto rounded-lg"
         );
       },
-      size: 120,
+      size: 140,
     },
   ];
 }

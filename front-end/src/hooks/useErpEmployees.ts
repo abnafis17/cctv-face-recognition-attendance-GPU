@@ -276,8 +276,8 @@ export function useErpEmployees(options?: {
       };
 
       if (filterByOrg) {
-        payload.organizationId = readOrganizationId();
-        payload.flag = readCompanyName();
+        // payload.organizationId = readOrganizationId();
+        // payload.flag = readCompanyName();
       }
 
       const res = await erpAxios.post(

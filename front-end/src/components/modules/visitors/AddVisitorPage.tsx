@@ -32,7 +32,15 @@ import {
   ArrowRightLeft,
   CalendarDays,
   Keyboard,
+  Loader2,
+  Scan,
+  X,
 } from "lucide-react";
+import {
+  extractFaceDescriptor,
+  analyzeCapturedImage,
+  loadFaceApiModels,
+} from "@/lib/faceApi";
 import { cn } from "@/lib/utils";
 import {
   visitorSchema,
@@ -51,12 +59,6 @@ import toast from "react-hot-toast";
 import { useErpEmployees } from "@/hooks/useErpEmployees";
 import { SearchableSelect } from "@/components/reusable/SearchableSelect";
 import axiosInstance, { API } from "@/config/axiosInstance";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import Webcam from "react-webcam";
 import { VirtualKeyboard } from "@/components/reusable/VirtualKeyboard";
 
@@ -129,6 +131,7 @@ export default function AddVisitorPage() {
     purposesList.length > 0 ? purposesList : fallbackPurposes;
 
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [lookupAvatarUrl, setLookupAvatarUrl] = useState<string | null>(null);
   const [isLookupEmployee, setIsLookupEmployee] = useState(false);
   const [lookupPhone, setLookupPhone] = useState("");
   const [isPhoneReadOnly, setIsPhoneReadOnly] = useState(false);
@@ -136,11 +139,14 @@ export default function AddVisitorPage() {
   const webcamRef = useRef<Webcam>(null);
 
   const [capturedFile, setCapturedFile] = useState<File | null>(null);
-  const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
+  const [isCameraActive, setIsCameraActive] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
     setIsMounted(true);
+    void loadFaceApiModels().catch((e) =>
+      console.warn("Failed to pre-warm face-api models:", e)
+    );
   }, []);
 
   const today = new Date();
@@ -176,6 +182,23 @@ export default function AddVisitorPage() {
       visitorPhoto: "",
     },
   });
+
+  const [capturedEmbedding, setCapturedEmbedding] = useState<number[] | null>(null);
+  const [recognitionStatus, setRecognitionStatus] = useState<
+    "idle" | "scanning" | "recognized" | "unrecognized"
+  >("idle");
+  const [recognizedVisitorName, setRecognizedVisitorName] = useState<string | null>(null);
+  const [isExtractingFace, setIsExtractingFace] = useState(false);
+  const isScanningRef = useRef(false);
+  const isRecognizedRef = useRef(false);
+
+  useEffect(() => {
+    if (!isCameraActive) {
+      if (recognitionStatus === "scanning") {
+        setRecognitionStatus("idle");
+      }
+    }
+  }, [isCameraActive, recognitionStatus]);
 
   const {
     employees: erpEmployees,
@@ -361,13 +384,15 @@ export default function AddVisitorPage() {
 
         form.setValue("emailAddress", row.emailAddress || "");
         form.setValue("companyAddress", row.companyAddress || "");
-        form.setValue("visitorType", row.visitorType || "Guest");
-        if (row.visitorPhoto) {
-          form.setValue("visitorPhoto", row.visitorPhoto);
-          setPhotoPreview(row.visitorPhoto);
+        const returnedPhoto = row.visitorPhoto || row.picUrl || "";
+        if (returnedPhoto) {
+          form.setValue("visitorPhoto", returnedPhoto);
+          setLookupAvatarUrl(returnedPhoto);
+          setPhotoPreview(returnedPhoto);
           setCapturedFile(null);
         } else {
           form.setValue("visitorPhoto", "");
+          setLookupAvatarUrl(null);
           setPhotoPreview(null);
           setCapturedFile(null);
         }
@@ -397,30 +422,103 @@ export default function AddVisitorPage() {
 
   const capturePhoto = useCallback(async () => {
     const imageSrc = webcamRef.current?.getScreenshot();
-    if (imageSrc) {
-      setPhotoPreview(imageSrc);
-      try {
-        const response = await fetch(imageSrc);
-        const blob = await response.blob();
-        const file = new File([blob], "visitor_photo.jpg", {
-          type: "image/jpeg",
-        });
-        setCapturedFile(file);
-        form.setValue("visitorPhoto", imageSrc);
-        setIsCameraModalOpen(false);
-        toast.success("Photo captured successfully!");
-      } catch (error) {
-        console.error("Failed to parse captured photo", error);
-        toast.error("Failed to parse captured photo");
-      }
-    } else {
+    if (!imageSrc) {
       toast.error("Failed to capture screenshot from camera");
+      return;
+    }
+
+    setIsExtractingFace(true);
+    const toastId = toast.loading("Analyzing captured photo face quality...");
+
+    try {
+      // 1. Create HTMLImageElement from screenshot to analyze captured image
+      const img = new Image();
+      img.src = imageSrc;
+      await new Promise((resolve) => {
+        img.onload = resolve;
+      });
+
+      // 2. Validate single-face presence & image quality on captured image
+      const analysis = await analyzeCapturedImage(img);
+
+      if (!analysis.valid || !analysis.descriptor) {
+        toast.error(
+          analysis.error ||
+            "Captured image rejected. Please ensure exactly 1 clear face is in the photo.",
+          { id: toastId }
+        );
+        setIsExtractingFace(false);
+        return; // Keep camera open so visitor can adjust and retake
+      }
+
+      // 3. Single face & quality check passed! Set captured photo & descriptor
+      setPhotoPreview(imageSrc);
+      form.setValue("visitorPhoto", imageSrc);
+      setCapturedEmbedding(analysis.descriptor);
+
+      const response = await fetch(imageSrc);
+      const blob = await response.blob();
+      const file = new File([blob], "visitor_photo.jpg", {
+        type: "image/jpeg",
+      });
+      setCapturedFile(file);
+
+      // 4. Perform face recognition check against DB using the captured photo's descriptor
+      const res = await axiosInstance.post("/visitors/recognize-face", {
+        embedding: analysis.descriptor,
+      });
+
+      if (res.data?.recognized && res.data?.visitor) {
+        const v = res.data.visitor;
+        isRecognizedRef.current = true;
+        setRecognitionStatus("recognized");
+        setRecognizedVisitorName(v.visitorName);
+
+        form.setValue("visitorName", v.visitorName || "");
+        form.setValue("contactNumber", v.contactNumber || "");
+        form.setValue("emailAddress", v.emailAddress || "");
+        form.setValue("companyAddress", v.companyAddress || "");
+        setLookupAvatarUrl(imageSrc);
+        setIsPhoneReadOnly(true);
+        toast.success(
+          `Recognized Visitor: ${v.visitorName}! Submission will update stored profile image.`,
+          { id: toastId }
+        );
+      } else {
+        setRecognitionStatus("unrecognized");
+        toast.success(
+          "Photo captured & verified (1 clear face detected). Ready for submission!",
+          { id: toastId }
+        );
+      }
+
+      setIsCameraActive(false);
+    } catch (error) {
+      console.error("Failed analyzing captured photo", error);
+      toast.error("Failed to analyze captured photo", { id: toastId });
+    } finally {
+      setIsExtractingFace(false);
     }
   }, [webcamRef, form]);
 
   const onSubmit = async (data: VisitorFormValues) => {
     setIsSubmitting(true);
     try {
+      // Mandatory live camera face verification check for all visitors (new or returning)
+      // const hasLiveVerification =
+      //   recognitionStatus === "recognized" ||
+      //   capturedFile !== null ||
+      //   photoPreview !== null;
+
+      // if (!hasLiveVerification) {
+      //   toast.error(
+      //     "Face verification is mandatory for all visitors before submission. Please open the camera to verify or capture your face photo."
+      //   );
+      //   setIsCameraActive(true);
+      //   setIsSubmitting(false);
+      //   return;
+      // }
+
       const formData = new FormData();
       Object.entries(data).forEach(([key, val]) => {
         if (key === "visitorPhoto") {
@@ -434,6 +532,10 @@ export default function AddVisitorPage() {
         }
       });
 
+      if (capturedEmbedding && capturedEmbedding.length > 0) {
+        formData.append("faceEmbedding", JSON.stringify(capturedEmbedding));
+      }
+
       const response = await axiosInstance.post("/visitors", formData, {
         headers: {
           "Content-Type": "multipart/form-data",
@@ -441,7 +543,7 @@ export default function AddVisitorPage() {
       });
 
       if (response.data?.ok) {
-        toast.success("Visitor registered successfully!");
+        toast.success("Visitor registered & face template saved successfully!");
         handleReset(false);
       } else {
         toast.error(response.data?.error || "Registration failed");
@@ -459,13 +561,13 @@ export default function AddVisitorPage() {
       contactNumber: "",
       emailAddress: "",
       companyAddress: "",
-      visitorType: "Guest",
-      purposeOfVisit: "Meeting",
+      visitorType: "",
+      purposeOfVisit: "",
       department: "",
       hostEmployeeId: "",
       hostEmployeeName: "",
       hostPicUrl: "",
-      idProofType: "NID",
+      idProofType: "",
       idProofNumber: "",
       vehicleNumber: "",
       extraGuest: "",
@@ -477,9 +579,13 @@ export default function AddVisitorPage() {
       visitorPhoto: "",
     });
     setPhotoPreview(null);
+    setLookupAvatarUrl(null);
     setLookupPhone("");
     setCapturedFile(null);
-    setIsCameraModalOpen(false);
+    setCapturedEmbedding(null);
+    setRecognitionStatus("idle");
+    setRecognizedVisitorName(null);
+    setIsCameraActive(false);
     setIsPhoneReadOnly(false);
     setSelectedEmployee(null);
     setHostSearch("");
@@ -489,8 +595,10 @@ export default function AddVisitorPage() {
   };
 
   const handleCameraOpen = () => {
-    setIsCameraModalOpen(true);
+    setIsCameraActive(true);
   };
+
+  const displayPhotoPreview = photoPreview ?? lookupAvatarUrl;
 
   return (
     <div className="w-full pb-10 space-y-6">
@@ -545,6 +653,66 @@ export default function AddVisitorPage() {
             </span>
           </div>
         </div>
+      </div>
+
+      {/* Top Verification Status Banner */}
+      <div className="mb-2">
+        {recognitionStatus === "idle" && (
+          <div className="flex items-center gap-3.5 rounded-xl bg-gradient-to-r from-red-950 via-rose-950 to-slate-900 border border-rose-600/70 p-4 text-white shadow-lg ring-1 ring-rose-500/30">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-600/20 text-rose-300 border border-rose-500/40">
+              <Scan className="h-5 w-5 animate-pulse text-rose-300" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-white flex items-center gap-2 tracking-wide uppercase">
+                FACE VERIFICATION REQUIRED
+                <span className="rounded-full bg-rose-500/30 px-2.5 py-0.5 text-[10px] font-extrabold text-rose-200 uppercase tracking-normal">
+                  ATTENTION
+                </span>
+              </h3>
+              <p className="text-xs text-rose-100/90 font-medium mt-0.5 leading-relaxed">
+                Please verify your face via the camera box on the right layout before submission. If recognized, personal details auto-fill. If new, capture your face photo to proceed.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {recognitionStatus === "recognized" && (
+          <div className="flex items-center gap-3.5 rounded-xl bg-gradient-to-r from-emerald-950 via-teal-950 to-slate-900 border border-emerald-500/50 p-4 text-white shadow-lg ring-1 ring-emerald-500/30">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+              <CheckCircle className="h-5 w-5 text-emerald-300" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-emerald-100 flex items-center gap-2 uppercase tracking-wide">
+                RECOGNIZED RETURNING VISITOR: {recognizedVisitorName || "Visitor"}
+                <span className="rounded-full bg-emerald-500/30 px-2.5 py-0.5 text-[10px] font-extrabold text-emerald-200 uppercase tracking-normal">
+                  VERIFIED
+                </span>
+              </h3>
+              <p className="text-xs text-emerald-100/90 font-medium mt-0.5 leading-relaxed">
+                Personal information auto-filled. Select your remaining visit details and enter Visitor Pass No. to complete registration.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {recognitionStatus === "unrecognized" && (
+          <div className="flex items-center gap-3.5 rounded-xl bg-gradient-to-r from-amber-950 via-amber-900 to-slate-900 border border-amber-500/50 p-4 text-white shadow-lg ring-1 ring-amber-500/30">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/40">
+              <HelpCircle className="h-5 w-5 text-amber-300" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-amber-100 flex items-center gap-2 uppercase tracking-wide">
+                NEW VISITOR — FACE CAPTURE REQUIRED
+                <span className="rounded-full bg-amber-500/30 px-2.5 py-0.5 text-[10px] font-extrabold text-amber-200 uppercase tracking-normal">
+                  ACTION REQUIRED
+                </span>
+              </h3>
+              <p className="text-xs text-amber-100/90 font-medium mt-0.5 leading-relaxed">
+                Your face template is not found in the database. Please align your face in the camera box on the right and click 'Capture Photo' to register.
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
@@ -602,11 +770,21 @@ export default function AddVisitorPage() {
 
             {/* Personal Information */}
             <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm">
-              <div className="flex items-center gap-2 bg-[#0c1b33] px-5 py-3 text-xs font-semibold uppercase tracking-wider text-white">
-                <User className="h-4 w-4" />
-                Personal Information
+              <div className="flex items-center justify-between bg-[#0c1b33] px-5 py-2 text-xs font-semibold uppercase tracking-wider text-white">
+                <div className="flex items-center gap-2">
+                  <User className="h-4 w-4" />
+                  Personal Information
+                </div>
+                {lookupAvatarUrl && (
+                  <img
+                    src={lookupAvatarUrl}
+                    alt="Profile Avatar"
+                    className="h-14 w-14 rounded-full border-2 border-emerald-400 object-cover shadow-md ring-2 ring-white/20 my-1 transition-all"
+                  />
+                )}
               </div>
               <div className="grid grid-cols-1 gap-4 p-5 md:grid-cols-2">
+
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
                     Visitor Name <span className="text-rose-500">*</span>
@@ -880,9 +1058,16 @@ export default function AddVisitorPage() {
 
             {/* ID & Security */}
             <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm">
-              <div className="flex items-center gap-2 bg-[#0c1b33] px-5 py-3 text-xs font-semibold uppercase tracking-wider text-white">
-                <Shield className="h-4 w-4" />
-                ID & Security
+              <div className="flex items-center justify-between bg-[#0c1b33] px-5 py-3 text-xs font-semibold uppercase tracking-wider text-white">
+                <div className="flex items-center gap-2">
+                  <Shield className="h-4 w-4" />
+                  ID & Security
+                </div>
+                {recognitionStatus === "recognized" && (
+                  <span className="rounded-full bg-emerald-500/20 px-2.5 py-0.5 text-[10px] font-semibold text-emerald-300 normal-case">
+                    Optional for Verified Visitor
+                  </span>
+                )}
               </div>
               <div className="grid grid-cols-1 gap-4 p-5 md:grid-cols-2">
                 <div className="space-y-1.5">
@@ -1082,7 +1267,7 @@ export default function AddVisitorPage() {
                     Remarks
                   </label>
                   <div className="relative">
-                    <FileText className="pointer-events-none absolute left-3 top-[18px] h-4 w-4 text-zinc-400" />
+                    <FileText className="pointer-events-none absolute left-3 top-4.5 h-4 w-4 text-zinc-400" />
                     <textarea
                       {...form.register("remarks")}
                       placeholder="Any additional notes..."
@@ -1100,41 +1285,108 @@ export default function AddVisitorPage() {
             </div>
           </div>
 
-          {/* Right Column - Photo capturing placeholder */}
+          {/* Right Column - In-Place Camera & Photo Preview Container */}
           <div className="lg:col-span-1">
             <div className="sticky top-6 overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm">
-              <div className="flex items-center gap-2 bg-[#0c1b33] px-5 py-3 text-xs font-semibold uppercase tracking-wider text-white">
-                <Camera className="h-4 w-4" />
-                Visitor Photo
+              <div className="flex items-center justify-between bg-[#0c1b33] px-5 py-3 text-xs font-semibold uppercase tracking-wider text-white">
+                <div className="flex items-center gap-2">
+                  <Camera className="h-4 w-4" />
+                  Visitor Photo
+                </div>
+                {isCameraActive && (
+                  <span className="flex items-center gap-1.5 text-[10px] text-emerald-400 font-bold normal-case">
+                    <span className="h-2 w-2 rounded-full bg-emerald-400 animate-ping" />
+                    LIVE CAMERA
+                  </span>
+                )}
               </div>
+
               <div className="p-5 flex flex-col gap-4">
-                <div
-                  onClick={handleCameraOpen}
-                  className="group relative flex aspect-square w-full flex-col items-center justify-center rounded-2xl border-2 border-dashed border-zinc-200 bg-slate-50/50 text-zinc-400 cursor-pointer hover:bg-slate-50 hover:border-zinc-300 transition-all duration-200"
-                >
-                  {photoPreview ? (
-                    <img
-                      src={photoPreview}
-                      alt="Visitor Preview"
-                      className="h-full w-full rounded-xl object-cover"
-                    />
+                <div className="relative aspect-square w-full rounded-2xl border-2 border-dashed border-zinc-200 bg-slate-950 overflow-hidden flex items-center justify-center shadow-inner">
+                  {isCameraActive ? (
+                    <>
+                      <Webcam
+                        audio={false}
+                        ref={webcamRef}
+                        screenshotFormat="image/jpeg"
+                        className="h-full w-full object-cover"
+                        videoConstraints={{
+                          width: 640,
+                          height: 640,
+                          facingMode: "user",
+                        }}
+                      />
+                      {/* Live Camera Viewport Overlay Prompt */}
+                      <div className="absolute top-2 left-2 right-2 rounded-lg bg-black/80 backdrop-blur-xs p-2 text-center text-xs font-semibold text-white border border-white/10 shadow-md z-10 pointer-events-none">
+                        <span className="text-cyan-300 flex items-center justify-center gap-1.5 font-medium">
+                          <Camera className="h-4 w-4 text-cyan-400" />
+                          Position face clearly & click 'Capture Photo'
+                        </span>
+                      </div>
+                    </>
+                  ) : displayPhotoPreview ? (
+                    <div className="relative h-full w-full">
+                      <img
+                        src={displayPhotoPreview}
+                        alt="Visitor Preview"
+                        className="h-full w-full object-cover"
+                      />
+                      <div className="absolute bottom-2 left-2 right-2 rounded-lg bg-emerald-950/90 backdrop-blur-xs p-1.5 text-center text-[11px] font-bold text-emerald-300 border border-emerald-500/30">
+                        ✓ Photo Available
+                      </div>
+                    </div>
                   ) : (
-                    <div className="flex flex-col items-center gap-2 text-center">
-                      <Camera className="h-8 w-8 text-zinc-400 group-hover:text-zinc-500 group-hover:scale-105 transition-all" />
-                      <span className="text-xs font-medium text-zinc-500">
-                        Visitor Photo
-                      </span>
+                    <div
+                      onClick={() => setIsCameraActive(true)}
+                      className="flex flex-col items-center justify-center gap-3 p-6 text-center cursor-pointer group"
+                    >
+                      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/10 text-zinc-300 border border-white/10 group-hover:scale-105 group-hover:bg-white/20 transition-all">
+                        <Camera className="h-7 w-7 text-zinc-300" />
+                      </div>
+                      <div>
+                        <span className="text-xs font-bold text-zinc-200 block">
+                          Visitor Photo
+                        </span>
+                        <span className="text-[11px] text-zinc-400 block mt-0.5">
+                          Click below to start live camera
+                        </span>
+                      </div>
                     </div>
                   )}
                 </div>
-                <Button
-                  type="button"
-                  onClick={handleCameraOpen}
-                  className="w-full h-11 rounded-xl bg-[#0c1b33] text-white hover:bg-[#11274c] flex items-center justify-center gap-2 font-medium"
-                >
-                  <Camera className="h-4 w-4" />
-                  Open Camera
-                </Button>
+
+                {/* Control Buttons */}
+                {isCameraActive ? (
+                  <div className="flex flex-col gap-2">
+                    <Button
+                      type="button"
+                      onClick={capturePhoto}
+                      disabled={isExtractingFace}
+                      className="w-full h-11 rounded-xl bg-emerald-600 text-white hover:bg-emerald-500 flex items-center justify-center gap-2 font-bold shadow-md cursor-pointer"
+                    >
+                      <Camera className="h-4 w-4" />
+                      {isExtractingFace ? "Extracting Face..." : "Capture Photo"}
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={() => setIsCameraActive(false)}
+                      variant="outline"
+                      className="w-full h-9 rounded-xl border-zinc-300 text-zinc-600 hover:bg-zinc-100 flex items-center justify-center gap-1.5 text-xs font-semibold cursor-pointer"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                      Close Camera
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    type="button"
+                    onClick={() => setIsCameraActive(true)}
+                    className="w-full h-11 rounded-xl bg-[#0c1b33] text-white hover:bg-[#11274c] flex items-center justify-center gap-2 font-bold cursor-pointer shadow-sm"
+                  >
+                    <Camera className="h-4 w-4 text-cyan-400" />
+                    {photoPreview ? "Retake / Verify Camera" : "Open Camera to Verify"}
+                  </Button>
+                )}
               </div>
             </div>
           </div>
@@ -1149,7 +1401,7 @@ export default function AddVisitorPage() {
             <Button
               type="button"
               onClick={() => handleReset()}
-              className="h-11 rounded-xl border border-zinc-200 bg-white px-5 text-sm font-semibold text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900 flex items-center justify-center gap-2"
+              className="h-11 rounded-xl border border-zinc-200 bg-white px-5 text-sm font-semibold text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900 flex items-center justify-center gap-2 cursor-pointer"
             >
               <RotateCcw className="h-4 w-4" />
               Reset
@@ -1157,7 +1409,7 @@ export default function AddVisitorPage() {
             <Button
               type="submit"
               disabled={isSubmitting}
-              className="h-11 rounded-xl bg-[#0c1b33] px-6 text-sm font-semibold text-white hover:bg-[#11274c] flex items-center justify-center gap-2 shadow-sm"
+              className="h-11 rounded-xl bg-[#0c1b33] px-6 text-sm font-semibold text-white hover:bg-[#11274c] flex items-center justify-center gap-2 shadow-sm cursor-pointer"
             >
               <CheckCircle className="h-4 w-4" />
               {isSubmitting ? "Submitting..." : "Submit Entry"}
@@ -1165,62 +1417,6 @@ export default function AddVisitorPage() {
           </div>
         </div>
       </form>
-
-      {isMounted && isCameraModalOpen && (
-        <Dialog open={isCameraModalOpen} onOpenChange={setIsCameraModalOpen}>
-          <DialogContent className="sm:max-w-md bg-white rounded-2xl border border-zinc-200">
-            <DialogHeader>
-              <DialogTitle className="text-zinc-900">
-                Capture Visitor Photo
-              </DialogTitle>
-            </DialogHeader>
-            <div className="flex flex-col items-center gap-4 py-4">
-              <div className="overflow-hidden rounded-xl border border-zinc-200 bg-zinc-950 aspect-video w-full relative">
-                <Webcam
-                  audio={false}
-                  ref={webcamRef}
-                  screenshotFormat="image/jpeg"
-                  videoConstraints={{
-                    width: 640,
-                    height: 480,
-                    facingMode: "user",
-                  }}
-                  className="h-full w-full object-cover"
-                />
-              </div>
-              <div className="flex justify-between items-center w-full">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsCameraModalOpen(false);
-                    fileInputRef.current?.click();
-                  }}
-                  className="text-xs font-semibold text-[#0c1b33] hover:underline cursor-pointer"
-                >
-                  Or Upload File
-                </button>
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setIsCameraModalOpen(false)}
-                    className="rounded-xl border-zinc-200 text-zinc-700"
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={capturePhoto}
-                    className="rounded-xl bg-[#0c1b33] text-white hover:bg-[#11274c]"
-                  >
-                    Capture Photo
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
       <VirtualKeyboard />
     </div>
   );

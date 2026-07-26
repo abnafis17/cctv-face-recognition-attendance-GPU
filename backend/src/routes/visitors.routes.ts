@@ -7,6 +7,8 @@ import {
   checkOutVisitor,
   getEmployeeWiseReport,
   getVisitorWiseReport,
+  recognizeVisitorFace,
+  deleteVisitorRecord,
 } from "../controllers/visitors.controller";
 
 const router = Router();
@@ -16,10 +18,12 @@ const upload = multer({
 });
 
 router.get("/lookup", lookupVisitor);
+router.post("/recognize-face", recognizeVisitorFace);
 router.get("/reports/employee-wise", getEmployeeWiseReport);
 router.get("/reports/visitor-wise", getVisitorWiseReport);
 router.get("/", listVisitorRecords);
 router.post("/", upload.single("visitorPhoto"), createVisitorRecord);
 router.post("/:id/checkout", checkOutVisitor);
+router.delete("/:id", deleteVisitorRecord);
 
 export default router;
