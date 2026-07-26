@@ -216,6 +216,7 @@ export default function AddVisitorPage() {
   const [departmentsList, setDepartmentsList] = useState<string[]>([]);
   const [selectedEmployee, setSelectedEmployee] = useState<any>(null);
   const [hostSearch, setHostSearch] = useState("");
+  const [deptSearch, setDeptSearch] = useState("");
 
   const selectedDepartment = form.watch("department");
   const selectedHostId = form.watch("hostEmployeeId");
@@ -252,24 +253,39 @@ export default function AddVisitorPage() {
   const activeDepartments =
     departmentsList.length > 0 ? departmentsList : derivedDepartments;
 
+  const filteredDepartments = useMemo(() => {
+    const list = activeDepartments;
+    const q = deptSearch.trim().toLowerCase();
+    if (!q) return list;
+    return list.filter((d) => d.toLowerCase().includes(q));
+  }, [activeDepartments, deptSearch]);
+
+  const departmentOptions = useMemo(() => {
+    return filteredDepartments.map((d) => ({
+      value: d,
+      label: d,
+    }));
+  }, [filteredDepartments]);
+
   const showDepartmentsLoading = erpLoading && departmentsList.length === 0;
 
-  // Trigger ERP search based on host search input or selected department
+  // Trigger ERP search based on host search input, department search input, or selected department
   useEffect(() => {
     // If we have a selected employee and the department matches their department,
-    // and there is no active host search input, skip fetching the employee list again.
+    // and there is no active host or department search input, skip fetching the employee list again.
     if (
       selectedEmployee &&
       (selectedEmployee.department || "").trim().toLowerCase() ===
         (selectedDepartment || "").trim().toLowerCase() &&
-      !hostSearch.trim()
+      !hostSearch.trim() &&
+      !deptSearch.trim()
     ) {
       return;
     }
 
-    const q = hostSearch.trim() || selectedDepartment || "";
+    const q = hostSearch.trim() || deptSearch.trim() || selectedDepartment || "";
     setErpSearch(q);
-  }, [hostSearch, selectedDepartment, selectedEmployee, setErpSearch]);
+  }, [hostSearch, deptSearch, selectedDepartment, selectedEmployee, setErpSearch]);
 
   // Synchronize department change with host clearing
   useEffect(() => {
@@ -593,6 +609,7 @@ export default function AddVisitorPage() {
     setIsPhoneReadOnly(false);
     setSelectedEmployee(null);
     setHostSearch("");
+    setDeptSearch("");
     if (showToast) {
       toast.success("Form cleared");
     }
@@ -950,32 +967,16 @@ export default function AddVisitorPage() {
                     control={form.control}
                     name="department"
                     render={({ field }) => (
-                      <Select
+                      <SearchableSelect
                         value={field.value}
-                        onValueChange={field.onChange}
-                      >
-                        <SelectTrigger className="relative h-10 w-full rounded-xl border-zinc-200 bg-white pl-10">
-                          <Building className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
-                          <SelectValue placeholder="Select department" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {showDepartmentsLoading ? (
-                            <SelectItem value="loading-depts" disabled>
-                              Loading departments...
-                            </SelectItem>
-                          ) : activeDepartments.length === 0 ? (
-                            <SelectItem value="no-depts" disabled>
-                              No departments found
-                            </SelectItem>
-                          ) : (
-                            activeDepartments.map((d) => (
-                              <SelectItem key={d} value={d}>
-                                {d}
-                              </SelectItem>
-                            ))
-                          )}
-                        </SelectContent>
-                      </Select>
+                        onChange={field.onChange}
+                        items={departmentOptions}
+                        placeholder="Select department"
+                        searchPlaceholder="Search department..."
+                        loading={erpLoading}
+                        onSearchChange={(q) => setDeptSearch(q)}
+                        className="h-10 rounded-xl border-zinc-200 bg-white pl-4 text-left font-normal shadow-none hover:bg-zinc-50"
+                      />
                     )}
                   />
                   {form.formState.errors.department && (

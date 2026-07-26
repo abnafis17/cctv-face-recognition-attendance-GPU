@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, ChevronsUpDown } from "lucide-react";
+import { Check, ChevronsUpDown, Loader2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -114,12 +114,19 @@ export function SearchableSelect({
             onValueChange={(q: string) => onSearchChange?.(q)}
           />
 
-          {loading ? (
-            <div className="px-3 py-2 text-sm text-muted-foreground">
+          {loading && items.length === 0 ? (
+            <div className="px-3 py-2 text-sm text-muted-foreground flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin text-zinc-400" />
               {loadingText}
             </div>
           ) : (
             <>
+              {loading && (
+                <div className="px-3 py-1.5 text-xs text-muted-foreground border-b border-zinc-100 flex items-center gap-2 bg-zinc-50/50">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-zinc-400" />
+                  Updating results...
+                </div>
+              )}
               <CommandEmpty>{emptyText}</CommandEmpty>
               <CommandGroup className="max-h-72 overflow-auto">
                 {items.map((item) => (

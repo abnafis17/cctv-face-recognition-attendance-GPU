@@ -1,6 +1,34 @@
 import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "@/components/ui/badge";
 import { User, LogOut, Trash2 } from "lucide-react";
+import React, { useState } from "react";
+
+function SafeImage({
+  src,
+  alt,
+  className,
+  fallback,
+}: {
+  src: string;
+  alt: string;
+  className?: string;
+  fallback: React.ReactNode;
+}) {
+  const [hasError, setHasError] = useState(false);
+
+  if (hasError || !src) {
+    return <>{fallback}</>;
+  }
+
+  return (
+    <img
+      src={src}
+      alt={alt}
+      className={className}
+      onError={() => setHasError(true)}
+    />
+  );
+}
 
 export interface VisitorRecord {
   id: string;
@@ -105,17 +133,16 @@ export function getVisitorColumns(
         return renderCell(
           !!isCheckingOut,
           <div className="flex justify-center px-1 py-1">
-            {row.original.visitorPhoto ? (
-              <img
-                src={row.original.visitorPhoto}
-                alt={row.original.visitorName}
-                className="h-10 w-10 rounded-full border border-zinc-200 object-cover"
-              />
-            ) : (
-              <div className="flex h-10 w-10 items-center justify-center rounded-full border border-zinc-200 bg-zinc-50 text-zinc-400">
-                <User className="h-4 w-4" />
-              </div>
-            )}
+            <SafeImage
+              src={row.original.visitorPhoto || ""}
+              alt={row.original.visitorName}
+              className="h-10 w-10 rounded-full border border-zinc-200 object-cover"
+              fallback={
+                <div className="flex h-10 w-10 items-center justify-center rounded-full border border-zinc-200 bg-zinc-50 text-zinc-400">
+                  <User className="h-4 w-4" />
+                </div>
+              }
+            />
           </div>,
           "h-10 w-10 rounded-full mx-auto"
         );
@@ -274,17 +301,16 @@ export function getVisitorColumns(
         return renderCell(
           !!isCheckingOut,
           <div className="flex items-center gap-2.5 px-1 py-1 text-left min-w-0">
-            {hostPicUrl ? (
-              <img
-                src={hostPicUrl}
-                alt={hostName || "Host"}
-                className="h-8 w-8 rounded-full object-cover border border-zinc-200/80 shrink-0"
-              />
-            ) : (
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-50 border border-zinc-200 text-zinc-400">
-                <User className="h-4 w-4" />
-              </div>
-            )}
+            <SafeImage
+              src={hostPicUrl || ""}
+              alt={hostName || "Host"}
+              className="h-8 w-8 rounded-full object-cover border border-zinc-200/80 shrink-0"
+              fallback={
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-50 border border-zinc-200 text-zinc-400">
+                  <User className="h-4 w-4" />
+                </div>
+              }
+            />
             <div className="min-w-0">
               {hostName ? (
                 <>
