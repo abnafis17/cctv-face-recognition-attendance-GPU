@@ -10,6 +10,7 @@ import {
   RefreshCcw,
 } from "lucide-react";
 import { getHistoryColumns } from "./historyColumns";
+import GatepassReportModal from "./GatepassReportModal";
 import { TanstackDataTable } from "@/components/reusable/TanstackDataTable";
 import Pagination from "@/components/reusable/Pagination";
 import { Input } from "@/components/ui/input";
@@ -131,6 +132,7 @@ function mapGatepassApiRecordToViewRecord(row: any): GatepassRecord {
       unit: String(row.unit ?? "").trim() || "Unassigned Unit",
       shift: "General Shift",
       headcountNote: "Loaded from gatepass request table",
+      designation: row.designation ? String(row.designation).trim() : null,
     },
     type: leaveTypeLabel,
     typeId: row.leaveTypeId ? String(row.leaveTypeId).trim() : null,
@@ -151,6 +153,7 @@ function mapGatepassApiRecordToViewRecord(row: any): GatepassRecord {
     rawInTime: row.rawInTime || row.inTime,
     approvedByName: row.approvedByName,
     approvedByDesignation: row.approvedByDesignation,
+    updatedAt: row.updatedAt,
   };
 }
 
@@ -161,6 +164,13 @@ function dhakaTodayYYYYMMDD() {
 export default function GatepassHistoryLogPage() {
   const [rows, setRows] = useState<GatepassRecord[]>([]);
   const [now, setNow] = useState(Date.now());
+  const [selectedReportRecord, setSelectedReportRecord] = useState<GatepassRecord | null>(null);
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+
+  const handleViewReport = useCallback((record: GatepassRecord) => {
+    setSelectedReportRecord(record);
+    setIsReportModalOpen(true);
+  }, []);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -303,8 +313,8 @@ export default function GatepassHistoryLogPage() {
 
   const columns = useMemo(() => {
     const skip = (currentPage - 1) * pageLimit;
-    return getHistoryColumns(skip);
-  }, [currentPage, pageLimit]);
+    return getHistoryColumns(skip, handleViewReport);
+  }, [currentPage, pageLimit, handleViewReport]);
 
   const isShortSelected = leaveTypeCategory === "short";
 
@@ -529,6 +539,11 @@ export default function GatepassHistoryLogPage() {
           </div>
         )}
       </div>
+      <GatepassReportModal
+        open={isReportModalOpen}
+        onClose={() => setIsReportModalOpen(false)}
+        record={selectedReportRecord}
+      />
     </div>
   );
 }

@@ -244,6 +244,7 @@ function mapGatepassApiRecordToViewRecord(
       unit: String(row.unit ?? "").trim() || "Unassigned Unit",
       shift: "General Shift",
       headcountNote: "Loaded from gatepass request table",
+      designation: row.designation ? String(row.designation).trim() : null,
     },
     type: leaveTypeLabel,
     typeId: toNullableTrimmed(row.leaveTypeId),
@@ -264,6 +265,7 @@ function mapGatepassApiRecordToViewRecord(
     rawInTime: row.rawInTime || row.inTime,
     approvedByName: row.approvedByName,
     approvedByDesignation: row.approvedByDesignation,
+    updatedAt: row.updatedAt,
   };
 }
 
@@ -301,6 +303,14 @@ function getRecognizedRowKey(employee: GatepassEmployee, fallbackKey = "") {
 
 export function useGatepassPage() {
   const [companyId, setCompanyId] = useState("");
+  const [selectedReportRecord, setSelectedReportRecord] = useState<GatepassRecord | null>(null);
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+
+  const handleViewReport = useCallback((record: GatepassRecord) => {
+    setSelectedReportRecord(record);
+    setIsReportModalOpen(true);
+  }, []);
+
   const [gatepassCameras, setGatepassCameras] = useState<CameraOption[]>([]);
   const [gatepassLeaveTypes, setGatepassLeaveTypes] = useState<
     GatepassLeaveTypeOption[]
@@ -513,8 +523,8 @@ export function useGatepassPage() {
   ]);
 
   const historyColumns = useMemo(
-    () => getHistoryColumns(historySkip),
-    [historySkip],
+    () => getHistoryColumns(historySkip, handleViewReport),
+    [historySkip, handleViewReport],
   );
 
   const streamQuery = useMemo(() => {
@@ -1708,5 +1718,9 @@ export function useGatepassPage() {
     resetHistoryFilters,
     fetchHistoryRecords,
     pageLimit: GATEPASS_HISTORY_PAGE_LIMIT,
+    selectedReportRecord,
+    isReportModalOpen,
+    setIsReportModalOpen,
+    handleViewReport,
   };
 }

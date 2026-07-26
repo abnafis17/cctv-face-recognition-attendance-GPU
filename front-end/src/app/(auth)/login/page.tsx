@@ -6,15 +6,17 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Eye, EyeOff, Lock, Mail, ArrowRight } from "lucide-react";
+import { Eye, EyeOff, Lock, Mail, ArrowRight, Keyboard } from "lucide-react";
 import toast from "react-hot-toast";
 
+import { cn } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
 import { loginApi } from "@/services/auth";
 import { getAccessToken, getLandingRouteFromStorage } from "@/lib/authStorage";
 import AuthSidePanel from "@/components/modules/auth/AuthSidePanel";
 import PulsingLogo from "@/components/modules/auth/PulsingLogo";
 import "@/components/modules/auth/authStyles.css";
+import { VirtualKeyboard } from "@/components/reusable/VirtualKeyboard";
 
 const schema = z.object({
   email: z.string().email("Enter a valid email"),
@@ -37,6 +39,13 @@ export default function LoginPage() {
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
   const [focusedField, setFocusedField] = useState<string | null>(null);
+  const [kbEnabled, setKbEnabled] = useState(true);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setKbEnabled(localStorage.getItem("virtual-keyboard-enabled") !== "false");
+    }
+  }, []);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -107,6 +116,36 @@ export default function LoginPage() {
                 animation: "scaleIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards",
               }}
             >
+              {/* Virtual Keyboard Toggle Switch Header */}
+              <div className="flex items-center justify-between mb-6 pb-3 border-b border-zinc-100">
+                <div className="flex items-center gap-2">
+                  <Keyboard className="h-4 w-4 text-violet-600" />
+                  <span className="text-[11px] font-bold text-zinc-600 uppercase tracking-wider">
+                    Virtual Keyboard
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const current = localStorage.getItem("virtual-keyboard-enabled") !== "false";
+                    localStorage.setItem("virtual-keyboard-enabled", current ? "false" : "true");
+                    window.dispatchEvent(new Event("virtualKeyboardSettingsChanged"));
+                    setKbEnabled(!current);
+                  }}
+                  className={cn(
+                    "relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
+                    kbEnabled ? "bg-violet-600" : "bg-zinc-300"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out",
+                      kbEnabled ? "translate-x-5" : "translate-x-0"
+                    )}
+                  />
+                </button>
+              </div>
+
               {/* Mobile Logo */}
               <div className="flex items-center gap-3 mb-8 lg:hidden">
                 <PulsingLogo size={40} />
@@ -303,6 +342,7 @@ export default function LoginPage() {
           </div>
         </div>
       </div>
+      <VirtualKeyboard />
     </div>
   );
 }

@@ -31,7 +31,9 @@ import {
   HelpCircle,
   ArrowRightLeft,
   CalendarDays,
+  Keyboard,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import {
   visitorSchema,
   type VisitorFormValues,
@@ -56,6 +58,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import Webcam from "react-webcam";
+import { VirtualKeyboard } from "@/components/reusable/VirtualKeyboard";
 
 const fallbackVisitorTypes = [
   "Guest",
@@ -85,6 +88,13 @@ export default function AddVisitorPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [visitorTypesList, setVisitorTypesList] = useState<string[]>([]);
   const [purposesList, setPurposesList] = useState<string[]>([]);
+  const [kbEnabled, setKbEnabled] = useState(true);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setKbEnabled(localStorage.getItem("virtual-keyboard-enabled") !== "false");
+    }
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -152,6 +162,8 @@ export default function AddVisitorPage() {
       purposeOfVisit: "",
       department: "",
       hostEmployeeId: "",
+      hostEmployeeName: "",
+      hostPicUrl: "",
       idProofType: "",
       idProofNumber: "",
       vehicleNumber: "",
@@ -277,6 +289,7 @@ export default function AddVisitorPage() {
       value: e.employeeId,
       label: `${e.employeeName} (${e.employeeId})`,
       keywords: `${e.employeeName} ${e.employeeId}`,
+      image: e.picUrl || undefined,
     }));
 
     if (selectedEmployee && !options.some((o) => o.value === selectedEmployee.employeeId)) {
@@ -284,6 +297,7 @@ export default function AddVisitorPage() {
         value: selectedEmployee.employeeId,
         label: `${selectedEmployee.employeeName} (${selectedEmployee.employeeId})`,
         keywords: `${selectedEmployee.employeeName} ${selectedEmployee.employeeId}`,
+        image: selectedEmployee.picUrl || undefined,
       });
     }
 
@@ -449,6 +463,8 @@ export default function AddVisitorPage() {
       purposeOfVisit: "Meeting",
       department: "",
       hostEmployeeId: "",
+      hostEmployeeName: "",
+      hostPicUrl: "",
       idProofType: "NID",
       idProofNumber: "",
       vehicleNumber: "",
@@ -491,15 +507,43 @@ export default function AddVisitorPage() {
             </p>
           </div>
         </div>
-        <div className="hidden items-center gap-2 text-base font-semibold text-zinc-200 md:flex">
-          <Calendar className="h-5 w-5 text-zinc-300" />
-          <span>
-            {today.toLocaleDateString("en-US", {
-              day: "2-digit",
-              month: "short",
-              year: "numeric",
-            })}
-          </span>
+        <div className="flex items-center gap-6">
+          {/* Virtual Keyboard Toggle Switch */}
+          <div className="flex items-center gap-2.5 rounded-xl bg-white/10 px-3 py-2 ring-1 ring-white/10 select-none">
+            <Keyboard className="h-4 w-4 text-zinc-200" />
+            <span className="text-xs font-bold text-zinc-200 uppercase tracking-wider">Keyboard</span>
+            <button
+              type="button"
+              onClick={() => {
+                const current = localStorage.getItem("virtual-keyboard-enabled") !== "false";
+                localStorage.setItem("virtual-keyboard-enabled", current ? "false" : "true");
+                window.dispatchEvent(new Event("virtualKeyboardSettingsChanged"));
+                setKbEnabled(!current);
+              }}
+              className={cn(
+                "relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
+                kbEnabled ? "bg-emerald-500" : "bg-zinc-650"
+              )}
+            >
+              <span
+                className={cn(
+                  "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out",
+                  kbEnabled ? "translate-x-5" : "translate-x-0"
+                )}
+              />
+            </button>
+          </div>
+
+          <div className="hidden items-center gap-2 text-base font-semibold text-zinc-200 md:flex">
+            <Calendar className="h-5 w-5 text-zinc-300" />
+            <span>
+              {today.toLocaleDateString("en-US", {
+                day: "2-digit",
+                month: "short",
+                year: "numeric",
+              })}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -776,14 +820,22 @@ export default function AddVisitorPage() {
                               field.onChange(val);
                               if (!val) {
                                 setSelectedEmployee(null);
+                                form.setValue("hostEmployeeName", "");
+                                form.setValue("hostPicUrl", "");
                                 return;
                               }
-                              const emp = erpEmployees.find((e) => e.employeeId === val);
+                              const emp =
+                                erpEmployees.find((e) => e.employeeId === val) ||
+                                (selectedEmployee && selectedEmployee.employeeId === val
+                                  ? selectedEmployee
+                                  : null);
                               if (emp) {
                                 setSelectedEmployee(emp);
                                 if (emp.department) {
                                   form.setValue("department", emp.department);
                                 }
+                                form.setValue("hostEmployeeName", emp.employeeName);
+                                form.setValue("hostPicUrl", emp.picUrl || "");
                               }
                             }}
                             items={hostOptions}
@@ -800,6 +852,8 @@ export default function AddVisitorPage() {
                             variant="outline"
                             onClick={() => {
                               form.setValue("hostEmployeeId", "");
+                              form.setValue("hostEmployeeName", "");
+                              form.setValue("hostPicUrl", "");
                               form.setValue("department", "");
                               setSelectedEmployee(null);
                               setHostSearch("");
@@ -1167,6 +1221,7 @@ export default function AddVisitorPage() {
           </DialogContent>
         </Dialog>
       )}
+      <VirtualKeyboard />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import {
   listGatepassRecords,
   listGatepassTypes,
   markGatepassReturn,
+  getGatepassExternalDetails,
 } from "../controllers/gatepass.controller";
 
 const router = Router();
@@ -12,5 +13,6 @@ router.get("/types", listGatepassTypes);
 router.get("/", listGatepassRecords);
 router.post("/", createGatepassRecord);
 router.post("/mark-return", markGatepassReturn);
+router.get("/:id/external-details", getGatepassExternalDetails);
 
 export default router;

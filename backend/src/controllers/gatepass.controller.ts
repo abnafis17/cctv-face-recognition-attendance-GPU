@@ -2,7 +2,9 @@ import { randomUUID } from "crypto";
 import { Prisma } from "@prisma/client";
 import { Request, Response } from "express";
 import { ZodError } from "zod";
+import axios from "axios";
 import { prisma } from "../prisma";
+import { getCompanyErpSettings, resolveConfiguredErpUrl } from "../services/erpSettings.service";
 import { listCompanyGatepassTypes } from "../services/gatepassTypes.service";
 import { submitGatepassToErp } from "../services/gatepassSubmit.service";
 import { updateGatepassReturnToErp } from "../services/gatepassUpdate.service";
@@ -124,6 +126,7 @@ SELECT
   e."unit" AS "employeeUnit",
   e."line" AS "employeeLine",
   e."section" AS "employeeSection",
+  e."designation" AS "employeeDesignation",
   reqCam."name" AS "requestCameraName",
   retCam."name" AS "returnCameraName"
 FROM "GatepassTable" gp
@@ -265,26 +268,37 @@ export async function listGatepassRecords(req: Request, res: Response) {
     if (!companyId) return res.status(400).json({ error: "Missing company id" });
 
     const query = normalizeListQuery(req);
-    const fromDateStr =
-      query.fromDate || query.date || query.toDate || dhakaTodayYYYYMMDD();
-    const toDateStr =
-      query.toDate || query.date || query.fromDate || dhakaTodayYYYYMMDD();
-
-    if (fromDateStr > toDateStr) {
-      return res.status(400).json({
-        error: "fromDate must be earlier than or equal to toDate",
-      });
-    }
-
-    const { start } = dhakaDayRange(fromDateStr);
-    const { end } = dhakaDayRange(toDateStr);
     const limit = query.limit || 300;
 
     const whereClauses: Prisma.Sql[] = [
       Prisma.sql`gp."companyId" = ${companyId}`,
-      Prisma.sql`gp."outTime" >= ${start}`,
-      Prisma.sql`gp."outTime" < ${end}`,
     ];
+
+    if (query.fromDate || query.toDate) {
+      const fromDateStr = query.fromDate || query.toDate || dhakaTodayYYYYMMDD();
+      const toDateStr = query.toDate || query.fromDate || dhakaTodayYYYYMMDD();
+      if (fromDateStr > toDateStr) {
+        return res.status(400).json({
+          error: "fromDate must be earlier than or equal to toDate",
+        });
+      }
+      const { start } = dhakaDayRange(fromDateStr);
+      const { end } = dhakaDayRange(toDateStr);
+      whereClauses.push(Prisma.sql`gp."outTime" >= ${start} AND gp."outTime" < ${end}`);
+    } else if (query.date) {
+      const { start } = dhakaDayRange(query.date);
+      const { end } = dhakaDayRange(query.date);
+      whereClauses.push(
+        Prisma.sql`((gp."outTime" >= ${start} AND gp."outTime" < ${end}) OR (gp."status" = 'out' AND gp."inTime" IS NULL))`
+      );
+    } else {
+      const todayStr = dhakaTodayYYYYMMDD();
+      const { start } = dhakaDayRange(todayStr);
+      const { end } = dhakaDayRange(todayStr);
+      whereClauses.push(
+        Prisma.sql`((gp."outTime" >= ${start} AND gp."outTime" < ${end}) OR (gp."status" = 'out' AND gp."inTime" IS NULL))`
+      );
+    }
 
     if (query.leaveTypeId) {
       if (query.leaveTypeId === "Long Leave") {
@@ -499,6 +513,7 @@ export async function markGatepassReturn(req: Request, res: Response) {
         outTimeClock: string | null;
         leaveTypeId: string | null;
         leaveType: string;
+        returnTime: number | null;
       }>
     >(
       Prisma.sql`
@@ -507,7 +522,8 @@ export async function markGatepassReturn(req: Request, res: Response) {
           "outTime",
           TO_CHAR("outTime", 'HH24:MI:SS') AS "outTimeClock",
           "leaveTypeId",
-          "leaveType"
+          "leaveType",
+          "returnTime"
         FROM "GatepassTable"
         WHERE "companyId" = ${companyId}
           AND "employeeId" = ${employee.id}
@@ -521,6 +537,16 @@ export async function markGatepassReturn(req: Request, res: Response) {
 
     if (!openGatepass) {
       return res.json({ ok: true, updated: false, reason: "no_open_gatepass" });
+    }
+
+    if (openGatepass.returnTime !== null) {
+      const outTimeMs = new Date(openGatepass.outTime).getTime();
+      const limitMs = outTimeMs + (openGatepass.returnTime + 60) * 60 * 1000;
+      const recognizedTimeMs = new Date(recognizedAt).getTime();
+
+      if (recognizedTimeMs > limitMs) {
+        return res.json({ ok: true, updated: false, reason: "no_open_gatepass" });
+      }
     }
 
     await prisma.$executeRaw(
@@ -666,6 +692,75 @@ export async function updateGatepassErpStatus(req: Request, res: Response) {
   } catch (error: unknown) {
     return res.status(500).json({
       error: "Failed to update gatepass ERP status",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+export async function getGatepassExternalDetails(req: Request, res: Response) {
+  try {
+    const companyId = getCompanyId(req);
+    if (!companyId) return res.status(400).json({ error: "Missing company id" });
+
+    const { id } = req.params;
+    if (!id) return res.status(400).json({ error: "Missing gatepass id" });
+
+    const record = await prisma.gatepassTable.findFirst({
+      where: {
+        id,
+        companyId,
+      },
+    });
+
+    if (!record) {
+      return res.status(404).json({ error: "Gatepass record not found" });
+    }
+
+    if (!record.externalGatepassId) {
+      return res.status(400).json({ error: "Gatepass has no external gatepass ID" });
+    }
+
+    const settings = await getCompanyErpSettings(companyId, "getgatepassdetails");
+    const url = resolveConfiguredErpUrl(settings);
+
+    if (!url) {
+      return res.status(400).json({
+        error: 'ERP URL not configured for "getgatepassdetails" in settings.',
+      });
+    }
+
+    console.log(`[ERP GET DETAILS] Calling ERP URL: ${url} for reqMasterId: ${record.externalGatepassId}`);
+
+    const response = await axios.post(
+      url,
+      {
+        reqMasterId: record.externalGatepassId,
+      },
+      {
+        headers: {
+          Accept: "*/*",
+          "Content-Type": "application/json",
+          "x-api-version": "2.0",
+        },
+        timeout: 10000,
+        validateStatus: () => true,
+      }
+    );
+
+    console.log(`[ERP GET DETAILS] ERP response status: ${response.status}`, response.data);
+
+    if (response.status >= 200 && response.status < 300) {
+      return res.json(response.data);
+    } else {
+      return res.status(response.status).json({
+        error: `ERP request failed with status ${response.status}`,
+        detail: response.data,
+      });
+    }
+  } catch (error: unknown) {
+    console.error(`[ERP GET DETAILS] Error occurred:`, error);
+    return res.status(500).json({
+      error: "Failed to get gatepass details from ERP",
       detail: error instanceof Error ? error.message : String(error),
     });
   }

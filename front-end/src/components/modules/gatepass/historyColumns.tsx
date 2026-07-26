@@ -1,6 +1,7 @@
 import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { Eye } from "lucide-react";
 
 import type { GatepassRecord, GatepassStatus } from "@/types/gatepass-types";
 
@@ -8,8 +9,25 @@ function statusLabel(status: GatepassStatus) {
   return status === "returned" ? "Returned" : "Out";
 }
 
+function extractDhakaDatePart(isoString: string): string {
+  try {
+    const parsed = new Date(isoString);
+    if (isNaN(parsed.getTime())) return "";
+    
+    // Dhaka timezone is UTC+6
+    const dhakaTime = new Date(parsed.getTime() + 6 * 60 * 60 * 1000);
+    const day = String(dhakaTime.getUTCDate()).padStart(2, "0");
+    const month = String(dhakaTime.getUTCMonth() + 1).padStart(2, "0");
+    const year = dhakaTime.getUTCFullYear();
+    return `${day}/${month}/${year}`;
+  } catch {
+    return "";
+  }
+}
+
 export function getHistoryColumns(
   historySkip: number,
+  onViewReport?: (record: GatepassRecord) => void,
 ): ColumnDef<GatepassRecord>[] {
   return [
     {
@@ -155,11 +173,23 @@ export function getHistoryColumns(
       header: () => (
         <div className="w-full px-1 py-2 text-center font-bold">In Time</div>
       ),
-      cell: ({ row }) => (
-        <div className="px-1 py-2 text-center font-medium text-zinc-900">
-          {row.original.inTime}
-        </div>
-      ),
+      cell: ({ row }) => {
+        const rec = row.original;
+        const outDateStr = rec.rawOutTime ? extractDhakaDatePart(rec.rawOutTime) : "";
+        const inDateStr = rec.rawInTime ? extractDhakaDatePart(rec.rawInTime) : "";
+        const dateChanged = outDateStr && inDateStr && outDateStr !== inDateStr;
+
+        return (
+          <div className="flex flex-col items-center justify-center px-1 py-1 font-medium">
+            <span className="text-zinc-900">{rec.inTime}</span>
+            {dateChanged && (
+              <span className="text-[10px] text-zinc-400 font-normal mt-0.5 whitespace-nowrap">
+                {inDateStr}
+              </span>
+            )}
+          </div>
+        );
+      },
       size: 110,
     },
     {
@@ -297,6 +327,24 @@ export function getHistoryColumns(
         </div>
       ),
       size: 130,
+    },
+    {
+      id: "action",
+      header: () => (
+        <div className="w-full px-1 py-2 text-center font-bold">Action</div>
+      ),
+      cell: ({ row }) => (
+        <div className="flex items-center justify-center px-1 py-2">
+          <button
+            onClick={() => onViewReport?.(row.original)}
+            className="p-1.5 rounded-lg text-zinc-500 hover:text-indigo-600 hover:bg-zinc-100 transition-all cursor-pointer"
+            title="View Gatepass Report"
+          >
+            <Eye className="w-4 h-4" />
+          </button>
+        </div>
+      ),
+      size: 80,
     },
   ];
 }

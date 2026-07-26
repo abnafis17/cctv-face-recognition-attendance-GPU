@@ -5,6 +5,7 @@ import GatepassCameraSection from "./GatepassCameraSection";
 import RecognizedPersonsSection from "./RecognizedPersonsSection";
 import GatepassSubmissionSection from "./GatepassSubmissionSection";
 import GatepassHistorySection from "./GatepassHistorySection";
+import GatepassReportModal from "./GatepassReportModal";
 import { useGatepassPage } from "@/hooks/useGatepassPage";
 
 export default function GatepassPage() {
@@ -100,6 +101,11 @@ export default function GatepassPage() {
           />
         </div>
       </div>
+      <GatepassReportModal
+        open={gatepass.isReportModalOpen}
+        onClose={() => gatepass.setIsReportModalOpen(false)}
+        record={gatepass.selectedReportRecord}
+      />
     </div>
   );
 }
