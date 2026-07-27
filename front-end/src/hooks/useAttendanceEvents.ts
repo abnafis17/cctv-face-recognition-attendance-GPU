@@ -18,6 +18,7 @@ type UseAttendanceEventsOptions = {
   waitMs?: number; // default 300000 (server long-poll wait)
   limit?: number; // default 50
   syncLatestOnStart?: boolean; // default true; false starts from seq=0/current ref without sync jump
+  startSeq?: number;
   onEvents?: (events: AttendanceEvent[]) => void;
 };
 
@@ -28,6 +29,7 @@ export function useAttendanceEvents(options: UseAttendanceEventsOptions = {}) {
     waitMs = 300000,
     limit = 50,
     syncLatestOnStart = true,
+    startSeq,
     onEvents,
   } = options;
 
@@ -37,6 +39,10 @@ export function useAttendanceEvents(options: UseAttendanceEventsOptions = {}) {
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
+
+    if (startSeq !== undefined && startSeq > 0) {
+      seqRef.current = startSeq;
+    }
 
     const sleep = (ms: number) =>
       new Promise<void>((resolve) => {
@@ -89,7 +95,9 @@ export function useAttendanceEvents(options: UseAttendanceEventsOptions = {}) {
     }
 
     const first = window.setTimeout(() => {
-      if (syncLatestOnStart) {
+      if (startSeq !== undefined && startSeq > 0) {
+        pollLoop();
+      } else if (syncLatestOnStart) {
         syncLatest().finally(() => pollLoop());
       } else {
         pollLoop();

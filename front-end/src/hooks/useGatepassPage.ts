@@ -1187,6 +1187,7 @@ export function useGatepassPage() {
   useAttendanceEvents({
     enabled: Boolean(selectedGatepassCamera) && recognitionActive,
     syncLatestOnStart: false,
+    startSeq: recognitionStartSeq,
     onEvents: handleAttendanceEvents,
   });
 
