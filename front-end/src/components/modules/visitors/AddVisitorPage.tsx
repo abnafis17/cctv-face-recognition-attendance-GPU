@@ -513,18 +513,11 @@ export default function AddVisitorPage() {
 
         form.setValue("emailAddress", row.emailAddress || "");
         form.setValue("companyAddress", row.companyAddress || "");
+        // Show the ERP/visitor photo in the Personal Information header avatar
+        // but do NOT update the camera preview — visitor must capture a fresh live photo.
         const returnedPhoto = row.visitorPhoto || row.picUrl || "";
-        if (returnedPhoto) {
-          form.setValue("visitorPhoto", returnedPhoto);
-          setLookupAvatarUrl(returnedPhoto);
-          setPhotoPreview(returnedPhoto);
-          setCapturedFile(null);
-        } else {
-          form.setValue("visitorPhoto", "");
-          setLookupAvatarUrl(null);
-          setPhotoPreview(null);
-          setCapturedFile(null);
-        }
+        setLookupAvatarUrl(returnedPhoto || null);
+        form.setValue("visitorPhoto", "");
         setIsPhoneReadOnly(false);
         toast.success(
           `${response.data.type === "employee" ? "Employee" : "Visitor"} record loaded successfully!`,
@@ -730,7 +723,10 @@ export default function AddVisitorPage() {
     setIsCameraActive(true);
   };
 
-  const displayPhotoPreview = photoPreview ?? lookupAvatarUrl;
+  // Camera/photo preview: only show photos actually captured via the live camera.
+  // lookupAvatarUrl is intentionally excluded here — it's only used in the Personal
+  // Information header avatar, not in the camera box.
+  const displayPhotoPreview = photoPreview;
 
   return (
     <div className="w-full pb-10 space-y-6">
