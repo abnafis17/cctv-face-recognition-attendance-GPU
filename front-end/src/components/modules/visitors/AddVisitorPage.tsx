@@ -414,7 +414,7 @@ export default function AddVisitorPage() {
           setPhotoPreview(null);
           setCapturedFile(null);
         }
-        setIsPhoneReadOnly(true);
+        setIsPhoneReadOnly(false);
         toast.success(
           `${response.data.type === "employee" ? "Employee" : "Visitor"} record loaded successfully!`,
           { id: toastId },
@@ -428,7 +428,7 @@ export default function AddVisitorPage() {
         );
         if (!isLookupEmployee) {
           form.setValue("contactNumber", queryVal);
-          setIsPhoneReadOnly(true);
+          setIsPhoneReadOnly(false);
         }
       }
     } catch (error: any) {
@@ -497,7 +497,7 @@ export default function AddVisitorPage() {
         form.setValue("emailAddress", v.emailAddress || "");
         form.setValue("companyAddress", v.companyAddress || "");
         setLookupAvatarUrl(imageSrc);
-        setIsPhoneReadOnly(true);
+        setIsPhoneReadOnly(false);
         toast.success(
           `Recognized Visitor: ${v.visitorName}! Submission will update stored profile image.`,
           { id: toastId }
@@ -834,8 +834,7 @@ export default function AddVisitorPage() {
                     <Input
                       {...form.register("contactNumber")}
                       placeholder="e.g. 01711234567"
-                      className="h-10 pl-10 rounded-xl border-zinc-200 bg-slate-50/50 read-only:bg-zinc-100 read-only:text-zinc-500 read-only:cursor-not-allowed"
-                      readOnly={isPhoneReadOnly}
+                      className="h-10 pl-10 rounded-xl border-zinc-200 bg-slate-50/50"
                     />
                   </div>
                   {form.formState.errors.contactNumber && (
