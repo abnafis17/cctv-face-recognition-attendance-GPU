@@ -237,8 +237,8 @@ class LiteCameraStream:
                 res = requests.get(url, headers=headers, timeout=5.0)
                 if res.status_code == 200:
                     data = res.json()
-                    raw_ids = data.get("authorizedEmployeeIds") or data.get("authorizedEmployeePublicIds") or []
-                    self.authorized_employee_ids = set(str(eid) for eid in raw_ids)
+                    raw_ids = list(data.get("authorizedEmployeeIds") or []) + list(data.get("authorizedEmployeePublicIds") or [])
+                    self.authorized_employee_ids = set(str(eid).strip() for eid in raw_ids if eid)
                     logger.info(f"[AUTH] Camera {self.camera_id} loaded {len(self.authorized_employee_ids)} authorized employees.")
             except Exception as e:
                 logger.error(f"[AUTH] Failed to refresh authorized employees for camera {self.camera_id}: {e}")

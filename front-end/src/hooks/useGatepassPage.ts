@@ -228,14 +228,16 @@ function normalizeGatepassLeaveTypeOption(
 function mapGatepassApiRecordToViewRecord(
   row: GatepassApiRecord,
 ): GatepassRecord {
-  const employeeCode = String(row.employeeId ?? "").trim() || "UNKNOWN";
+  const employeePkId = String((row as any).employeePkId ?? "").trim();
+  const employeeCode = String(row.employeeId ?? "").trim() || employeePkId || "UNKNOWN";
+  const employeeDbId = employeePkId || employeeCode;
   const leaveTypeLabel =
     String(row.leaveType ?? "").trim() || "Unknown Leave Type";
 
   return {
     id: row.id,
     employee: {
-      id: employeeCode,
+      id: employeeDbId,
       employeeCode,
       name: String(row.employeeName ?? "").trim() || "Unknown Employee",
       section: String(row.section ?? "").trim() || "Unassigned Section",
@@ -428,9 +430,24 @@ export function useGatepassPage() {
     for (const employee of employeeDirectory) {
       const dbId = String(employee.id ?? "").trim();
       const empId = String(employee.empId ?? "").trim();
+      const name = String(employee.name ?? "").trim();
+      const normalizedName = name.toLowerCase().replace(/[^a-z0-9]/g, "");
 
-      if (dbId) map.set(dbId, employee);
-      if (empId) map.set(empId, employee);
+      if (dbId) {
+        map.set(dbId, employee);
+        map.set(dbId.toLowerCase(), employee);
+      }
+      if (empId) {
+        map.set(empId, employee);
+        map.set(empId.toLowerCase(), employee);
+      }
+      if (name) {
+        map.set(name, employee);
+        map.set(name.toLowerCase(), employee);
+      }
+      if (normalizedName) {
+        map.set(normalizedName, employee);
+      }
     }
 
     return map;
@@ -1097,8 +1114,8 @@ export function useGatepassPage() {
       if (Number.isNaN(eventTime.getTime())) return false;
 
       if (candidateSeq <= recognitionStartSeq) {
-        // Accept events that occurred within the last 5 minutes (to handle startup/cooldown race conditions and clock skews)
-        const isRecent = Math.abs(Date.now() - eventTime.getTime()) < 300000;
+        // Accept events that occurred within the last 15 minutes (to handle startup/cooldown race conditions and clock skews)
+        const isRecent = Math.abs(Date.now() - eventTime.getTime()) < 900000;
         if (!isRecent) return false;
       }
 
@@ -1114,16 +1131,22 @@ export function useGatepassPage() {
       if (lastRecognitionSignatureRef.current === signature) return false;
       lastRecognitionSignatureRef.current = signature;
 
-      const directoryEmployee = employeeDirectoryByKey.get(eventEmployeeId);
-      if (!directoryEmployee) {
-        // Skip unknown employees
-        return false;
-      }
+      const directoryEmployee =
+        employeeDirectoryByKey.get(eventEmployeeId) ??
+        employeeDirectoryByKey.get(eventEmployeeId.toLowerCase()) ??
+        employeeDirectoryByKey.get(
+          eventEmployeeId.toLowerCase().replace(/[^a-z0-9]/g, ""),
+        );
 
-      const matchedEmployee = mapEmployeeToGatepassEmployee(
-        directoryEmployee,
-        selectedGatepassCamera.name,
-      );
+      const matchedEmployee = directoryEmployee
+        ? mapEmployeeToGatepassEmployee(
+            directoryEmployee,
+            selectedGatepassCamera.name,
+          )
+        : fallbackGatepassEmployee(
+            eventEmployeeId,
+            selectedGatepassCamera.name,
+          );
 
       const latestRecord =
         latestRecordByEmployeeKey.get(matchedEmployee.employeeCode) ??
