@@ -201,4 +201,36 @@ export async function analyzeCapturedImage(
   }
 }
 
+/**
+ * Lightweight real-time face detector for live-camera overlays.
+ * Uses only TinyFaceDetector (no landmarks / descriptors) so it's fast
+ * enough to run inside a requestAnimationFrame loop (~130 ms cadence).
+ *
+ * Returns an array of detected face bounding boxes: { top, left, right, bottom, width, height }.
+ * Returns an empty array when no face is found or models are not yet loaded.
+ */
+export async function detectFacesLive(
+  video: HTMLVideoElement
+): Promise<{ top: number; left: number; right: number; bottom: number; width: number; height: number }[]> {
+  try {
+    if (!modelsLoaded) return [];
+    if (video.readyState < 2 || video.videoWidth === 0) return [];
 
+    const detections = await faceapi
+      .detectAllFaces(
+        video,
+        new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.40 })
+      );
+
+    return detections.map((d) => ({
+      top:    d.box.top,
+      left:   d.box.left,
+      right:  d.box.right,
+      bottom: d.box.bottom,
+      width:  d.box.width,
+      height: d.box.height,
+    }));
+  } catch {
+    return [];
+  }
+}
