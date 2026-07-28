@@ -8,6 +8,24 @@ const MODEL_URLS = [
   "https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/",
 ];
 
+/**
+ * Normalizes a 128D feature embedding vector to unit L2 length (||v||_2 = 1.0).
+ * Unit length normalization ensures consistent Euclidean & Cosine distance metrics.
+ */
+export function normalizeL2(vector: number[] | Float32Array): number[] {
+  let sumSq = 0;
+  for (let i = 0; i < vector.length; i++) {
+    sumSq += vector[i] * vector[i];
+  }
+  const norm = Math.sqrt(sumSq);
+  if (norm === 0) return Array.from(vector);
+  const result = new Array(vector.length);
+  for (let i = 0; i < vector.length; i++) {
+    result[i] = vector[i] / norm;
+  }
+  return result;
+}
+
 export async function loadFaceApiModels(): Promise<void> {
   if (typeof window === "undefined") return;
   if (modelsLoaded) return;
@@ -18,6 +36,7 @@ export async function loadFaceApiModels(): Promise<void> {
     for (const url of MODEL_URLS) {
       try {
         await Promise.all([
+          faceapi.nets.ssdMobilenetv1.loadFromUri(url),
           faceapi.nets.tinyFaceDetector.loadFromUri(url),
           faceapi.nets.faceLandmark68Net.loadFromUri(url),
           faceapi.nets.faceLandmark68TinyNet.loadFromUri(url),
@@ -26,7 +45,7 @@ export async function loadFaceApiModels(): Promise<void> {
         loaded = true;
         break;
       } catch (err) {
-        console.warn(`Failed to load face-api models from ${url}`, err);
+        console.warn(`Failed to load full face-api model suite from ${url}`, err);
       }
     }
 
@@ -63,11 +82,20 @@ export async function extractFaceDescriptor(
 
     let detection: faceapi.WithFaceDescriptor<any> | undefined = undefined;
 
-    if (faceapi.nets.tinyFaceDetector.isLoaded) {
+    // Primary High-Accuracy Detector: SSD MobileNet V1
+    if (faceapi.nets.ssdMobilenetv1.isLoaded) {
+      detection = await faceapi
+        .detectSingleFace(input, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.35 }))
+        .withFaceLandmarks()
+        .withFaceDescriptor();
+    }
+
+    // Secondary Fallback Detector: TinyFaceDetector
+    if (!detection && faceapi.nets.tinyFaceDetector.isLoaded) {
       detection = await faceapi
         .detectSingleFace(
           input,
-          new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.3 })
+          new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.3 })
         )
         .withFaceLandmarks()
         .withFaceDescriptor();
@@ -76,25 +104,18 @@ export async function extractFaceDescriptor(
         detection = await faceapi
           .detectSingleFace(
             input,
-            new faceapi.TinyFaceDetectorOptions({ inputSize: 160, scoreThreshold: 0.25 })
+            new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.25 })
           )
           .withFaceLandmarks(true)
           .withFaceDescriptor();
       }
     }
 
-    if (!detection && faceapi.nets.ssdMobilenetv1.isLoaded) {
-      detection = await faceapi
-        .detectSingleFace(input, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 }))
-        .withFaceLandmarks()
-        .withFaceDescriptor();
-    }
-
     if (!detection || !detection.descriptor) {
       return null;
     }
 
-    return Array.from(detection.descriptor);
+    return normalizeL2(detection.descriptor);
   } catch (error) {
     console.error("Error extracting face descriptor:", error);
     return null;
@@ -122,7 +143,16 @@ export async function analyzeCapturedImage(
 
     let detections: any[] = [];
 
-    if (faceapi.nets.tinyFaceDetector.isLoaded) {
+    // Primary Industrial Detector: SSD MobileNet V1
+    if (faceapi.nets.ssdMobilenetv1.isLoaded) {
+      detections = await faceapi
+        .detectAllFaces(input, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.35 }))
+        .withFaceLandmarks()
+        .withFaceDescriptors();
+    }
+
+    // Fallback Detector: TinyFaceDetector if SSD MobileNet returned no faces
+    if (detections.length === 0 && faceapi.nets.tinyFaceDetector.isLoaded) {
       detections = await faceapi
         .detectAllFaces(
           input,
@@ -140,13 +170,6 @@ export async function analyzeCapturedImage(
           .withFaceLandmarks(true)
           .withFaceDescriptors();
       }
-    }
-
-    if (detections.length === 0 && faceapi.nets.ssdMobilenetv1.isLoaded) {
-      detections = await faceapi
-        .detectAllFaces(input, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.35 }))
-        .withFaceLandmarks()
-        .withFaceDescriptors();
     }
 
     if (detections.length === 0) {
@@ -172,7 +195,7 @@ export async function analyzeCapturedImage(
     const singleDetection = detections[0];
     const score = singleDetection.detection?.score || 1.0;
 
-    if (score < 0.3) {
+    if (score < 0.35) {
       return {
         valid: false,
         faceCount: 1,
@@ -182,7 +205,7 @@ export async function analyzeCapturedImage(
       };
     }
 
-    const descriptor = Array.from(singleDetection.descriptor as Float32Array);
+    const descriptor = normalizeL2(singleDetection.descriptor as Float32Array);
     return {
       valid: true,
       faceCount: 1,
