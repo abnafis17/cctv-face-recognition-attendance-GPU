@@ -116,7 +116,7 @@ export async function updateVisitorType(req: Request, res: Response) {
     if (!companyId) return res.status(400).json({ error: "Missing company ID" });
 
     const { id } = req.params;
-    if (!id) return res.status(400).json({ error: "Missing ID" });
+    if (!id || typeof id !== "string") return res.status(400).json({ error: "Missing ID" });
 
     const payload = masterDataUpdateSchema.parse(req.body);
 
@@ -158,7 +158,7 @@ export async function deleteVisitorType(req: Request, res: Response) {
     if (!companyId) return res.status(400).json({ error: "Missing company ID" });
 
     const { id } = req.params;
-    if (!id) return res.status(400).json({ error: "Missing ID" });
+    if (!id || typeof id !== "string") return res.status(400).json({ error: "Missing ID" });
 
     await prisma.visitorType.delete({
       where: {
@@ -275,7 +275,7 @@ export async function updatePurposeOfVisit(req: Request, res: Response) {
     if (!companyId) return res.status(400).json({ error: "Missing company ID" });
 
     const { id } = req.params;
-    if (!id) return res.status(400).json({ error: "Missing ID" });
+    if (!id || typeof id !== "string") return res.status(400).json({ error: "Missing ID" });
 
     const payload = masterDataUpdateSchema.parse(req.body);
 
@@ -317,7 +317,7 @@ export async function deletePurposeOfVisit(req: Request, res: Response) {
     if (!companyId) return res.status(400).json({ error: "Missing company ID" });
 
     const { id } = req.params;
-    if (!id) return res.status(400).json({ error: "Missing ID" });
+    if (!id || typeof id !== "string") return res.status(400).json({ error: "Missing ID" });
 
     await prisma.purposeOfVisit.delete({
       where: {

@@ -703,7 +703,7 @@ export async function getGatepassExternalDetails(req: Request, res: Response) {
     if (!companyId) return res.status(400).json({ error: "Missing company id" });
 
     const { id } = req.params;
-    if (!id) return res.status(400).json({ error: "Missing gatepass id" });
+    if (!id || typeof id !== "string") return res.status(400).json({ error: "Missing gatepass id" });
 
     const record = await prisma.gatepassTable.findFirst({
       where: {

@@ -243,7 +243,7 @@ export async function deleteVisitorRecord(req: Request, res: Response) {
     if (!companyId) return res.status(400).json({ error: "Missing company ID" });
 
     const { id } = req.params;
-    if (!id) return res.status(400).json({ error: "Visitor ID is required" });
+    if (!id || typeof id !== "string") return res.status(400).json({ error: "Visitor ID is required" });
 
     const visitor = await prisma.visitor.findFirst({
       where: { id, companyId },
@@ -511,7 +511,7 @@ export async function checkOutVisitor(req: Request, res: Response) {
     if (!companyId) return res.status(400).json({ error: "Missing company ID" });
 
     const { id } = req.params;
-    if (!id) return res.status(400).json({ error: "Missing visitor ID" });
+    if (!id || typeof id !== "string") return res.status(400).json({ error: "Missing visitor ID" });
 
     const visitor = await prisma.visitor.findFirst({
       where: {

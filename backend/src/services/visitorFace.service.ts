@@ -1,4 +1,6 @@
-import * as faceapi from "@vladmandic/face-api";
+import * as faceapi from "@vladmandic/face-api/dist/face-api.node-wasm.js";
+import * as tf from "@tensorflow/tfjs";
+import * as wasm from "@tensorflow/tfjs-backend-wasm";
 import { Canvas, Image, ImageData, loadImage } from "canvas";
 import path from "path";
 import fs from "fs";
@@ -31,6 +33,13 @@ export async function ensureFaceModelsLoaded(): Promise<void> {
   if (modelLoadPromise) return modelLoadPromise;
 
   modelLoadPromise = (async () => {
+    // Initialize WASM backend
+    console.log("[VisitorFaceService] Initializing TensorFlow JS WASM backend...");
+    wasm.setWasmPaths("https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm/dist/", true);
+    await tf.setBackend("wasm");
+    await tf.ready();
+    console.log(`[VisitorFaceService] TensorFlow JS Backend: ${tf.getBackend()}`);
+
     // Look for models in front-end/public/models or backend/models
     const possiblePaths = [
       path.resolve(__dirname, "../../../front-end/public/models"),
