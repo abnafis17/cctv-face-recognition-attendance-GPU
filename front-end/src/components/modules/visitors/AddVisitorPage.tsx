@@ -550,33 +550,11 @@ export default function AddVisitorPage() {
     }
 
     setIsExtractingFace(true);
-    const toastId = toast.loading("Analyzing captured photo face quality...");
+    const toastId = toast.loading("Processing photo & verifying face on backend...");
 
     try {
-      // 1. Create HTMLImageElement from screenshot to analyze captured image
-      const img = new Image();
-      img.src = imageSrc;
-      await new Promise((resolve) => {
-        img.onload = resolve;
-      });
-
-      // 2. Validate single-face presence & image quality on captured image
-      const analysis = await analyzeCapturedImage(img);
-
-      if (!analysis.valid || !analysis.descriptor) {
-        toast.error(
-          analysis.error ||
-            "Captured image rejected. Please ensure exactly 1 clear face is in the photo.",
-          { id: toastId }
-        );
-        setIsExtractingFace(false);
-        return; // Keep camera open so visitor can adjust and retake
-      }
-
-      // 3. Single face & quality check passed! Set captured photo & descriptor
       setPhotoPreview(imageSrc);
       form.setValue("visitorPhoto", imageSrc);
-      setCapturedEmbedding(analysis.descriptor);
 
       const response = await fetch(imageSrc);
       const blob = await response.blob();
@@ -585,9 +563,14 @@ export default function AddVisitorPage() {
       });
       setCapturedFile(file);
 
-      // 4. Perform face recognition check against DB using the captured photo's descriptor
-      const res = await axiosInstance.post("/visitors/recognize-face", {
-        embedding: analysis.descriptor,
+      // Perform backend-based face recognition & face quality verification
+      const formData = new FormData();
+      formData.append("visitorPhoto", file);
+
+      const res = await axiosInstance.post("/visitors/recognize-face", formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
       });
 
       if (res.data?.recognized && res.data?.visitor) {
@@ -609,15 +592,16 @@ export default function AddVisitorPage() {
       } else {
         setRecognitionStatus("unrecognized");
         toast.success(
-          "Photo captured & verified (1 clear face detected). Ready for submission!",
+          "Photo captured & verified by backend. Ready for submission!",
           { id: toastId }
         );
       }
 
       setIsCameraActive(false);
-    } catch (error) {
-      console.error("Failed analyzing captured photo", error);
-      toast.error("Failed to analyze captured photo", { id: toastId });
+    } catch (error: any) {
+      console.error("Failed analyzing captured photo on backend", error);
+      const errMsg = error?.response?.data?.error || "Captured photo rejected by backend";
+      toast.error(errMsg, { id: toastId });
     } finally {
       setIsExtractingFace(false);
     }
@@ -626,21 +610,6 @@ export default function AddVisitorPage() {
   const onSubmit = async (data: VisitorFormValues) => {
     setIsSubmitting(true);
     try {
-      // Mandatory live camera face verification check for all visitors (new or returning)
-      // const hasLiveVerification =
-      //   recognitionStatus === "recognized" ||
-      //   capturedFile !== null ||
-      //   photoPreview !== null;
-
-      // if (!hasLiveVerification) {
-      //   toast.error(
-      //     "Face verification is mandatory for all visitors before submission. Please open the camera to verify or capture your face photo."
-      //   );
-      //   setIsCameraActive(true);
-      //   setIsSubmitting(false);
-      //   return;
-      // }
-
       const formData = new FormData();
       Object.entries(data).forEach(([key, val]) => {
         if (key === "visitorPhoto") {
@@ -665,7 +634,7 @@ export default function AddVisitorPage() {
       });
 
       if (response.data?.ok) {
-        toast.success("Visitor registered & face template saved successfully!");
+        toast.success("Visitor registered & face template processed by backend!");
         handleReset(false);
       } else {
         toast.error(response.data?.error || "Registration failed");

@@ -11,6 +11,7 @@ import {
   getCompanyErpSettings,
   resolveConfiguredErpUrl,
 } from "../services/erpSettings.service";
+import { extractVisitorFaceEmbedding } from "../services/visitorFace.service";
 
 function getCompanyId(req: Request): string {
   return String((req as any).companyId ?? "").trim();
@@ -158,11 +159,30 @@ export async function createVisitorRecord(req: Request, res: Response) {
       },
     });
 
+    let finalEmbedding: number[] | null = null;
     if (
       payload.faceEmbedding &&
       Array.isArray(payload.faceEmbedding) &&
       payload.faceEmbedding.length > 0
     ) {
+      finalEmbedding = payload.faceEmbedding;
+    } else if (req.file?.buffer) {
+      const extRes = await extractVisitorFaceEmbedding(req.file.buffer);
+      if (extRes.valid && extRes.embedding) {
+        finalEmbedding = extRes.embedding;
+      }
+    } else if (visitorPhoto && visitorPhoto.startsWith("data:image")) {
+      const base64Data = visitorPhoto.split(",")[1];
+      if (base64Data) {
+        const buf = Buffer.from(base64Data, "base64");
+        const extRes = await extractVisitorFaceEmbedding(buf);
+        if (extRes.valid && extRes.embedding) {
+          finalEmbedding = extRes.embedding;
+        }
+      }
+    }
+
+    if (finalEmbedding && finalEmbedding.length > 0) {
       // Check if a face template already exists for a visitor with this contact number
       const existingTemplate = await prisma.visitorFaceTemplate.findFirst({
         where: {
@@ -178,7 +198,7 @@ export async function createVisitorRecord(req: Request, res: Response) {
         await prisma.visitorFaceTemplate.update({
           where: { id: existingTemplate.id },
           data: {
-            embedding: payload.faceEmbedding,
+            embedding: finalEmbedding,
             photoUrl: visitorPhoto ?? existingTemplate.photoUrl,
             updatedAt: new Date(),
           },
@@ -189,7 +209,7 @@ export async function createVisitorRecord(req: Request, res: Response) {
             visitorId: visitor.id,
             companyId,
             modelName: "face-api",
-            embedding: payload.faceEmbedding,
+            embedding: finalEmbedding,
             photoUrl: visitorPhoto ?? null,
           },
         });
@@ -822,12 +842,50 @@ export async function recognizeVisitorFace(req: Request, res: Response) {
     const companyId = getCompanyId(req);
     if (!companyId) return res.status(400).json({ error: "Missing company ID" });
 
-    const { embedding } = req.body || {};
-    if (!Array.isArray(embedding) || embedding.length === 0) {
-      return res.status(400).json({ error: "embedding array is required" });
+    let searchEmbedding: number[] | null = null;
+
+    // 1. Image file uploaded in multipart/form-data (req.file)
+    if (req.file?.buffer) {
+      const extRes = await extractVisitorFaceEmbedding(req.file.buffer);
+      if (!extRes.valid || !extRes.embedding) {
+        return res.status(400).json({
+          recognized: false,
+          error: extRes.error || "No valid face detected in the uploaded photo.",
+        });
+      }
+      searchEmbedding = extRes.embedding;
+    }
+    // 2. Base64 data URI string passed in body
+    else if (
+      req.body?.visitorPhoto &&
+      typeof req.body.visitorPhoto === "string" &&
+      req.body.visitorPhoto.startsWith("data:image")
+    ) {
+      const base64Data = req.body.visitorPhoto.split(",")[1];
+      if (base64Data) {
+        const buf = Buffer.from(base64Data, "base64");
+        const extRes = await extractVisitorFaceEmbedding(buf);
+        if (!extRes.valid || !extRes.embedding) {
+          return res.status(400).json({
+            recognized: false,
+            error: extRes.error || "No valid face detected in the photo.",
+          });
+        }
+        searchEmbedding = extRes.embedding;
+      }
+    }
+    // 3. Raw vector embedding array (legacy client payload compatibility)
+    else if (Array.isArray(req.body?.embedding) && req.body.embedding.length > 0) {
+      searchEmbedding = req.body.embedding;
     }
 
-    const normalizedSearch = normalizeL2(embedding);
+    if (!searchEmbedding || searchEmbedding.length === 0) {
+      return res.status(400).json({
+        error: "Image file (visitorPhoto) or embedding vector array is required",
+      });
+    }
+
+    const normalizedSearch = normalizeL2(searchEmbedding);
 
     const templates = await prisma.visitorFaceTemplate.findMany({
       where: { companyId },
