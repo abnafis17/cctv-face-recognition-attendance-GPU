@@ -94,7 +94,9 @@ export default function AddVisitorPage() {
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      setKbEnabled(localStorage.getItem("virtual-keyboard-enabled") !== "false");
+      setKbEnabled(
+        localStorage.getItem("virtual-keyboard-enabled") !== "false",
+      );
     }
   }, []);
 
@@ -145,7 +147,7 @@ export default function AddVisitorPage() {
   useEffect(() => {
     setIsMounted(true);
     void loadFaceApiModels().catch((e) =>
-      console.warn("Failed to pre-warm face-api models:", e)
+      console.warn("Failed to pre-warm face-api models:", e),
     );
   }, []);
 
@@ -185,11 +187,15 @@ export default function AddVisitorPage() {
     },
   });
 
-  const [capturedEmbedding, setCapturedEmbedding] = useState<number[] | null>(null);
+  const [capturedEmbedding, setCapturedEmbedding] = useState<number[] | null>(
+    null,
+  );
   const [recognitionStatus, setRecognitionStatus] = useState<
     "idle" | "scanning" | "recognized" | "unrecognized"
   >("idle");
-  const [recognizedVisitorName, setRecognizedVisitorName] = useState<string | null>(null);
+  const [recognizedVisitorName, setRecognizedVisitorName] = useState<
+    string | null
+  >(null);
   const [isExtractingFace, setIsExtractingFace] = useState(false);
   const isScanningRef = useRef(false);
   const isRecognizedRef = useRef(false);
@@ -241,8 +247,8 @@ export default function AddVisitorPage() {
       const uniqueDepts = Array.from(new Set(depts));
       if (uniqueDepts.length > 0) {
         setDepartmentsList((prev) => {
-          const combined = Array.from(new Set([...prev, ...uniqueDepts])).sort((a, b) =>
-            a.localeCompare(b, undefined, { sensitivity: "base" }),
+          const combined = Array.from(new Set([...prev, ...uniqueDepts])).sort(
+            (a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }),
           );
           return combined;
         });
@@ -283,9 +289,16 @@ export default function AddVisitorPage() {
       return;
     }
 
-    const q = hostSearch.trim() || deptSearch.trim() || selectedDepartment || "";
+    const q =
+      hostSearch.trim() || deptSearch.trim() || selectedDepartment || "";
     setErpSearch(q);
-  }, [hostSearch, deptSearch, selectedDepartment, selectedEmployee, setErpSearch]);
+  }, [
+    hostSearch,
+    deptSearch,
+    selectedDepartment,
+    selectedEmployee,
+    setErpSearch,
+  ]);
 
   // Synchronize department change with host clearing
   useEffect(() => {
@@ -305,7 +318,13 @@ export default function AddVisitorPage() {
         setSelectedEmployee(null);
       }
     }
-  }, [selectedDepartment, selectedHostId, selectedEmployee, erpEmployees, form]);
+  }, [
+    selectedDepartment,
+    selectedHostId,
+    selectedEmployee,
+    erpEmployees,
+    form,
+  ]);
 
   const filteredHostEmployees = useMemo(() => {
     let list = erpEmployees;
@@ -333,7 +352,10 @@ export default function AddVisitorPage() {
       image: e.picUrl || undefined,
     }));
 
-    if (selectedEmployee && !options.some((o) => o.value === selectedEmployee.employeeId)) {
+    if (
+      selectedEmployee &&
+      !options.some((o) => o.value === selectedEmployee.employeeId)
+    ) {
       options.unshift({
         value: selectedEmployee.employeeId,
         label: `${selectedEmployee.employeeName} (${selectedEmployee.employeeId})`,
@@ -414,7 +436,7 @@ export default function AddVisitorPage() {
           setPhotoPreview(null);
           setCapturedFile(null);
         }
-        setIsPhoneReadOnly(true);
+        setIsPhoneReadOnly(false);
         toast.success(
           `${response.data.type === "employee" ? "Employee" : "Visitor"} record loaded successfully!`,
           { id: toastId },
@@ -428,7 +450,7 @@ export default function AddVisitorPage() {
         );
         if (!isLookupEmployee) {
           form.setValue("contactNumber", queryVal);
-          setIsPhoneReadOnly(true);
+          setIsPhoneReadOnly(false);
         }
       }
     } catch (error: any) {
@@ -463,7 +485,7 @@ export default function AddVisitorPage() {
         toast.error(
           analysis.error ||
             "Captured image rejected. Please ensure exactly 1 clear face is in the photo.",
-          { id: toastId }
+          { id: toastId },
         );
         setIsExtractingFace(false);
         return; // Keep camera open so visitor can adjust and retake
@@ -488,25 +510,24 @@ export default function AddVisitorPage() {
 
       if (res.data?.recognized && res.data?.visitor) {
         const v = res.data.visitor;
-        isRecognizedRef.current = true;
+        // isRecognizedRef.current = true;
         setRecognitionStatus("recognized");
-        setRecognizedVisitorName(v.visitorName);
-
-        form.setValue("visitorName", v.visitorName || "");
-        form.setValue("contactNumber", v.contactNumber || "");
-        form.setValue("emailAddress", v.emailAddress || "");
-        form.setValue("companyAddress", v.companyAddress || "");
-        setLookupAvatarUrl(imageSrc);
-        setIsPhoneReadOnly(true);
+        // setRecognizedVisitorName(v.visitorName);
+        // form.setValue("visitorName", v.visitorName || "");
+        // form.setValue("contactNumber", v.contactNumber || "");
+        // form.setValue("emailAddress", v.emailAddress || "");
+        // form.setValue("companyAddress", v.companyAddress || "");
+        // setLookupAvatarUrl(imageSrc);
+        setIsPhoneReadOnly(false);
         toast.success(
           `Recognized Visitor: ${v.visitorName}! Submission will update stored profile image.`,
-          { id: toastId }
+          { id: toastId },
         );
       } else {
         setRecognitionStatus("unrecognized");
         toast.success(
           "Photo captured & verified (1 clear face detected). Ready for submission!",
-          { id: toastId }
+          { id: toastId },
         );
       }
 
@@ -640,24 +661,32 @@ export default function AddVisitorPage() {
           {/* Virtual Keyboard Toggle Switch */}
           <div className="flex items-center gap-2.5 rounded-xl bg-white/10 px-3 py-2 ring-1 ring-white/10 select-none">
             <Keyboard className="h-4 w-4 text-zinc-200" />
-            <span className="text-xs font-bold text-zinc-200 uppercase tracking-wider">Keyboard</span>
+            <span className="text-xs font-bold text-zinc-200 uppercase tracking-wider">
+              Keyboard
+            </span>
             <button
               type="button"
               onClick={() => {
-                const current = localStorage.getItem("virtual-keyboard-enabled") !== "false";
-                localStorage.setItem("virtual-keyboard-enabled", current ? "false" : "true");
-                window.dispatchEvent(new Event("virtualKeyboardSettingsChanged"));
+                const current =
+                  localStorage.getItem("virtual-keyboard-enabled") !== "false";
+                localStorage.setItem(
+                  "virtual-keyboard-enabled",
+                  current ? "false" : "true",
+                );
+                window.dispatchEvent(
+                  new Event("virtualKeyboardSettingsChanged"),
+                );
                 setKbEnabled(!current);
               }}
               className={cn(
                 "relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
-                kbEnabled ? "bg-emerald-500" : "bg-zinc-650"
+                kbEnabled ? "bg-emerald-500" : "bg-zinc-650",
               )}
             >
               <span
                 className={cn(
                   "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out",
-                  kbEnabled ? "translate-x-5" : "translate-x-0"
+                  kbEnabled ? "translate-x-5" : "translate-x-0",
                 )}
               />
             </button>
@@ -691,7 +720,9 @@ export default function AddVisitorPage() {
                 </span>
               </h3>
               <p className="text-xs text-rose-100/90 font-medium mt-0.5 leading-relaxed">
-                Please verify your face via the camera box on the right layout before submission. If recognized, personal details auto-fill. If new, capture your face photo to proceed.
+                Please verify your face via the camera box on the right layout
+                before submission. If recognized, personal details auto-fill. If
+                new, capture your face photo to proceed.
               </p>
             </div>
           </div>
@@ -704,13 +735,15 @@ export default function AddVisitorPage() {
             </div>
             <div>
               <h3 className="text-sm font-bold text-emerald-100 flex items-center gap-2 uppercase tracking-wide">
-                RECOGNIZED RETURNING VISITOR: {recognizedVisitorName || "Visitor"}
+                RECOGNIZED RETURNING VISITOR:{" "}
+                {recognizedVisitorName || "Visitor"}
                 <span className="rounded-full bg-emerald-500/30 px-2.5 py-0.5 text-[10px] font-extrabold text-emerald-200 uppercase tracking-normal">
                   VERIFIED
                 </span>
               </h3>
               <p className="text-xs text-emerald-100/90 font-medium mt-0.5 leading-relaxed">
-                Personal information auto-filled. Select your remaining visit details and enter Visitor Pass No. to complete registration.
+                Personal information auto-filled. Select your remaining visit
+                details and enter Visitor Pass No. to complete registration.
               </p>
             </div>
           </div>
@@ -729,7 +762,9 @@ export default function AddVisitorPage() {
                 </span>
               </h3>
               <p className="text-xs text-amber-100/90 font-medium mt-0.5 leading-relaxed">
-                Your face template is not found in the database. Please align your face in the camera box on the right and click 'Capture Photo' to register.
+                Your face template is not found in the database. Please align
+                your face in the camera box on the right and click 'Capture
+                Photo' to register.
               </p>
             </div>
           </div>
@@ -805,7 +840,6 @@ export default function AddVisitorPage() {
                 )}
               </div>
               <div className="grid grid-cols-1 gap-4 p-5 md:grid-cols-2">
-
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
                     Visitor Name <span className="text-rose-500">*</span>
@@ -834,8 +868,7 @@ export default function AddVisitorPage() {
                     <Input
                       {...form.register("contactNumber")}
                       placeholder="e.g. 01711234567"
-                      className="h-10 pl-10 rounded-xl border-zinc-200 bg-slate-50/50 read-only:bg-zinc-100 read-only:text-zinc-500 read-only:cursor-not-allowed"
-                      readOnly={isPhoneReadOnly}
+                      className="h-10 pl-10 rounded-xl border-zinc-200 bg-slate-50/50"
                     />
                   </div>
                   {form.formState.errors.contactNumber && (
@@ -1010,8 +1043,11 @@ export default function AddVisitorPage() {
                                 return;
                               }
                               const emp =
-                                erpEmployees.find((e) => e.employeeId === val) ||
-                                (selectedEmployee && selectedEmployee.employeeId === val
+                                erpEmployees.find(
+                                  (e) => e.employeeId === val,
+                                ) ||
+                                (selectedEmployee &&
+                                selectedEmployee.employeeId === val
                                   ? selectedEmployee
                                   : null);
                               if (emp) {
@@ -1019,10 +1055,19 @@ export default function AddVisitorPage() {
                                 if (emp.department) {
                                   form.setValue("department", emp.department);
                                 }
-                                form.setValue("hostEmployeeName", emp.employeeName);
+                                form.setValue(
+                                  "hostEmployeeName",
+                                  emp.employeeName,
+                                );
                                 form.setValue("hostPicUrl", emp.picUrl || "");
-                                form.setValue("hostDesignationId", emp.designationId || "");
-                                form.setValue("hostDesignationName", emp.designation || "");
+                                form.setValue(
+                                  "hostDesignationId",
+                                  emp.designationId || "",
+                                );
+                                form.setValue(
+                                  "hostDesignationName",
+                                  emp.designation || "",
+                                );
                               }
                             }}
                             items={hostOptions}
@@ -1046,7 +1091,9 @@ export default function AddVisitorPage() {
                               form.setValue("department", "");
                               setSelectedEmployee(null);
                               setHostSearch("");
-                              toast.success("Host and department selection reset");
+                              toast.success(
+                                "Host and department selection reset",
+                              );
                             }}
                             className="h-10 px-3 rounded-xl border-zinc-200 text-zinc-500 hover:text-rose-600 hover:border-rose-200 hover:bg-rose-50/50 transition-colors shrink-0 flex items-center gap-1.5"
                             title="Reset host & department selection"
@@ -1376,7 +1423,9 @@ export default function AddVisitorPage() {
                       className="w-full h-11 rounded-xl bg-emerald-600 text-white hover:bg-emerald-500 flex items-center justify-center gap-2 font-bold shadow-md cursor-pointer"
                     >
                       <Camera className="h-4 w-4" />
-                      {isExtractingFace ? "Extracting Face..." : "Capture Photo"}
+                      {isExtractingFace
+                        ? "Extracting Face..."
+                        : "Capture Photo"}
                     </Button>
                     <Button
                       type="button"
@@ -1395,7 +1444,9 @@ export default function AddVisitorPage() {
                     className="w-full h-11 rounded-xl bg-[#0c1b33] text-white hover:bg-[#11274c] flex items-center justify-center gap-2 font-bold cursor-pointer shadow-sm"
                   >
                     <Camera className="h-4 w-4 text-cyan-400" />
-                    {photoPreview ? "Retake / Verify Camera" : "Open Camera to Verify"}
+                    {photoPreview
+                      ? "Retake / Verify Camera"
+                      : "Open Camera to Verify"}
                   </Button>
                 )}
               </div>

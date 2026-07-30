@@ -336,11 +336,15 @@ export async function lookupVisitor(req: Request, res: Response) {
       }
 
       // Find erp configuration for employee list
-      const erpSettingsList = await prisma.companyErpSetting.findMany({
+      let erpSettingsList = await prisma.companyErpSetting.findMany({
         where: { companyId },
       });
 
-      const matchedSetting = erpSettingsList.find((r) => {
+      if (erpSettingsList.length === 0) {
+        erpSettingsList = await prisma.companyErpSetting.findMany();
+      }
+
+      let matchedSetting = erpSettingsList.find((r) => {
         const type = String(r.urlType || "").trim().toLowerCase();
         return (
           type === "employeelist" ||
@@ -353,66 +357,100 @@ export async function lookupVisitor(req: Request, res: Response) {
       });
 
       if (!matchedSetting) {
-        return res.json({
-          found: false,
-          error: "ERP URL not configured for employee search.",
-        });
-      }
-
-      const resolvedUrl = resolveConfiguredErpUrl(matchedSetting);
-      if (!resolvedUrl) {
-        return res.json({
-          found: false,
-          error: "ERP URL resolved to empty or invalid format.",
-        });
-      }
-
-      const payload = {
-        pageNumber: 1,
-        pageSize: 10,
-        search: phone,
-      };
-
-      try {
-        const response = await axios.post(resolvedUrl, payload, {
-          headers: {
-            Accept: "*/*",
-            "Content-Type": "application/json",
-            "x-api-version": "2.0",
-          },
-          timeout: 8000,
-        });
-
-        const rawList =
-          response?.data?.results ??
-          response?.data?.data ??
-          response?.data?.items ??
-          response?.data?.result ??
-          response?.data ??
-          [];
-
-        const list = Array.isArray(rawList) ? rawList : [];
-        const mapped = list.map(mapErpEmployee).filter(Boolean) as any[];
-
-        if (mapped.length > 0) {
-          const emp = mapped[0];
-          return res.json({
-            found: true,
-            type: "employee",
-            data: {
-              visitorName: emp.employeeName,
-              contactNumber: emp.contactNumber,
-              emailAddress: emp.emailAddress,
-              companyAddress: emp.companyName || emp.unit || "Own Company",
-              department: emp.department || "",
-              visitorType: "Official",
-              hostEmployeeId: emp.employeeId,
-              visitorPhoto: emp.picUrl || "",
-            },
-          });
+        const fallbackDto = await getCompanyErpSettings(companyId, "employee_info");
+        if (fallbackDto && fallbackDto.erpBaseUrl && fallbackDto.erpAttendanceEndpoint) {
+          matchedSetting = {
+            id: fallbackDto.id || "fallback",
+            companyId,
+            urlType: fallbackDto.urlType || "employee_info",
+            erpBaseUrl: fallbackDto.erpBaseUrl,
+            erpPrefix: fallbackDto.erpPrefix,
+            erpAttendanceEndpoint: fallbackDto.erpAttendanceEndpoint,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          };
         }
-      } catch (err: any) {
-        console.warn("Failed lookup from external ERP endpoint:", err.message);
+      }
+
+      if (matchedSetting) {
+        const resolvedUrl = resolveConfiguredErpUrl(matchedSetting);
+        if (resolvedUrl) {
+          const payload = {
+            pageNumber: 1,
+            pageSize: 10,
+            search: phone,
+          };
+
+          try {
+            const response = await axios.post(resolvedUrl, payload, {
+              headers: {
+                Accept: "*/*",
+                "Content-Type": "application/json",
+                "x-api-version": "2.0",
+              },
+              timeout: 8000,
+            });
+
+            const rawList =
+              response?.data?.results ??
+              response?.data?.data ??
+              response?.data?.items ??
+              response?.data?.result ??
+              response?.data ??
+              [];
+
+            const list = Array.isArray(rawList) ? rawList : [];
+            const mapped = list.map(mapErpEmployee).filter(Boolean) as any[];
+
+            if (mapped.length > 0) {
+              const emp = mapped[0];
+              return res.json({
+                found: true,
+                type: "employee",
+                data: {
+                  visitorName: emp.employeeName,
+                  contactNumber: emp.contactNumber,
+                  emailAddress: emp.emailAddress,
+                  companyAddress: emp.companyName || emp.unit || "Own Company",
+                  department: emp.department || "",
+                  visitorType: "Official",
+                  hostEmployeeId: emp.employeeId,
+                  visitorPhoto: emp.picUrl || "",
+                },
+              });
+            }
+          } catch (err: any) {
+            console.warn("Failed lookup from external ERP endpoint:", err.message);
+          }
+        }
+      }
+
+      // Fallback: Search Local Employee Database
+      const localEmp = await prisma.employee.findFirst({
+        where: {
+          OR: [
+            { empId: phone },
+            { id: phone },
+            { name: { contains: phone, mode: "insensitive" } },
+          ],
+        },
+      });
+
+      if (localEmp) {
+        return res.json({
+          found: true,
+          type: "employee",
+          data: {
+            visitorName: localEmp.name,
+            contactNumber: "",
+            emailAddress: "",
+            companyAddress: localEmp.unit || localEmp.department || "Own Company",
+            department: localEmp.department || "",
+            visitorType: "Official",
+            hostEmployeeId: localEmp.empId || localEmp.id,
+            visitorPhoto: localEmp.empPicUrl || "",
+          },
+        });
       }
 
       return res.json({ found: false });
