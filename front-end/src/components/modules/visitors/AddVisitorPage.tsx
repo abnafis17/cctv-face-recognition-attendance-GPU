@@ -606,14 +606,14 @@ export default function AddVisitorPage() {
 
       if (res.data?.recognized && res.data?.visitor) {
         const v = res.data.visitor;
-        // isRecognizedRef.current = true;
+        isRecognizedRef.current = true;
         setRecognitionStatus("recognized");
-        // setRecognizedVisitorName(v.visitorName);
-        // form.setValue("visitorName", v.visitorName || "");
-        // form.setValue("contactNumber", v.contactNumber || "");
-        // form.setValue("emailAddress", v.emailAddress || "");
-        // form.setValue("companyAddress", v.companyAddress || "");
-        // setLookupAvatarUrl(imageSrc);
+        setRecognizedVisitorName(v.visitorName);
+        form.setValue("visitorName", v.visitorName || "");
+        form.setValue("contactNumber", v.contactNumber || "");
+        form.setValue("emailAddress", v.emailAddress || "");
+        form.setValue("companyAddress", v.companyAddress || "");
+        setLookupAvatarUrl(imageSrc);
         setIsPhoneReadOnly(false);
         toast.success(
           `Recognized Visitor: ${v.visitorName}! Submission will update stored profile image.`,
