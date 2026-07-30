@@ -613,7 +613,7 @@ export default function AddVisitorPage() {
         form.setValue("contactNumber", v.contactNumber || "");
         form.setValue("emailAddress", v.emailAddress || "");
         form.setValue("companyAddress", v.companyAddress || "");
-        setLookupAvatarUrl(imageSrc);
+        setLookupAvatarUrl(v.visitorPhoto || v.picUrl || null);
         setIsPhoneReadOnly(false);
         toast.success(
           `Recognized Visitor: ${v.visitorName}! Submission will update stored profile image.`,
