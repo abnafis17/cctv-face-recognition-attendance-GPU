@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { AI_HOST } from "@/config/axiosInstance";
 import { getCompanyIdFromToken } from "@/lib/authStorage";
 import { useErpEmployees } from "@/hooks/useErpEmployees";
+import { useErpDepartments } from "@/hooks/useErpDepartments";
 import {
   deriveEmployeeHierarchy,
 } from "@/lib/employeeHierarchy";
@@ -217,17 +218,32 @@ export default function AutoEnrollment({
 
   const multiWarn = !!session?.overlay_multi_in_roi;
 
-  // ---- ERP employee search & picker ----
+  // ---- ERP department & employee search ----
+  const {
+    departments: erpDepartments,
+    loading: deptsLoading,
+  } = useErpDepartments();
+
   const {
     employees,
     loading: erpLoading,
     error: erpError,
+    setSearch: setEmployeeSearch,
   } = useErpEmployees({ debounceMs: 350, initialSearch: "" });
 
   const [selectedErpEmployeeId, setSelectedErpEmployeeId] = useState("");
   const [erpSearch, setErpSearch] = useState("");
   const lockEmployeeIdentity = reEnroll && !!initialEmployeeId;
   const clearedAfterSuccessRef = useRef(false);
+
+  // Sync selected department or typed search query with useErpEmployees search payload
+  const activeSearchQuery = useMemo(() => {
+    return erpSearch.trim() || department.trim();
+  }, [erpSearch, department]);
+
+  useEffect(() => {
+    setEmployeeSearch((prev) => (prev !== activeSearchQuery ? activeSearchQuery : prev));
+  }, [activeSearchQuery, setEmployeeSearch]);
 
   useEffect(() => {
     if (sessionStatus !== "saved") {
@@ -255,14 +271,20 @@ export default function AutoEnrollment({
     [department, employees, line, section, unit]
   );
 
+  // Combine ERP departments API list with any departments found in hierarchy
+  const departmentOptions = useMemo(() => {
+    const combined = new Set([...erpDepartments, ...hierarchy.options.departments]);
+    return Array.from(combined).sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: "base" })
+    );
+  }, [erpDepartments, hierarchy.options.departments]);
+
   useEffect(() => {
     const next = hierarchy.normalizedSelection;
     if (next.unit !== unit) setUnit(next.unit);
-    if (next.department !== department) setDepartment(next.department);
     if (next.section !== section) setSection(next.section);
     if (next.line !== line) setLine(next.line);
   }, [
-    department,
     hierarchy.normalizedSelection,
     line,
     section,
@@ -287,14 +309,13 @@ export default function AutoEnrollment({
 
   const filteredEmployees = useMemo(() => {
     const q = erpSearch.trim().toLowerCase();
-    const list = hierarchy.filteredRows;
-    if (!q) return list;
+    if (!q) return employees;
 
-    return list.filter((e) => {
+    return employees.filter((e) => {
       const hay = `${e.employeeName} ${e.employeeId} ${e.unit} ${e.department} ${e.section} ${e.line}`.toLowerCase();
       return hay.includes(q);
     });
-  }, [erpSearch, hierarchy.filteredRows]);
+  }, [erpSearch, employees]);
 
   useEffect(() => {
     if (!selectedErpEmployeeId) return;
@@ -327,112 +348,77 @@ export default function AutoEnrollment({
   );
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
-      <div className="page-subtitle">Auto enrollment stream (AI: {AI_HOST})</div>
+    <div className="w-full">
+      {screen === "setup" && (
+        <SetupPanel
+          cameraId={cameraId}
+          setCameraId={setCameraId}
+          camerasWithLaptop={camerasWithLaptop}
+          selectedCamIsActive={selectedCamIsActive}
+          busy={busy}
+          selectedErpEmployeeId={selectedErpEmployeeId}
+          setSelectedErpEmployeeId={setSelectedErpEmployeeId}
+          hierarchyAvailability={hierarchy.availability}
+          hierarchyOptions={{
+            ...hierarchy.options,
+            departments: departmentOptions,
+          }}
+          deptsLoading={deptsLoading}
+          unit={unit}
+          setUnit={setUnit}
+          department={department}
+          setDepartment={setDepartment}
+          section={section}
+          setSection={setSection}
+          line={line}
+          setLine={setLine}
+          erpItems={erpItems}
+          erpLoading={erpLoading}
+          erpError={erpError}
+          erpSearch={erpSearch}
+          setErpSearch={setErpSearch}
+          onPickEmployee={onPickEmployee}
+          employeeId={employeeId}
+          setEmployeeId={setEmployeeId}
+          name={name}
+          setName={setName}
+          reEnroll={reEnroll}
+          lockEmployeeIdentity={lockEmployeeIdentity}
+          start={start}
+          startDisabled={startDisabled}
+          tts={tts}
+          setTts={setTts}
+        />
+      )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <div className="page-meta">Face enrollment</div>
-              <div className="truncate text-xl font-semibold text-zinc-950">
-                Quick Setup (Face ID style)
-              </div>
-            </div>
-
-            <Badge
-              className={`${
-                running
-                  ? "bg-green-600"
-                  : session?.status === "saved"
-                  ? "bg-green-600"
-                  : session?.status === "error"
-                  ? "bg-red-600"
-                  : "bg-gray-400"
-              }`}
-            >
-              {running
-                ? "Running"
-                : session?.status === "saved"
-                ? "Saved"
-                : session?.status === "saving"
-                ? "Saving"
-                : session?.status === "error"
-                ? "Error"
-                : "Idle"}
-            </Badge>
-          </CardTitle>
-        </CardHeader>
-
-        <CardContent className="space-y-5">
-          {screen === "setup" && (
-            <SetupPanel
-              cameraId={cameraId}
-              setCameraId={setCameraId}
-              camerasWithLaptop={camerasWithLaptop}
-              selectedCamIsActive={selectedCamIsActive}
-              busy={busy}
-              selectedErpEmployeeId={selectedErpEmployeeId}
-              setSelectedErpEmployeeId={setSelectedErpEmployeeId}
-              hierarchyAvailability={hierarchy.availability}
-              hierarchyOptions={hierarchy.options}
-              unit={unit}
-              setUnit={setUnit}
-              department={department}
-              setDepartment={setDepartment}
-              section={section}
-              setSection={setSection}
-              line={line}
-              setLine={setLine}
-              erpItems={erpItems}
-              erpLoading={erpLoading}
-              erpError={erpError}
-              erpSearch={erpSearch}
-              setErpSearch={setErpSearch}
-              onPickEmployee={onPickEmployee}
-              employeeId={employeeId}
-              setEmployeeId={setEmployeeId}
-              name={name}
-              setName={setName}
-              reEnroll={reEnroll}
-              lockEmployeeIdentity={lockEmployeeIdentity}
-              start={start}
-              startDisabled={startDisabled}
-              tts={tts}
-              setTts={setTts}
-            />
-          )}
-
-          {screen === "enrolling" && (
-            <EnrollmentPanel
-              cameraId={cameraId}
-              laptopCameraId={laptopCameraId}
-              laptopActive={laptopActive}
-              previewVideoRef={previewVideoRef}
-              streamSrc={streamSrc}
-              imgKey={imgKey}
-              streamHasFrame={streamHasFrame}
-              streamRetries={streamRetries}
-              onFrame={onFrame}
-              onError={onError}
-              session={session}
-              pct={pct}
-              phase={phase}
-              doneCount={doneCount}
-              scan1Done={scan1Done}
-              scan2Done={scan2Done}
-              title={title}
-              hint={hint}
-              currentStep={currentStep}
-              multiWarn={multiWarn}
-              busy={busy}
-              stop={stop}
-              tts={tts}
-              setTts={setTts}
-            />
-          )}
-        </CardContent>
-      </Card>
+      {screen === "enrolling" && (
+        <EnrollmentPanel
+          cameraId={cameraId}
+          laptopCameraId={laptopCameraId}
+          laptopActive={laptopActive}
+          previewVideoRef={previewVideoRef}
+          streamSrc={streamSrc}
+          imgKey={imgKey}
+          streamHasFrame={streamHasFrame}
+          streamRetries={streamRetries}
+          onFrame={onFrame}
+          onError={onError}
+          session={session}
+          pct={pct}
+          phase={phase}
+          doneCount={doneCount}
+          scan1Done={scan1Done}
+          scan2Done={scan2Done}
+          title={title}
+          hint={hint}
+          currentStep={currentStep}
+          multiWarn={multiWarn}
+          busy={busy}
+          stop={stop}
+          tts={tts}
+          setTts={setTts}
+        />
+      )}
     </div>
   );
 }

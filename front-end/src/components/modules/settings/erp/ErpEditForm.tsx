@@ -107,6 +107,8 @@ export function ErpEditForm({
               ? "/Attendance/manual-attendance"
               : editErpUrlType.toLowerCase().includes("employee")
               ? "/Employee/GetAllEMployeelists"
+              : editErpUrlType.toLowerCase().includes("department")
+              ? "/Employee/GetAllDepartment"
               : editErpUrlType.toLowerCase().includes("gatepass")
               ? "/GatePass/SaveAPGatePass"
               : "/endpoint-path"

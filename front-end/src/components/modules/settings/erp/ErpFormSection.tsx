@@ -71,6 +71,8 @@ export function ErpFormSection({
                 ? "ERP Attendance Endpoint"
                 : addErpUrlType.toLowerCase().includes("employee")
                 ? "ERP Employee Endpoint (e.g. /Employee/GetAllEMployeelists)"
+                : addErpUrlType.toLowerCase().includes("department")
+                ? "ERP Department Endpoint (e.g. /Employee/GetAllDepartment)"
                 : addErpUrlType.toLowerCase().includes("gatepass")
                 ? `ERP ${addErpUrlType.toUpperCase()} Endpoint`
                 : `ERP ${addErpUrlType} Endpoint`

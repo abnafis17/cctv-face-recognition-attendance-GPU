@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SearchableSelect } from "@/components/reusable/SearchableSelect";
 import type { Camera } from "../types";
+import { VideoOff } from "lucide-react";
 
 export const SetupPanel = React.memo(function SetupPanel({
   cameraId,
@@ -19,6 +20,7 @@ export const SetupPanel = React.memo(function SetupPanel({
   setSelectedErpEmployeeId,
   hierarchyAvailability,
   hierarchyOptions,
+  deptsLoading,
   unit,
   setUnit,
   department,
@@ -67,6 +69,7 @@ export const SetupPanel = React.memo(function SetupPanel({
     sections: string[];
     lines: string[];
   };
+  deptsLoading?: boolean;
   unit: string;
   setUnit: (v: string) => void;
   department: string;
@@ -97,222 +100,247 @@ export const SetupPanel = React.memo(function SetupPanel({
 }) {
   const hierarchyLocked = busy || lockEmployeeIdentity;
 
+  const departmentItems = React.useMemo(() => {
+    const base = [{ value: "", label: "All departments" }];
+    const list = hierarchyOptions.departments.map((d) => ({
+      value: d,
+      label: d,
+    }));
+    return [...base, ...list];
+  }, [hierarchyOptions.departments]);
+
   return (
-    <div className="space-y-4">
-      <div className="rounded-2xl border bg-white p-5">
-        <div className="text-lg font-semibold">1) Choose camera</div>
-        <div className="text-sm text-gray-600 mt-1">
-          Make sure the camera sees a single face clearly.
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      {/* LEFT COLUMN: CAMERA CONFIG & STANDBY PREVIEW */}
+      <div className="lg:col-span-5 space-y-6">
+        {/* Camera Config Card */}
+        <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between border-b border-gray-100 pb-3 mb-4">
+            <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+              1) CAMERA CONFIG
+            </h2>
+            <span
+              className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${
+                selectedCamIsActive
+                  ? "bg-green-50 text-green-700 border-green-200"
+                  : "bg-red-50 text-red-700 border-red-200"
+              }`}
+            >
+              {selectedCamIsActive ? "ONLINE" : "OFFLINE"}
+            </span>
+          </div>
+
+          <div>
+            <Label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider block mb-1.5">
+              SELECT CAMERA
+            </Label>
+            <select
+              className="w-full rounded-xl border border-gray-200 bg-white px-3.5 py-2.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all"
+              value={cameraId}
+              onChange={(e) => setCameraId(e.target.value)}
+              disabled={busy}
+            >
+              {camerasWithLaptop.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name ? `${c.name} (${c.id})` : c.id}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
-        <div className="mt-4">
-          <Label>Camera</Label>
-          <select
-            className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm"
-            value={cameraId}
-            onChange={(e) => setCameraId(e.target.value)}
-            disabled={busy}
-          >
-            {camerasWithLaptop.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name ? `${c.name} (${c.id})` : c.id}
-              </option>
-            ))}
-          </select>
-
-          <div className="text-xs text-gray-500 mt-2">
-            Camera status:{" "}
-            <b className={selectedCamIsActive ? "text-green-700" : "text-red-700"}>
-              {selectedCamIsActive ? "ON" : "OFF"}
-            </b>
-            {" — "}
-            {selectedCamIsActive
-              ? "You should see the video preview."
-              : "It will start automatically when you press Start."}
+        {/* Camera Standby View */}
+        <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-sm flex flex-col items-center justify-center text-center min-h-[340px]">
+          <div className="h-14 w-14 rounded-full bg-gray-100 border border-gray-200 flex items-center justify-center mb-4 text-gray-400">
+            <VideoOff className="h-7 w-7" />
           </div>
+          <h3 className="font-bold text-gray-800 text-sm tracking-wider uppercase mb-2">
+            CAMERA STANDBY
+          </h3>
+          <p className="text-xs text-gray-500 max-w-xs leading-relaxed">
+            Please complete the employee details on the right and click Start Setup to activate the face capture session.
+          </p>
         </div>
       </div>
 
-      <div className="rounded-2xl border bg-white p-5">
-        <div className="text-lg font-semibold">
-          {reEnroll ? "2) Confirm employee details" : "2) Enter employee details"}
-        </div>
-
-        {reEnroll && (
-          <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
-            Re-enrollment mode: starting this session will replace the existing face
-            templates for this employee.
-          </div>
-        )}
-
-        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
-          <div className="text-sm font-semibold text-slate-900">
-            Hierarchy
-          </div>
-          <div className="mt-1 text-xs text-slate-600">
-            Select in order: Unit, Department, Section, then Line. Levels are
-            shown only when available for this company.
+      {/* RIGHT COLUMN: ENTER EMPLOYEE DETAILS & ERP SELECTION */}
+      <div className="lg:col-span-7">
+        <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+          <div className="border-b border-gray-100 pb-3 mb-5">
+            <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+              {reEnroll ? "2) CONFIRM EMPLOYEE DETAILS" : "2) ENTER EMPLOYEE DETAILS"}
+            </h2>
           </div>
 
-          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-            {hierarchyAvailability.hasUnit ? (
-              <div>
-                <Label>Unit</Label>
-                <select
-                  className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm"
-                  value={unit}
-                  onChange={(e) => {
-                    setUnit(e.target.value);
-                    setDepartment("");
-                    setSection("");
-                    setLine("");
-                    setSelectedErpEmployeeId("");
-                  }}
-                  disabled={hierarchyLocked}
-                >
-                  <option value="">All units</option>
-                  {hierarchyOptions.units.map((v) => (
-                    <option key={v} value={v}>
-                      {v}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ) : null}
-
-            {hierarchyAvailability.hasDepartment ? (
-              <div>
-                <Label>Department</Label>
-                <select
-                  className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm"
-                  value={department}
-                  onChange={(e) => {
-                    setDepartment(e.target.value);
-                    setSection("");
-                    setLine("");
-                    setSelectedErpEmployeeId("");
-                  }}
-                  disabled={hierarchyLocked}
-                >
-                  <option value="">All departments</option>
-                  {hierarchyOptions.departments.map((v) => (
-                    <option key={v} value={v}>
-                      {v}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ) : null}
-
-            {hierarchyAvailability.hasSection ? (
-              <div>
-                <Label>Section</Label>
-                <select
-                  className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm"
-                  value={section}
-                  onChange={(e) => {
-                    setSection(e.target.value);
-                    setLine("");
-                    setSelectedErpEmployeeId("");
-                  }}
-                  disabled={hierarchyLocked}
-                >
-                  <option value="">All sections</option>
-                  {hierarchyOptions.sections.map((v) => (
-                    <option key={v} value={v}>
-                      {v}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ) : null}
-
-            {hierarchyAvailability.hasLine ? (
-              <div>
-                <Label>Line</Label>
-                <select
-                  className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm"
-                  value={line}
-                  onChange={(e) => {
-                    setLine(e.target.value);
-                    setSelectedErpEmployeeId("");
-                  }}
-                  disabled={hierarchyLocked}
-                >
-                  <option value="">All lines</option>
-                  {hierarchyOptions.lines.map((v) => (
-                    <option key={v} value={v}>
-                      {v}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="mt-4">
-          <Label>Select from ERP (search by Name or ID)</Label>
-
-          <div className="mt-1">
-            <SearchableSelect
-              value={selectedErpEmployeeId}
-              items={erpItems}
-              placeholder="Search employee..."
-              searchPlaceholder="Type name or ID..."
-              disabled={busy || lockEmployeeIdentity}
-              loading={erpLoading}
-              onSearchChange={(q) => setErpSearch(q)}
-              onChange={(empId) => {
-                setSelectedErpEmployeeId(empId);
-                onPickEmployee(empId);
-              }}
-            />
-          </div>
-
-          {erpError ? (
-            <div className="text-xs text-red-600 mt-2">{erpError}</div>
-          ) : (
-            <div className="text-xs text-gray-500 mt-2">
-              Showing results for: <b>{erpSearch || "all"}</b>
+          {reEnroll && (
+            <div className="mb-5 rounded-xl border border-emerald-200 bg-emerald-50 p-3.5 text-xs text-emerald-900 leading-relaxed">
+              Re-enrollment mode: starting this session will replace the existing face templates for this employee.
             </div>
           )}
-        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-          <div>
-            <Label>Employee ID</Label>
-            <Input
-              value={employeeId}
-              onChange={(e) => setEmployeeId(e.target.value)}
-              placeholder="EMP001"
-              disabled={busy || lockEmployeeIdentity}
-            />
+          {/* Hierarchy Filter Box */}
+          <div className="rounded-2xl border border-gray-200/80 bg-gray-50/70 p-4 mb-5">
+            <h3 className="text-sm font-semibold text-gray-900">
+              Hierarchy Filter
+            </h3>
+            <p className="text-xs text-gray-500 mb-3">
+              Select department to narrow down the employee search list.
+            </p>
+
+            <div>
+              <Label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider block mb-1">
+                DEPARTMENT
+              </Label>
+              <SearchableSelect
+                value={department}
+                items={departmentItems}
+                placeholder="Search department..."
+                searchPlaceholder="Type department name..."
+                disabled={hierarchyLocked}
+                loading={deptsLoading}
+                onChange={(deptVal) => {
+                  setDepartment(deptVal);
+                  setSection("");
+                  setLine("");
+                  setSelectedErpEmployeeId("");
+                }}
+                className="rounded-xl border-gray-200 h-10 text-sm bg-white"
+              />
+            </div>
           </div>
 
-          <div>
-            <Label>Name</Label>
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="John Doe"
-              disabled={busy || lockEmployeeIdentity}
-            />
+          {/* Select from ERP Box */}
+          <div className="mb-5">
+            <Label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider block mb-1.5">
+              SELECT FROM ERP (SEARCH BY NAME OR ID)
+            </Label>
+
+            <div className="mt-1">
+              <SearchableSelect
+                value={selectedErpEmployeeId}
+                items={erpItems}
+                placeholder="Search employee..."
+                searchPlaceholder="Type name or ID..."
+                disabled={busy || lockEmployeeIdentity}
+                loading={erpLoading}
+                onSearchChange={(q) => setErpSearch(q)}
+                onChange={(empId) => {
+                  setSelectedErpEmployeeId(empId);
+                  onPickEmployee(empId);
+                }}
+                className="rounded-xl border-gray-200 h-10 text-sm"
+              />
+            </div>
+
+            {erpError ? (
+              <div className="text-xs text-red-600 mt-2">{erpError}</div>
+            ) : (
+              <div className="text-xs text-gray-500 mt-2">
+                Showing results for: <b className="font-semibold text-gray-700">{erpSearch || "all"}</b>
+              </div>
+            )}
           </div>
-        </div>
 
-        <div className="flex items-center gap-3 mt-5">
-          <Button onClick={start} disabled={startDisabled}>
-            {busy ? "Starting..." : reEnroll ? "Start Re-enrollment" : "Start Setup"}
-          </Button>
+          {/* Employee Details Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            <div>
+              <Label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider block mb-1">
+                EMPLOYEE ID
+              </Label>
+              <Input
+                value={employeeId}
+                onChange={(e) => setEmployeeId(e.target.value)}
+                placeholder="EMP001"
+                disabled={busy || lockEmployeeIdentity}
+                className="rounded-xl border-gray-200 bg-gray-50/50"
+              />
+            </div>
 
-          <div className="ml-auto flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={tts}
-              onChange={(e) => setTts(e.target.checked)}
-            />
-            <span className="text-sm text-gray-600">Voice instructions</span>
+            <div>
+              <Label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider block mb-1">
+                NAME
+              </Label>
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="John Doe"
+                disabled={busy || lockEmployeeIdentity}
+                className="rounded-xl border-gray-200 bg-gray-50/50"
+              />
+            </div>
+
+            <div>
+              <Label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider block mb-1">
+                UNIT
+              </Label>
+              <Input
+                value={unit}
+                onChange={(e) => setUnit(e.target.value)}
+                placeholder="e.g. Pakiza Apparels Limited"
+                disabled={busy || lockEmployeeIdentity}
+                className="rounded-xl border-gray-200 bg-gray-50/50"
+              />
+            </div>
+
+            <div>
+              <Label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider block mb-1">
+                DEPARTMENT
+              </Label>
+              <Input
+                value={department}
+                onChange={(e) => setDepartment(e.target.value)}
+                placeholder="e.g. All over Printing"
+                disabled={busy || lockEmployeeIdentity}
+                className="rounded-xl border-gray-200 bg-gray-50/50"
+              />
+            </div>
+
+            <div>
+              <Label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider block mb-1">
+                SECTION
+              </Label>
+              <Input
+                value={section}
+                onChange={(e) => setSection(e.target.value)}
+                placeholder="e.g. Printing (AOP)"
+                disabled={busy || lockEmployeeIdentity}
+                className="rounded-xl border-gray-200 bg-gray-50/50"
+              />
+            </div>
+
+            <div>
+              <Label className="text-[11px] font-bold text-gray-500 uppercase tracking-wider block mb-1">
+                LINE
+              </Label>
+              <Input
+                value={line}
+                onChange={(e) => setLine(e.target.value)}
+                placeholder="e.g. Line 1"
+                disabled={busy || lockEmployeeIdentity}
+                className="rounded-xl border-gray-200 bg-gray-50/50"
+              />
+            </div>
+          </div>
+
+          {/* Bottom Actions */}
+          <div className="flex items-center justify-between gap-4 border-t border-gray-100 pt-5">
+            <Button
+              onClick={start}
+              disabled={startDisabled}
+              className="bg-purple-600 hover:bg-purple-700 text-white font-semibold px-6 py-2.5 rounded-xl shadow-sm transition-all text-sm h-11"
+            >
+              {busy ? "Starting..." : reEnroll ? "Start Re-enrollment" : "Start Setup"}
+            </Button>
+
+            <div className="flex items-center gap-2 text-xs font-medium text-gray-600">
+              <input
+                type="checkbox"
+                checked={tts}
+                onChange={(e) => setTts(e.target.checked)}
+                className="rounded border-gray-300 text-purple-600 focus:ring-purple-500 h-4 w-4"
+              />
+              <span>Voice instructions</span>
+            </div>
           </div>
         </div>
       </div>

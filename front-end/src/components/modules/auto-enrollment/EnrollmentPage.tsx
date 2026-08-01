@@ -11,6 +11,8 @@ type Camera = {
   isActive?: boolean;
 };
 
+import { UserPlus, RefreshCw } from "lucide-react";
+
 export default function EnrollmentPage() {
   const searchParams = useSearchParams();
   const [cams, setCams] = useState<Camera[]>([]);
@@ -45,25 +47,36 @@ export default function EnrollmentPage() {
   }, [loadCameras]);
 
   return (
-    <div className="p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <div className="page-header">
-          <h1 className="page-title">
-            {reEnroll
-              ? "Employee Face Re-enrollment"
-              : "Employee Auto Enrollment"}
-          </h1>
-          <p className="page-subtitle">
-            Auto-capture: front / right / left / up / down / blink -&gt;
-            auto-save.
-          </p>
+    <div className="p-6 max-w-7xl mx-auto space-y-6">
+      <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center gap-3.5">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-purple-600 text-white shadow-sm">
+            <UserPlus className="h-6 w-6" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-xl font-bold text-gray-900">
+                {reEnroll
+                  ? "Employee Face Re-enrollment"
+                  : "Employee Auto Enrollment"}
+              </h1>
+              <span className="inline-flex items-center rounded-full bg-purple-100 border border-purple-200 px-2.5 py-0.5 text-[11px] font-semibold text-purple-700 uppercase tracking-wide">
+                AUTO CAPTURE
+              </span>
+            </div>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Auto-capture: front, right, left, up, down, and blink to automatically save the face template.
+            </p>
+          </div>
         </div>
+
         <button
-          className="rounded-md border bg-white px-3 py-1 text-sm"
+          className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-2 text-xs font-bold text-gray-700 tracking-wider uppercase hover:bg-gray-50 transition-colors shadow-sm disabled:opacity-50"
           onClick={loadCameras}
           disabled={loading}
         >
-          {loading ? "Refreshing..." : "Refresh Cameras"}
+          <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+          {loading ? "REFRESHING..." : "REFRESH CAMERAS"}
         </button>
       </div>
 

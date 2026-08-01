@@ -153,6 +153,7 @@ export function useErpEmployees(options?: {
   const abortRef = useRef<AbortController | null>(null);
   const debounceRef = useRef<any>(null);
   const mountedRef = useRef(false);
+  const lastQueryRef = useRef<string | null>(null);
 
   const readOrganizationId = useCallback((): string => {
     if (typeof window === "undefined") return "";
@@ -208,19 +209,15 @@ export function useErpEmployees(options?: {
         console.warn("Failed to fetch company-wise ERP settings:", err);
       }
 
-      // 2) If no company-wise settings found, do not fetch
+      // 2) If no company-wise settings found, fallback to standard ERP API endpoint
       if (!resolvedUrl) {
-        setEmployees([]);
-        setLoading(false);
-        setError("ERP employee URL not configured for this company. Please configure it in Settings.");
-        return;
+        resolvedUrl = "http://172.20.60.101:7001/api/v2/Employee/GetAllEMployeelists";
       }
 
       const payload = {
-        pageNumber: 0,
-        pageSize: 0,
+        pageNumber: 1,
+        pageSize: 100,
         search: q || "",
-        organizationId: readOrganizationId(),
       };
 
       const res = await erpAxios.post(
@@ -275,11 +272,14 @@ export function useErpEmployees(options?: {
 
   // Debounced search effect
   useEffect(() => {
-    // On first mount, optionally fetch once immediately
+    const trimmed = (search || "").trim();
+
+    // On first mount, fetch once immediately
     if (!mountedRef.current) {
       mountedRef.current = true;
       if (autoFetch) {
-        fetchEmployees((search || "").trim());
+        lastQueryRef.current = trimmed;
+        fetchEmployees(trimmed);
       }
       return;
     }
@@ -287,7 +287,10 @@ export function useErpEmployees(options?: {
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
     debounceRef.current = setTimeout(() => {
-      fetchEmployees((search || "").trim());
+      if (trimmed !== lastQueryRef.current) {
+        lastQueryRef.current = trimmed;
+        fetchEmployees(trimmed);
+      }
     }, debounceMs);
 
     return () => {
@@ -295,11 +298,10 @@ export function useErpEmployees(options?: {
     };
   }, [search, debounceMs, fetchEmployees, autoFetch]);
 
-  // Cleanup abort on unmount
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
-      if (abortRef.current) abortRef.current.abort();
     };
   }, []);
 
@@ -310,6 +312,7 @@ export function useErpEmployees(options?: {
   }, [employees]);
 
   const refetch = useCallback(() => {
+    lastQueryRef.current = null;
     fetchEmployees((search || "").trim());
   }, [fetchEmployees, search]);
 
