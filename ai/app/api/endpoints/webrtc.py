@@ -25,10 +25,17 @@ async def webrtc_signal(ws: WebSocket):
     max_ingest_fps = max(1.0, float(os.getenv("WEBRTC_INGEST_MAX_FPS", "30.0")))
     ingest_min_interval = 1.0 / max_ingest_fps
 
+    consecutive_errors = 0
     try:
         while True:
+            # Check if WebSocket client is already disconnected
+            if hasattr(ws, "client_state") and getattr(ws, "client_state", None) == 2:  # 2 == DISCONNECTED in Starlette
+                logger.warning("[WebRTC] Signal WebSocket detected in disconnected state. Exiting loop.")
+                break
+
             try:
                 msg = await ws.receive_json()
+                consecutive_errors = 0  # Reset error counter on successful read
                 logger.warning(f"[WebRTC] Signal message received keys: {list(msg.keys())}")
 
                 msg_cam_id = msg.get("cameraId")
@@ -116,12 +123,17 @@ async def webrtc_signal(ws: WebSocket):
                     except Exception as e:
                         logger.warning(f"[WebRTC] ICE Candidate Error: {e}")
             except WebSocketDisconnect:
-                raise
+                logger.warning("[WebRTC] Client disconnected via WebSocketDisconnect.")
+                break
             except Exception as e:
-                if "disconnect" in str(e).lower():
-                    logger.warning(f"[WebRTC] Signal WebSocket disconnected during loop: {e}")
+                err_str = str(e).lower()
+                consecutive_errors += 1
+                if any(w in err_str for w in ["disconnect", "closed", "cannot call", "receive", "connectionreset", "broken pipe"]) or consecutive_errors >= 5:
+                    logger.warning(f"[WebRTC] Signal WebSocket loop exiting (reason: {e}, consecutive errors: {consecutive_errors})")
                     break
                 logger.error(f"[WebRTC] Signal Loop Error: {e}")
+                # Enforce backoff sleep to prevent high CPU / 100k ops/sec log flood spin loops
+                await asyncio.sleep(0.2)
                 continue
 
     except WebSocketDisconnect:

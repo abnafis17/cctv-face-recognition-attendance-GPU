@@ -185,21 +185,27 @@ export async function submitGatepassToErp(
       let approvedByName: string | null = null;
       let approvedByDesignation: string | null = null;
       const respData = response.data;
+      const extractGatePassId = (item: any): string | null => {
+        if (!item || typeof item !== "object") return null;
+        const val = item.gatePassId ?? item.reqMasterId ?? item.reqMasterID ?? item.gatepassId ?? item.masterId ?? item.reqId ?? item.id;
+        return val !== undefined && val !== null ? String(val) : null;
+      };
+
       if (respData && Array.isArray(respData.data)) {
         const matching = respData.data.find(
           (item: any) => String(item.empId) === String(input.empId)
         );
         if (matching) {
-          if (matching.gatePassId) gatePassId = String(matching.gatePassId);
+          gatePassId = extractGatePassId(matching);
           if (matching.name) approvedByName = String(matching.name);
           if (matching.designation) approvedByDesignation = String(matching.designation);
         } else if (respData.data[0]) {
-          if (respData.data[0].gatePassId) gatePassId = String(respData.data[0].gatePassId);
+          gatePassId = extractGatePassId(respData.data[0]);
           if (respData.data[0].name) approvedByName = String(respData.data[0].name);
           if (respData.data[0].designation) approvedByDesignation = String(respData.data[0].designation);
         }
-      } else if (respData) {
-        if (respData.gatePassId) gatePassId = String(respData.gatePassId);
+      } else if (respData && typeof respData === "object") {
+        gatePassId = extractGatePassId(respData);
         if (respData.name) approvedByName = String(respData.name);
         if (respData.designation) approvedByDesignation = String(respData.designation);
       }

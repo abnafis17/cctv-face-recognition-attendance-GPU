@@ -716,47 +716,93 @@ export async function getGatepassExternalDetails(req: Request, res: Response) {
       return res.status(404).json({ error: "Gatepass record not found" });
     }
 
-    if (!record.externalGatepassId) {
-      return res.status(400).json({ error: "Gatepass has no external gatepass ID" });
+    let targetExtId: string | null = record.externalGatepassId ?? null;
+    if (!targetExtId && record.externalSubmitPayload) {
+      try {
+        const payload = typeof record.externalSubmitPayload === "string"
+          ? JSON.parse(record.externalSubmitPayload)
+          : (record.externalSubmitPayload as any);
+        const respData = payload?.responseData || payload;
+        const firstItem = Array.isArray(respData?.data) ? respData.data[0] : (respData?.data || respData);
+        if (firstItem && typeof firstItem === "object") {
+          const val = firstItem.reqMasterId ?? firstItem.reqMasterID ?? firstItem.gatePassId ?? firstItem.gatepassId ?? firstItem.masterId ?? firstItem.id;
+          if (val) targetExtId = String(val);
+        }
+      } catch {
+        // Ignored
+      }
+    }
+
+    if (!targetExtId) {
+      targetExtId = record.id;
     }
 
     const settings = await getCompanyErpSettings(companyId, "getgatepassdetails");
     const url = resolveConfiguredErpUrl(settings);
 
-    if (!url) {
-      return res.status(400).json({
-        error: 'ERP URL not configured for "getgatepassdetails" in settings.',
-      });
-    }
+    if (url && targetExtId) {
+      console.log(`[ERP GET DETAILS] Calling ERP URL: ${url} for reqMasterId: ${targetExtId}`);
 
-    console.log(`[ERP GET DETAILS] Calling ERP URL: ${url} for reqMasterId: ${record.externalGatepassId}`);
+      try {
+        const response = await axios.post(
+          url,
+          {
+            reqMasterId: targetExtId,
+          },
+          {
+            headers: {
+              Accept: "*/*",
+              "Content-Type": "application/json",
+              "x-api-version": "2.0",
+            },
+            timeout: 10000,
+            validateStatus: () => true,
+          }
+        );
 
-    const response = await axios.post(
-      url,
-      {
-        reqMasterId: record.externalGatepassId,
-      },
-      {
-        headers: {
-          Accept: "*/*",
-          "Content-Type": "application/json",
-          "x-api-version": "2.0",
-        },
-        timeout: 10000,
-        validateStatus: () => true,
+        console.log(`[ERP GET DETAILS] ERP response status: ${response.status}`, response.data);
+
+        if (response.status >= 200 && response.status < 300 && response.data) {
+          const resData = response.data;
+          // Ensure response structure is cleanly passed back to frontend
+          if (resData && typeof resData === "object" && !resData.data && !resData.error) {
+            return res.json({ ok: true, data: resData });
+          }
+          return res.json(resData);
+        } else {
+          console.warn(`[ERP GET DETAILS] ERP returned status ${response.status}. Falling back to DB record details.`);
+        }
+      } catch (axiosErr) {
+        console.warn(`[ERP GET DETAILS] ERP request threw error:`, axiosErr);
       }
-    );
-
-    console.log(`[ERP GET DETAILS] ERP response status: ${response.status}`, response.data);
-
-    if (response.status >= 200 && response.status < 300) {
-      return res.json(response.data);
-    } else {
-      return res.status(response.status).json({
-        error: `ERP request failed with status ${response.status}`,
-        detail: response.data,
-      });
     }
+
+    // Fallback: Construct detail object from DB record if ERP request fails or is not configured
+    const employee = record.employeeId
+      ? await prisma.employee.findFirst({
+          where: { id: record.employeeId, companyId },
+        })
+      : null;
+
+    const fallbackData = {
+      organization: "Pakiza Apparels Limited",
+      organizationAddress: "Khordo Nowpara, Rasulpur, Madhabdi, Narsingdi",
+      date_: record.outTime ? new Date(record.outTime).toLocaleDateString("en-GB") : "",
+      employeeId: employee?.empId || record.employeeId || "",
+      employeeName: employee?.name || "N/A",
+      department: employee?.department || "N/A",
+      designation: employee?.designation || "N/A",
+      docName: "Gate-Pass",
+      passTitleName: record.passType || record.purpose || "Gate-Pass",
+      timeStart: record.outTime ? new Date(record.outTime).toLocaleTimeString("en-GB") : "N/A",
+      timeEnd: record.returnTime ? new Date(record.returnTime).toLocaleTimeString("en-GB") : "N/A",
+      remarks: record.remarks || record.purpose || "N/A",
+      prepareByName: employee?.name || "N/A",
+      prepareByDesi: employee?.designation || "N/A",
+      prepareTime: record.createdAt ? record.createdAt.toISOString() : "",
+    };
+
+    return res.json({ ok: true, source: "fallback", data: fallbackData });
   } catch (error: unknown) {
     console.error(`[ERP GET DETAILS] Error occurred:`, error);
     return res.status(500).json({
