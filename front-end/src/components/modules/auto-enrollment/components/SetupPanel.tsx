@@ -91,7 +91,24 @@ export const SetupPanel = React.memo(function SetupPanel({
   setTts: (v: boolean) => void;
   handleReset: () => void;
 }) {
-  const hierarchyLocked = busy || lockEmployeeIdentity;
+  const [deptSearch, setDeptSearch] = React.useState("");
+
+  const filteredDepartments = React.useMemo(() => {
+    const q = deptSearch.trim().toLowerCase();
+    if (!q) return departmentsList;
+    return departmentsList.filter((d) => d.name.toLowerCase().includes(q));
+  }, [departmentsList, deptSearch]);
+
+  const departmentOptions = React.useMemo(() => {
+    const list = filteredDepartments.map((d) => ({
+      value: d.id,
+      label: d.name,
+    }));
+    return [
+      { value: "", label: "All departments" },
+      ...list,
+    ];
+  }, [filteredDepartments]);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch w-full">
@@ -167,20 +184,21 @@ export const SetupPanel = React.memo(function SetupPanel({
 
               <div>
                 <Label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Department</Label>
-                <select
-                  className="mt-1.5 h-9 w-full rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-750 outline-none hover:border-zinc-300 focus:ring-1 focus:ring-zinc-400 transition-all cursor-pointer"
-                  value={departmentFilter}
-                  onChange={(e) => {
-                    setDepartmentFilter(e.target.value);
-                    setSelectedErpEmployeeId("");
-                  }}
-                  disabled={busy || lockEmployeeIdentity}
-                >
-                  <option value="">All departments</option>
-                  {departmentsList.map((v) => (
-                    <option key={v.id} value={v.id}>{v.name}</option>
-                  ))}
-                </select>
+                <div className="mt-1.5">
+                  <SearchableSelect
+                    value={departmentFilter}
+                    onChange={(val) => {
+                      setDepartmentFilter(val);
+                      setSelectedErpEmployeeId("");
+                    }}
+                    items={departmentOptions}
+                    placeholder="All departments"
+                    searchPlaceholder="Search department..."
+                    disabled={busy || lockEmployeeIdentity}
+                    onSearchChange={(q) => setDeptSearch(q)}
+                    className="h-9 rounded-md border border-zinc-200 bg-white pl-3 text-left text-xs font-normal text-zinc-750 shadow-none hover:bg-zinc-50/50"
+                  />
+                </div>
               </div>
             </div>
 

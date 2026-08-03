@@ -10,7 +10,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "CRIPTON VISION",
+  title: "Cripton Vision",
   description: "AI Surveillance & Attendance Face Recognition",
 };
 

@@ -189,34 +189,38 @@ class LiteCameraStream:
         last_frame_time = time.time()
         
         while not self.stopped:
-            if not self.cap or not self.cap.isOpened():
-                logger.warning(f"[INGEST] RTSP Stream not open for {self.camera_id}. Retrying in 10.0s...")
-                time.sleep(10.0)
-                if not self.stopped:
-                    self.cap = open_capture_with_fallback(self.rtsp_url)
-                    last_frame_time = time.time()
-                continue
-                
-            ret, frame = self.cap.read()
-            if not ret or frame is None:
-                if time.time() - last_frame_time > 3.0:
-                    logger.warning(f"[INGEST] RTSP Stream stale for 3.0s on {self.camera_id}. Reopening...")
-                    if self.cap:
-                        self.cap.release()
-                    time.sleep(1.0)
+            try:
+                if not self.cap or not self.cap.isOpened():
+                    logger.warning(f"[INGEST] RTSP Stream not open for {self.camera_id}. Retrying in 10.0s...")
+                    time.sleep(10.0)
                     if not self.stopped:
                         self.cap = open_capture_with_fallback(self.rtsp_url)
                         last_frame_time = time.time()
-                else:
-                    time.sleep(0.01)
-                continue
+                    continue
+                    
+                ret, frame = self.cap.read()
+                if not ret or frame is None:
+                    if time.time() - last_frame_time > 3.0:
+                        logger.warning(f"[INGEST] RTSP Stream stale for 3.0s on {self.camera_id}. Reopening...")
+                        if self.cap:
+                            self.cap.release()
+                        time.sleep(1.0)
+                        if not self.stopped:
+                            self.cap = open_capture_with_fallback(self.rtsp_url)
+                            last_frame_time = time.time()
+                    else:
+                        time.sleep(0.01)
+                    continue
+                    
+                if frame is not None and frame.ndim == 3 and frame.shape[2] == 4:
+                    frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
+                self.latest_raw_frame = frame
+                self.latest_frame_time = time.time()
                 
-            if frame is not None and frame.ndim == 3 and frame.shape[2] == 4:
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
-            self.latest_raw_frame = frame
-            self.latest_frame_time = time.time()
-            
-            last_frame_time = self.latest_frame_time
+                last_frame_time = self.latest_frame_time
+            except Exception as e:
+                logger.error(f"[INGEST] Error in frame ingestion loop for {self.camera_id}: {e}")
+                time.sleep(0.5)
             
         if self.cap:
             self.cap.release()
@@ -259,80 +263,84 @@ class LiteCameraStream:
         body_detector = get_body_detector()
         
         while not self.stopped:
-            now = time.time()
-            
-            if now - last_gp_sync >= 2.0:
-                last_gp_sync = now
-                threading.Thread(target=self._sync_and_log_recognized_persons, daemon=True).start()
+            try:
+                now = time.time()
                 
-            frame = self.latest_raw_frame
-            if frame is None:
-                time.sleep(0.01)
-                continue
-                
-            if now - last_gallery_sync >= 60.0:
-                last_gallery_sync = now
-                threading.Thread(target=sync_gallery, args=(self.company_id,), daemon=True).start()
-                
-            if now - last_ai_time >= ai_period:
-                last_ai_time = now
-                self._refresh_authorized_employees()
-                
-                h, w = frame.shape[:2]
-                
-                faces = detector.detect(frame)
-                
-                if BODY_PERSISTENCE_ENABLED:
-                    bodies = body_detector.detect(frame)
-                    self.body_tracker.update(bodies)
+                if now - last_gp_sync >= 2.0:
+                    last_gp_sync = now
+                    threading.Thread(target=self._sync_and_log_recognized_persons, daemon=True).start()
                     
-                    for face in faces:
-                        fx1, fy1, fx2, fy2 = [int(v) for v in face.bbox]
-                        fx1 = max(0, min(w - 1, fx1))
-                        fy1 = max(0, min(h - 1, fy1))
-                        fx2 = max(0, min(w, fx2))
-                        fy2 = max(0, min(h, fy2))
-                        face_bbox = (fx1, fy1, fx2, fy2)
-                        
-                        matched_track = None
-                        for track in self.body_tracker.tracks:
-                            if face_belongs_to_body(face_bbox, track.bbox):
-                                matched_track = track
-                                break
-                                
-                        if matched_track is not None:
-                            self._process_recognition(frame, face, face_bbox, matched_track, now)
-                else:
-                    from app.vision.body_detector import BodyDetection
-                    face_dets = []
-                    for face in faces:
-                        fx1, fy1, fx2, fy2 = [int(v) for v in face.bbox]
-                        fx1 = max(0, min(w - 1, fx1))
-                        fy1 = max(0, min(h - 1, fy1))
-                        fx2 = max(0, min(w, fx2))
-                        fy2 = max(0, min(h, fy2))
-                        face_dets.append(BodyDetection(bbox=(fx1, fy1, fx2, fy2), conf=face.det_score))
-                        
-                    self.body_tracker.update(face_dets)
+                frame = self.latest_raw_frame
+                if frame is None:
+                    time.sleep(0.01)
+                    continue
                     
-                    for face in faces:
-                        fx1, fy1, fx2, fy2 = [int(v) for v in face.bbox]
-                        fx1 = max(0, min(w - 1, fx1))
-                        fy1 = max(0, min(h - 1, fy1))
-                        fx2 = max(0, min(w, fx2))
-                        fy2 = max(0, min(h, fy2))
-                        face_bbox = (fx1, fy1, fx2, fy2)
+                if now - last_gallery_sync >= 60.0:
+                    last_gallery_sync = now
+                    threading.Thread(target=sync_gallery, args=(self.company_id,), daemon=True).start()
+                    
+                if now - last_ai_time >= ai_period:
+                    last_ai_time = now
+                    self._refresh_authorized_employees()
+                    
+                    h, w = frame.shape[:2]
+                    
+                    faces = detector.detect(frame)
+                    
+                    if BODY_PERSISTENCE_ENABLED:
+                        bodies = body_detector.detect(frame)
+                        self.body_tracker.update(bodies)
                         
-                        matched_track = None
-                        for track in self.body_tracker.tracks:
-                            if compute_iou(face_bbox, track.bbox) > 0.4:
-                                matched_track = track
-                                break
-                                
-                        if matched_track is not None:
-                            self._process_recognition(frame, face, face_bbox, matched_track, now)
+                        for face in faces:
+                            fx1, fy1, fx2, fy2 = [int(v) for v in face.bbox]
+                            fx1 = max(0, min(w - 1, fx1))
+                            fy1 = max(0, min(h - 1, fy1))
+                            fx2 = max(0, min(w, fx2))
+                            fy2 = max(0, min(h, fy2))
+                            face_bbox = (fx1, fy1, fx2, fy2)
                             
-            time.sleep(0.002)
+                            matched_track = None
+                            for track in self.body_tracker.tracks:
+                                if face_belongs_to_body(face_bbox, track.bbox):
+                                    matched_track = track
+                                    break
+                                    
+                            if matched_track is not None:
+                                self._process_recognition(frame, face, face_bbox, matched_track, now)
+                    else:
+                        from app.vision.body_detector import BodyDetection
+                        face_dets = []
+                        for face in faces:
+                            fx1, fy1, fx2, fy2 = [int(v) for v in face.bbox]
+                            fx1 = max(0, min(w - 1, fx1))
+                            fy1 = max(0, min(h - 1, fy1))
+                            fx2 = max(0, min(w, fx2))
+                            fy2 = max(0, min(h, fy2))
+                            face_dets.append(BodyDetection(bbox=(fx1, fy1, fx2, fy2), conf=face.det_score))
+                            
+                        self.body_tracker.update(face_dets)
+                        
+                        for face in faces:
+                            fx1, fy1, fx2, fy2 = [int(v) for v in face.bbox]
+                            fx1 = max(0, min(w - 1, fx1))
+                            fy1 = max(0, min(h - 1, fy1))
+                            fx2 = max(0, min(w, fx2))
+                            fy2 = max(0, min(h, fy2))
+                            face_bbox = (fx1, fy1, fx2, fy2)
+                            
+                            matched_track = None
+                            for track in self.body_tracker.tracks:
+                                if compute_iou(face_bbox, track.bbox) > 0.4:
+                                    matched_track = track
+                                    break
+                                    
+                            if matched_track is not None:
+                                self._process_recognition(frame, face, face_bbox, matched_track, now)
+                                
+                time.sleep(0.002)
+            except Exception as e:
+                logger.error(f"[PROCESS] Error in AI process loop for {self.camera_id}: {e}")
+                time.sleep(0.1)
             
         logger.info(f"[PROCESS] AI thread stopped for camera: {self.camera_id}")
 

@@ -30,4 +30,7 @@ if __name__ == "__main__":
     host = os.getenv("AI_SERVER_HOST", "0.0.0.0")
     port = int(os.getenv("AI_SERVER_PORT", "8000"))
     logger.info(f"Starting Lite AI Server on {host}:{port}...")
-    uvicorn.run(app, host=host, port=port, log_config=None, access_log=False, loop="asyncio")
+    try:
+        uvicorn.run(app, host=host, port=port, log_config=None, access_log=False, loop="asyncio")
+    except KeyboardInterrupt:
+        logger.info("AI Server stopped by Ctrl+C.")

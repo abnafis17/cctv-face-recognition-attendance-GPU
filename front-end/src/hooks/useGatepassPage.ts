@@ -967,30 +967,57 @@ export function useGatepassPage() {
         .trim()
         .toLowerCase();
 
-      return (() => {
-        if (
-          isLocalCameraId(eventCameraKey) &&
-          isLocalCameraId(selectedCameraDbId)
-        ) {
-          return true;
-        }
-        if (eventCameraKey === selectedCameraDbId) return true;
-        if (
-          selectedCameraPublicId &&
-          eventCameraKey === selectedCameraPublicId
-        ) {
-          return true;
-        }
-        if (
-          selectedCameraName &&
-          eventCameraKey.toLowerCase() === selectedCameraName
-        ) {
-          return true;
-        }
-        return false;
-      })();
+      // Find any cameras in allCameras that match the selected camera ID or public ID
+      const selectedMatches = allCameras.filter(
+        (c) =>
+          c.id === selectedCameraDbId ||
+          (c.camId && c.camId === selectedCameraDbId) ||
+          c.id === selectedCameraPublicId ||
+          (c.camId && c.camId === selectedCameraPublicId)
+      );
+
+      // Collect all allowable identifier aliases for the selected camera
+      const allowedIds = new Set<string>();
+      allowedIds.add(selectedCameraDbId.toLowerCase());
+      if (selectedCameraPublicId) allowedIds.add(selectedCameraPublicId.toLowerCase());
+      if (selectedCameraName) allowedIds.add(selectedCameraName.toLowerCase());
+
+      for (const c of selectedMatches) {
+        if (c.id) allowedIds.add(c.id.toLowerCase());
+        if (c.camId) allowedIds.add(c.camId.toLowerCase());
+        if (c.name) allowedIds.add(c.name.toLowerCase());
+      }
+
+      // Collect all possible aliases for the event camera
+      const eventKeys = new Set<string>();
+      eventKeys.add(eventCameraKey.toLowerCase());
+      const eventMatches = allCameras.filter(
+        (c) =>
+          c.id === eventCameraKey ||
+          (c.camId && c.camId === eventCameraKey)
+      );
+      for (const c of eventMatches) {
+        if (c.id) eventKeys.add(c.id.toLowerCase());
+        if (c.camId) eventKeys.add(c.camId.toLowerCase());
+        if (c.name) eventKeys.add(c.name.toLowerCase());
+      }
+
+      // Check if there is any intersection between event keys and allowed IDs
+      for (const key of eventKeys) {
+        if (allowedIds.has(key)) return true;
+      }
+
+      // Local camera fallback check
+      if (
+        isLocalCameraId(eventCameraKey) &&
+        isLocalCameraId(selectedCameraDbId)
+      ) {
+        return true;
+      }
+
+      return false;
     },
-    [selectedGatepassCamera],
+    [selectedGatepassCamera, allCameras],
   );
 
   const queueRecognizedPerson = useCallback(

@@ -18,7 +18,7 @@ const upload = multer({
 });
 
 router.get("/lookup", lookupVisitor);
-router.post("/recognize-face", recognizeVisitorFace);
+router.post("/recognize-face", upload.single("visitorPhoto"), recognizeVisitorFace);
 router.get("/reports/employee-wise", getEmployeeWiseReport);
 router.get("/reports/visitor-wise", getVisitorWiseReport);
 router.get("/", listVisitorRecords);

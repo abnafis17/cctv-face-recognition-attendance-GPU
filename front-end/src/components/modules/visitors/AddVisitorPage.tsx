@@ -35,11 +35,13 @@ import {
   Loader2,
   Scan,
   X,
+  AlertTriangle,
 } from "lucide-react";
 import {
   extractFaceDescriptor,
   analyzeCapturedImage,
   loadFaceApiModels,
+  detectFacesLive,
 } from "@/lib/faceApi";
 import { cn } from "@/lib/utils";
 import {
@@ -144,12 +146,124 @@ export default function AddVisitorPage() {
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
 
+  // Live face detection state: idle=camera not started, ok=face in box, no_face, multi_face, out_of_box
+  const [liveDetectionStatus, setLiveDetectionStatus] = useState<
+    "idle" | "ok" | "no_face" | "multi_face" | "out_of_box"
+  >("idle");
+  const liveDetectionRafRef = useRef<number | null>(null);
+  const liveDetectionActiveRef = useRef(false);
+
   useEffect(() => {
     setIsMounted(true);
     void loadFaceApiModels().catch((e) =>
       console.warn("Failed to pre-warm face-api models:", e),
     );
   }, []);
+
+  // ── Real-time live face detection loop ──────────────────────────────────
+  // Box zone (must match overlay): top 18%→82%, left 20%→80% of video dims
+  const FACE_BOX_TOP = 0.18;
+  const FACE_BOX_BOTTOM = 0.82;
+  const FACE_BOX_LEFT = 0.2;
+  const FACE_BOX_RIGHT = 0.8;
+  // How much of the face bbox must be inside the guide box (0–1)
+  const OVERLAP_THRESHOLD = 0.72;
+
+  useEffect(() => {
+    if (!isCameraActive) {
+      // Cancel any running loop and reset
+      liveDetectionActiveRef.current = false;
+      if (liveDetectionRafRef.current !== null) {
+        cancelAnimationFrame(liveDetectionRafRef.current);
+        liveDetectionRafRef.current = null;
+      }
+      setLiveDetectionStatus("idle");
+      return;
+    }
+
+    // Wait a tick for Webcam to mount and models to load
+    let frameSkip = 0;
+    liveDetectionActiveRef.current = true;
+
+    const detectLoop = async () => {
+      if (!liveDetectionActiveRef.current) return;
+
+      // Throttle: run detection every ~8 frames (~133 ms at 60fps)
+      frameSkip++;
+      if (frameSkip < 8) {
+        liveDetectionRafRef.current = requestAnimationFrame(detectLoop);
+        return;
+      }
+      frameSkip = 0;
+
+      try {
+        // Grab live video element from the webcam ref
+        const video = (webcamRef.current as any)
+          ?.video as HTMLVideoElement | null;
+        if (!video || video.readyState < 2 || video.videoWidth === 0) {
+          if (liveDetectionActiveRef.current)
+            liveDetectionRafRef.current = requestAnimationFrame(detectLoop);
+          return;
+        }
+
+        // Use the lightweight detectFacesLive helper (no landmarks/descriptors)
+        const detections = await detectFacesLive(video);
+
+        if (!liveDetectionActiveRef.current) return;
+
+        const vw = video.videoWidth;
+        const vh = video.videoHeight;
+
+        if (detections.length === 0) {
+          setLiveDetectionStatus("no_face");
+        } else if (detections.length > 1) {
+          setLiveDetectionStatus("multi_face");
+        } else {
+          // Single face — check if it's inside the guide box
+          const box = detections[0];
+          const gTop = FACE_BOX_TOP * vh;
+          const gBottom = FACE_BOX_BOTTOM * vh;
+          const gLeft = FACE_BOX_LEFT * vw;
+          const gRight = FACE_BOX_RIGHT * vw;
+
+          const overlapTop = Math.max(box.top, gTop);
+          const overlapBottom = Math.min(box.bottom, gBottom);
+          const overlapLeft = Math.max(box.left, gLeft);
+          const overlapRight = Math.min(box.right, gRight);
+
+          const overlapW = Math.max(0, overlapRight - overlapLeft);
+          const overlapH = Math.max(0, overlapBottom - overlapTop);
+          const overlapArea = overlapW * overlapH;
+          const faceArea = box.width * box.height;
+          const overlapRatio = faceArea > 0 ? overlapArea / faceArea : 0;
+
+          setLiveDetectionStatus(
+            overlapRatio >= OVERLAP_THRESHOLD ? "ok" : "out_of_box",
+          );
+        }
+      } catch {
+        // silently ignore detection errors in the live loop
+      }
+
+      if (liveDetectionActiveRef.current)
+        liveDetectionRafRef.current = requestAnimationFrame(detectLoop);
+    };
+
+    // Delay 600 ms to let webcam stream initialise before first detection
+    const startTimer = setTimeout(() => {
+      liveDetectionRafRef.current = requestAnimationFrame(detectLoop);
+    }, 600);
+
+    return () => {
+      clearTimeout(startTimer);
+      liveDetectionActiveRef.current = false;
+      if (liveDetectionRafRef.current !== null) {
+        cancelAnimationFrame(liveDetectionRafRef.current);
+        liveDetectionRafRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isCameraActive]);
 
   const today = new Date();
   const dateString = today
@@ -424,18 +538,11 @@ export default function AddVisitorPage() {
 
         form.setValue("emailAddress", row.emailAddress || "");
         form.setValue("companyAddress", row.companyAddress || "");
+        // Show the ERP/visitor photo in the Personal Information header avatar
+        // but do NOT update the camera preview — visitor must capture a fresh live photo.
         const returnedPhoto = row.visitorPhoto || row.picUrl || "";
-        if (returnedPhoto) {
-          form.setValue("visitorPhoto", returnedPhoto);
-          setLookupAvatarUrl(returnedPhoto);
-          setPhotoPreview(returnedPhoto);
-          setCapturedFile(null);
-        } else {
-          form.setValue("visitorPhoto", "");
-          setLookupAvatarUrl(null);
-          setPhotoPreview(null);
-          setCapturedFile(null);
-        }
+        setLookupAvatarUrl(returnedPhoto || null);
+        form.setValue("visitorPhoto", "");
         setIsPhoneReadOnly(false);
         toast.success(
           `${response.data.type === "employee" ? "Employee" : "Visitor"} record loaded successfully!`,
@@ -468,33 +575,13 @@ export default function AddVisitorPage() {
     }
 
     setIsExtractingFace(true);
-    const toastId = toast.loading("Analyzing captured photo face quality...");
+    const toastId = toast.loading(
+      "Processing photo & verifying face on backend...",
+    );
 
     try {
-      // 1. Create HTMLImageElement from screenshot to analyze captured image
-      const img = new Image();
-      img.src = imageSrc;
-      await new Promise((resolve) => {
-        img.onload = resolve;
-      });
-
-      // 2. Validate single-face presence & image quality on captured image
-      const analysis = await analyzeCapturedImage(img);
-
-      if (!analysis.valid || !analysis.descriptor) {
-        toast.error(
-          analysis.error ||
-            "Captured image rejected. Please ensure exactly 1 clear face is in the photo.",
-          { id: toastId },
-        );
-        setIsExtractingFace(false);
-        return; // Keep camera open so visitor can adjust and retake
-      }
-
-      // 3. Single face & quality check passed! Set captured photo & descriptor
       setPhotoPreview(imageSrc);
       form.setValue("visitorPhoto", imageSrc);
-      setCapturedEmbedding(analysis.descriptor);
 
       const response = await fetch(imageSrc);
       const blob = await response.blob();
@@ -503,21 +590,30 @@ export default function AddVisitorPage() {
       });
       setCapturedFile(file);
 
-      // 4. Perform face recognition check against DB using the captured photo's descriptor
-      const res = await axiosInstance.post("/visitors/recognize-face", {
-        embedding: analysis.descriptor,
-      });
+      // Perform backend-based face recognition & face quality verification
+      const formData = new FormData();
+      formData.append("visitorPhoto", file);
+
+      const res = await axiosInstance.post(
+        "/visitors/recognize-face",
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        },
+      );
 
       if (res.data?.recognized && res.data?.visitor) {
         const v = res.data.visitor;
-        // isRecognizedRef.current = true;
+        isRecognizedRef.current = true;
         setRecognitionStatus("recognized");
-        // setRecognizedVisitorName(v.visitorName);
-        // form.setValue("visitorName", v.visitorName || "");
-        // form.setValue("contactNumber", v.contactNumber || "");
-        // form.setValue("emailAddress", v.emailAddress || "");
-        // form.setValue("companyAddress", v.companyAddress || "");
-        // setLookupAvatarUrl(imageSrc);
+        setRecognizedVisitorName(v.visitorName);
+        form.setValue("visitorName", v.visitorName || "");
+        form.setValue("contactNumber", v.contactNumber || "");
+        form.setValue("emailAddress", v.emailAddress || "");
+        form.setValue("companyAddress", v.companyAddress || "");
+        setLookupAvatarUrl(v.visitorPhoto || v.picUrl || null);
         setIsPhoneReadOnly(false);
         toast.success(
           `Recognized Visitor: ${v.visitorName}! Submission will update stored profile image.`,
@@ -526,15 +622,17 @@ export default function AddVisitorPage() {
       } else {
         setRecognitionStatus("unrecognized");
         toast.success(
-          "Photo captured & verified (1 clear face detected). Ready for submission!",
+          "Photo captured & verified by backend. Ready for submission!",
           { id: toastId },
         );
       }
 
       setIsCameraActive(false);
-    } catch (error) {
-      console.error("Failed analyzing captured photo", error);
-      toast.error("Failed to analyze captured photo", { id: toastId });
+    } catch (error: any) {
+      console.error("Failed analyzing captured photo on backend", error);
+      const errMsg =
+        error?.response?.data?.error || "Captured photo rejected by backend";
+      toast.error(errMsg, { id: toastId });
     } finally {
       setIsExtractingFace(false);
     }
@@ -543,21 +641,6 @@ export default function AddVisitorPage() {
   const onSubmit = async (data: VisitorFormValues) => {
     setIsSubmitting(true);
     try {
-      // Mandatory live camera face verification check for all visitors (new or returning)
-      // const hasLiveVerification =
-      //   recognitionStatus === "recognized" ||
-      //   capturedFile !== null ||
-      //   photoPreview !== null;
-
-      // if (!hasLiveVerification) {
-      //   toast.error(
-      //     "Face verification is mandatory for all visitors before submission. Please open the camera to verify or capture your face photo."
-      //   );
-      //   setIsCameraActive(true);
-      //   setIsSubmitting(false);
-      //   return;
-      // }
-
       const formData = new FormData();
       Object.entries(data).forEach(([key, val]) => {
         if (key === "visitorPhoto") {
@@ -582,7 +665,9 @@ export default function AddVisitorPage() {
       });
 
       if (response.data?.ok) {
-        toast.success("Visitor registered & face template saved successfully!");
+        toast.success(
+          "Visitor registered & face template processed by backend!",
+        );
         handleReset(false);
       } else {
         toast.error(response.data?.error || "Registration failed");
@@ -640,7 +725,10 @@ export default function AddVisitorPage() {
     setIsCameraActive(true);
   };
 
-  const displayPhotoPreview = photoPreview ?? lookupAvatarUrl;
+  // Camera/photo preview: only show photos actually captured via the live camera.
+  // lookupAvatarUrl is intentionally excluded here — it's only used in the Personal
+  // Information header avatar, not in the camera box.
+  const displayPhotoPreview = photoPreview;
 
   return (
     <div className="w-full pb-10 space-y-6">
@@ -1374,13 +1462,493 @@ export default function AddVisitorPage() {
                           facingMode: "user",
                         }}
                       />
-                      {/* Live Camera Viewport Overlay Prompt */}
-                      <div className="absolute top-2 left-2 right-2 rounded-lg bg-black/80 backdrop-blur-xs p-2 text-center text-xs font-semibold text-white border border-white/10 shadow-md z-10 pointer-events-none">
-                        <span className="text-cyan-300 flex items-center justify-center gap-1.5 font-medium">
-                          <Camera className="h-4 w-4 text-cyan-400" />
-                          Position face clearly & click 'Capture Photo'
-                        </span>
-                      </div>
+
+                      {/* ══ Professional Face-Alignment Overlay ══ */}
+                      {(() => {
+                        const isOk = liveDetectionStatus === "ok";
+                        const isMulti = liveDetectionStatus === "multi_face";
+                        const isNoFace = liveDetectionStatus === "no_face";
+                        const isOutOfBox = liveDetectionStatus === "out_of_box";
+                        const isError = isMulti || isNoFace || isOutOfBox;
+
+                        // Colors
+                        const boxColor = isOk
+                          ? "rgba(34,197,94,0.85)"
+                          : isError
+                            ? "rgba(239,68,68,0.90)"
+                            : "rgba(34,211,238,0.65)";
+                        const glowColor = isOk
+                          ? "rgba(34,197,94,0.35)"
+                          : isError
+                            ? "rgba(239,68,68,0.40)"
+                            : "rgba(34,211,238,0.25)";
+                        const bracketClr = isOk
+                          ? "#22c55e"
+                          : isError
+                            ? "#ef4444"
+                            : "#22d3ee";
+                        const scanClr = isOk
+                          ? "rgba(34,197,94,0.95)"
+                          : isError
+                            ? "rgba(239,68,68,0.90)"
+                            : "rgba(34,211,238,0.95)";
+                        const chipBg = isOk
+                          ? "rgba(21,128,61,0.85)"
+                          : isError
+                            ? "rgba(153,27,27,0.85)"
+                            : "rgba(0,0,0,0.80)";
+                        const chipBorder = isOk
+                          ? "rgba(34,197,94,0.50)"
+                          : isError
+                            ? "rgba(239,68,68,0.50)"
+                            : "rgba(34,211,238,0.30)";
+                        const dotClr = isOk
+                          ? "#22c55e"
+                          : isError
+                            ? "#ef4444"
+                            : "#22d3ee";
+
+                        const statusMsg = isOk
+                          ? "Face detected — Ready to capture"
+                          : isMulti
+                            ? `Multiple faces (${liveDetectionStatus}) — 1 person only`
+                            : isNoFace
+                              ? "No face detected — Move closer"
+                              : isOutOfBox
+                                ? "Face out of frame — Centre yourself"
+                                : "Place face inside the box";
+
+                        // Hacky but accurate label for multi
+                        const chipLabel = isMulti
+                          ? "Multiple faces — 1 person only"
+                          : statusMsg;
+
+                        return (
+                          <div className="absolute inset-0 pointer-events-none z-10">
+                            {/* ── 4-panel dark cutout mask ── */}
+                            <div
+                              style={{
+                                position: "absolute",
+                                top: 0,
+                                left: 0,
+                                right: 0,
+                                height: "18%",
+                                background: "rgba(0,0,0,0.72)",
+                              }}
+                            />
+                            <div
+                              style={{
+                                position: "absolute",
+                                bottom: 0,
+                                left: 0,
+                                right: 0,
+                                height: "18%",
+                                background: "rgba(0,0,0,0.72)",
+                              }}
+                            />
+                            <div
+                              style={{
+                                position: "absolute",
+                                top: "18%",
+                                left: 0,
+                                width: "20%",
+                                bottom: "18%",
+                                background: "rgba(0,0,0,0.72)",
+                              }}
+                            />
+                            <div
+                              style={{
+                                position: "absolute",
+                                top: "18%",
+                                right: 0,
+                                width: "20%",
+                                bottom: "18%",
+                                background: "rgba(0,0,0,0.72)",
+                              }}
+                            />
+
+                            {/* ── Face guide rectangle (color-reactive) ── */}
+                            <div
+                              style={{
+                                position: "absolute",
+                                top: "18%",
+                                left: "20%",
+                                right: "20%",
+                                bottom: "18%",
+                                borderRadius: 6,
+                                border: `2px solid ${boxColor}`,
+                                boxShadow: `0 0 14px 3px ${glowColor}, inset 0 0 10px ${glowColor}`,
+                                transition:
+                                  "border-color 0.25s, box-shadow 0.25s",
+                              }}
+                            />
+
+                            {/* ── L-bracket corners (color-reactive) ── */}
+                            {/* top-left */}
+                            <div
+                              style={{
+                                position: "absolute",
+                                top: "18%",
+                                left: "20%",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  position: "relative",
+                                  width: 30,
+                                  height: 30,
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    position: "absolute",
+                                    top: 0,
+                                    left: 0,
+                                    width: 30,
+                                    height: 3.5,
+                                    background: bracketClr,
+                                    borderRadius: "3px 0 0 0",
+                                    transition: "background 0.25s",
+                                  }}
+                                />
+                                <div
+                                  style={{
+                                    position: "absolute",
+                                    top: 0,
+                                    left: 0,
+                                    width: 3.5,
+                                    height: 30,
+                                    background: bracketClr,
+                                    borderRadius: "3px 0 0 0",
+                                    transition: "background 0.25s",
+                                  }}
+                                />
+                              </div>
+                            </div>
+                            {/* top-right */}
+                            <div
+                              style={{
+                                position: "absolute",
+                                top: "18%",
+                                right: "20%",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  position: "relative",
+                                  width: 30,
+                                  height: 30,
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    position: "absolute",
+                                    top: 0,
+                                    right: 0,
+                                    width: 30,
+                                    height: 3.5,
+                                    background: bracketClr,
+                                    borderRadius: "0 3px 0 0",
+                                    transition: "background 0.25s",
+                                  }}
+                                />
+                                <div
+                                  style={{
+                                    position: "absolute",
+                                    top: 0,
+                                    right: 0,
+                                    width: 3.5,
+                                    height: 30,
+                                    background: bracketClr,
+                                    borderRadius: "0 3px 0 0",
+                                    transition: "background 0.25s",
+                                  }}
+                                />
+                              </div>
+                            </div>
+                            {/* bottom-left */}
+                            <div
+                              style={{
+                                position: "absolute",
+                                bottom: "18%",
+                                left: "20%",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  position: "relative",
+                                  width: 30,
+                                  height: 30,
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    position: "absolute",
+                                    bottom: 0,
+                                    left: 0,
+                                    width: 30,
+                                    height: 3.5,
+                                    background: bracketClr,
+                                    borderRadius: "0 0 0 3px",
+                                    transition: "background 0.25s",
+                                  }}
+                                />
+                                <div
+                                  style={{
+                                    position: "absolute",
+                                    bottom: 0,
+                                    left: 0,
+                                    width: 3.5,
+                                    height: 30,
+                                    background: bracketClr,
+                                    borderRadius: "0 0 0 3px",
+                                    transition: "background 0.25s",
+                                  }}
+                                />
+                              </div>
+                            </div>
+                            {/* bottom-right */}
+                            <div
+                              style={{
+                                position: "absolute",
+                                bottom: "18%",
+                                right: "20%",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  position: "relative",
+                                  width: 30,
+                                  height: 30,
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    position: "absolute",
+                                    bottom: 0,
+                                    right: 0,
+                                    width: 30,
+                                    height: 3.5,
+                                    background: bracketClr,
+                                    borderRadius: "0 0 3px 0",
+                                    transition: "background 0.25s",
+                                  }}
+                                />
+                                <div
+                                  style={{
+                                    position: "absolute",
+                                    bottom: 0,
+                                    right: 0,
+                                    width: 3.5,
+                                    height: 30,
+                                    background: bracketClr,
+                                    borderRadius: "0 0 3px 0",
+                                    transition: "background 0.25s",
+                                  }}
+                                />
+                              </div>
+                            </div>
+
+                            {/* ── Scan line (only when ok / idle) ── */}
+                            {!isError && (
+                              <div
+                                style={{
+                                  position: "absolute",
+                                  left: "20%",
+                                  right: "20%",
+                                  height: 2,
+                                  background: `linear-gradient(90deg,transparent 0%,${scanClr} 35%,${scanClr} 65%,transparent 100%)`,
+                                  boxShadow: `0 0 8px 2px ${glowColor}`,
+                                  animation: "scanLineBox 2.4s linear infinite",
+                                  top: "18%",
+                                }}
+                              />
+                            )}
+
+                            {/* ── Top status chip ── */}
+                            <div
+                              style={{
+                                position: "absolute",
+                                top: "7%",
+                                left: "50%",
+                                transform: "translateX(-50%)",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 6,
+                                background: chipBg,
+                                backdropFilter: "blur(6px)",
+                                border: `1px solid ${chipBorder}`,
+                                borderRadius: 20,
+                                padding: "5px 12px",
+                                whiteSpace: "nowrap",
+                                transition:
+                                  "background 0.25s, border-color 0.25s",
+                              }}
+                            >
+                              <span
+                                style={{
+                                  display: "inline-block",
+                                  width: 7,
+                                  height: 7,
+                                  borderRadius: "50%",
+                                  background: dotClr,
+                                  boxShadow: `0 0 6px 2px ${dotClr}`,
+                                  animation:
+                                    "dotBlink 1.4s ease-in-out infinite",
+                                  flexShrink: 0,
+                                  transition: "background 0.25s",
+                                }}
+                              />
+                              <span
+                                style={{
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                  color: "#f0fdf4",
+                                  letterSpacing: "0.05em",
+                                  textTransform: "uppercase",
+                                }}
+                              >
+                                {chipLabel}
+                              </span>
+                            </div>
+
+                            {/* ── Error detail badge (only when error) ── */}
+                            {isError && (
+                              <div
+                                style={{
+                                  position: "absolute",
+                                  top: "83%",
+                                  left: "10%",
+                                  right: "10%",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  gap: 6,
+                                  background: "rgba(127,29,29,0.88)",
+                                  backdropFilter: "blur(6px)",
+                                  border: "1px solid rgba(239,68,68,0.40)",
+                                  borderRadius: 8,
+                                  padding: "6px 10px",
+                                }}
+                              >
+                                <AlertTriangle
+                                  style={{
+                                    width: 12,
+                                    height: 12,
+                                    color: "#fca5a5",
+                                    flexShrink: 0,
+                                  }}
+                                />
+                                <span
+                                  style={{
+                                    fontSize: 10,
+                                    fontWeight: 700,
+                                    color: "#fca5a5",
+                                    letterSpacing: "0.03em",
+                                  }}
+                                >
+                                  {isMulti
+                                    ? "Multiple faces detected — only 1 person allowed"
+                                    : isNoFace
+                                      ? "No face found — move closer & improve lighting"
+                                      : "Face outside guide box — centre your face"}
+                                </span>
+                              </div>
+                            )}
+
+                            {/* ── OK confirmation badge ── */}
+                            {isOk && (
+                              <div
+                                style={{
+                                  position: "absolute",
+                                  top: "83%",
+                                  left: "10%",
+                                  right: "10%",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  gap: 6,
+                                  background: "rgba(5,46,22,0.88)",
+                                  backdropFilter: "blur(6px)",
+                                  border: "1px solid rgba(34,197,94,0.40)",
+                                  borderRadius: 8,
+                                  padding: "6px 10px",
+                                }}
+                              >
+                                <CheckCircle
+                                  style={{
+                                    width: 12,
+                                    height: 12,
+                                    color: "#86efac",
+                                    flexShrink: 0,
+                                  }}
+                                />
+                                <span
+                                  style={{
+                                    fontSize: 10,
+                                    fontWeight: 700,
+                                    color: "#86efac",
+                                    letterSpacing: "0.03em",
+                                  }}
+                                >
+                                  Face aligned — click{" "}
+                                  <span style={{ color: "#4ade80" }}>
+                                    Capture Photo
+                                  </span>
+                                </span>
+                              </div>
+                            )}
+
+                            {/* ── Bottom hint (idle only) ── */}
+                            {liveDetectionStatus === "idle" && (
+                              <div
+                                style={{
+                                  position: "absolute",
+                                  top: "83%",
+                                  left: "10%",
+                                  right: "10%",
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  alignItems: "center",
+                                  gap: 2,
+                                  background: "rgba(0,0,0,0.78)",
+                                  backdropFilter: "blur(6px)",
+                                  border: "1px solid rgba(255,255,255,0.08)",
+                                  borderRadius: 8,
+                                  padding: "6px 10px",
+                                  textAlign: "center",
+                                }}
+                              >
+                                <span
+                                  style={{
+                                    fontSize: 10,
+                                    fontWeight: 600,
+                                    color: "rgba(255,255,255,0.45)",
+                                    letterSpacing: "0.04em",
+                                    textTransform: "uppercase",
+                                  }}
+                                >
+                                  Keep face centred &amp; look straight
+                                </span>
+                              </div>
+                            )}
+
+                            {/* ── Keyframes ── */}
+                            <style>{`
+                          @keyframes scanLineBox {
+                            0%   { top: 18%; opacity:0; }
+                            8%   { opacity:1; }
+                            92%  { opacity:1; }
+                            100% { top: 82%; opacity:0; }
+                          }
+                          @keyframes dotBlink {
+                            0%,100% { opacity:1; }
+                            50%     { opacity:0.35; }
+                          }
+                        `}</style>
+                          </div>
+                        );
+                      })()}
                     </>
                   ) : displayPhotoPreview ? (
                     <div className="relative h-full w-full">
@@ -1416,16 +1984,59 @@ export default function AddVisitorPage() {
                 {/* Control Buttons */}
                 {isCameraActive ? (
                   <div className="flex flex-col gap-2">
+                    {/* Capture is only allowed when exactly 1 face is in-box */}
                     <Button
                       type="button"
                       onClick={capturePhoto}
-                      disabled={isExtractingFace}
-                      className="w-full h-11 rounded-xl bg-emerald-600 text-white hover:bg-emerald-500 flex items-center justify-center gap-2 font-bold shadow-md cursor-pointer"
+                      disabled={
+                        isExtractingFace || liveDetectionStatus !== "ok"
+                      }
+                      title={
+                        liveDetectionStatus === "multi_face"
+                          ? "Multiple faces detected — only 1 person allowed"
+                          : liveDetectionStatus === "no_face"
+                            ? "No face detected — align your face in the box"
+                            : liveDetectionStatus === "out_of_box"
+                              ? "Face is outside the guide box — centre yourself"
+                              : liveDetectionStatus === "idle"
+                                ? "Initialising camera detection…"
+                                : "Capture Photo"
+                      }
+                      className={cn(
+                        "w-full h-11 rounded-xl flex items-center justify-center gap-2 font-bold shadow-md transition-all duration-200",
+                        liveDetectionStatus === "ok" && !isExtractingFace
+                          ? "bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer"
+                          : "bg-red-700/80 text-red-100 cursor-not-allowed opacity-80",
+                      )}
                     >
-                      <Camera className="h-4 w-4" />
-                      {isExtractingFace
-                        ? "Extracting Face..."
-                        : "Capture Photo"}
+                      {isExtractingFace ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />{" "}
+                          Extracting Face...
+                        </>
+                      ) : liveDetectionStatus === "ok" ? (
+                        <>
+                          <Camera className="h-4 w-4" /> Capture Photo
+                        </>
+                      ) : liveDetectionStatus === "multi_face" ? (
+                        <>
+                          <AlertTriangle className="h-4 w-4" /> Multiple Faces
+                          Detected
+                        </>
+                      ) : liveDetectionStatus === "no_face" ? (
+                        <>
+                          <AlertTriangle className="h-4 w-4" /> No Face Detected
+                        </>
+                      ) : liveDetectionStatus === "out_of_box" ? (
+                        <>
+                          <AlertTriangle className="h-4 w-4" /> Face Out of
+                          Frame
+                        </>
+                      ) : (
+                        <>
+                          <Camera className="h-4 w-4" /> Initialising...
+                        </>
+                      )}
                     </Button>
                     <Button
                       type="button"
