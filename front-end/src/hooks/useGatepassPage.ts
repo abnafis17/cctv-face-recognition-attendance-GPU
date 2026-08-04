@@ -303,7 +303,8 @@ function getRecognizedRowKey(employee: GatepassEmployee, fallbackKey = "") {
 
 export function useGatepassPage() {
   const [companyId, setCompanyId] = useState("");
-  const [selectedReportRecord, setSelectedReportRecord] = useState<GatepassRecord | null>(null);
+  const [selectedReportRecord, setSelectedReportRecord] =
+    useState<GatepassRecord | null>(null);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
 
   const handleViewReport = useCallback((record: GatepassRecord) => {
@@ -973,13 +974,14 @@ export function useGatepassPage() {
           c.id === selectedCameraDbId ||
           (c.camId && c.camId === selectedCameraDbId) ||
           c.id === selectedCameraPublicId ||
-          (c.camId && c.camId === selectedCameraPublicId)
+          (c.camId && c.camId === selectedCameraPublicId),
       );
 
       // Collect all allowable identifier aliases for the selected camera
       const allowedIds = new Set<string>();
       allowedIds.add(selectedCameraDbId.toLowerCase());
-      if (selectedCameraPublicId) allowedIds.add(selectedCameraPublicId.toLowerCase());
+      if (selectedCameraPublicId)
+        allowedIds.add(selectedCameraPublicId.toLowerCase());
       if (selectedCameraName) allowedIds.add(selectedCameraName.toLowerCase());
 
       for (const c of selectedMatches) {
@@ -993,8 +995,7 @@ export function useGatepassPage() {
       eventKeys.add(eventCameraKey.toLowerCase());
       const eventMatches = allCameras.filter(
         (c) =>
-          c.id === eventCameraKey ||
-          (c.camId && c.camId === eventCameraKey)
+          c.id === eventCameraKey || (c.camId && c.camId === eventCameraKey),
       );
       for (const c of eventMatches) {
         if (c.id) eventKeys.add(c.id.toLowerCase());
@@ -1539,11 +1540,19 @@ export function useGatepassPage() {
       nextErrors.purpose = "Purpose is required";
     }
 
-    if (rowsNeedingOutSubmission.length > 0 && isShortLeave && !approxReturnTime.trim()) {
+    if (
+      rowsNeedingOutSubmission.length > 0 &&
+      isShortLeave &&
+      !approxReturnTime.trim()
+    ) {
       nextErrors.approxReturnTime = "Approx. return time is required";
     }
 
-    if (nextErrors.leaveType || nextErrors.purpose || nextErrors.approxReturnTime) {
+    if (
+      nextErrors.leaveType ||
+      nextErrors.purpose ||
+      nextErrors.approxReturnTime
+    ) {
       setFormErrors(nextErrors);
       return;
     }
@@ -1616,7 +1625,9 @@ export function useGatepassPage() {
             recognizedAt: row.recognizedAt.toISOString(),
             passType: isShortLeave ? "short leave" : "Long Leave",
             remarks: isShortLeave ? "okay" : "ok",
-            returnTime: approxReturnTime ? parseInt(approxReturnTime, 10) : null,
+            returnTime: approxReturnTime
+              ? parseInt(approxReturnTime, 10)
+              : null,
           });
 
           const createdGatepass = response?.data?.gatepass;
@@ -1625,9 +1636,15 @@ export function useGatepassPage() {
             response?.data?.externalApi?.responseData?.data?.[0]?.gatePassId;
 
           if (!gatePassId) {
-            throw new Error(
-              "ERP server did not return a Gatepass ID. Please re-submit.",
-            );
+            const responseMessage =
+              response?.data?.externalApi?.responseData?.message;
+            const errMsg = responseMessage
+              ? `Submission unsuccessful. Please try again. ERP Error: (${responseMessage})`
+              : "Submission unsuccessful. Please try again. ERP Error: (".concat(
+                  responseMessage,
+                  ")",
+                );
+            throw new Error(errMsg);
           }
 
           successCount += 1;

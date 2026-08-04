@@ -4,7 +4,10 @@ import { Request, Response } from "express";
 import { ZodError } from "zod";
 import axios from "axios";
 import { prisma } from "../prisma";
-import { getCompanyErpSettings, resolveConfiguredErpUrl } from "../services/erpSettings.service";
+import {
+  getCompanyErpSettings,
+  resolveConfiguredErpUrl,
+} from "../services/erpSettings.service";
 import { listCompanyGatepassTypes } from "../services/gatepassTypes.service";
 import { submitGatepassToErp } from "../services/gatepassSubmit.service";
 import { updateGatepassReturnToErp } from "../services/gatepassUpdate.service";
@@ -82,7 +85,9 @@ function respondValidationError(res: Response, error: ZodError) {
   const first = error.issues?.[0];
   const message =
     first?.message ||
-    (first?.path?.length ? `${first.path.join(".")} is invalid` : "Invalid input");
+    (first?.path?.length
+      ? `${first.path.join(".")} is invalid`
+      : "Invalid input");
 
   return res.status(400).json({
     error: message,
@@ -156,7 +161,8 @@ function serializeLeaveTypeLabel(
 }
 
 function serializeGatepass(row: GatepassJoinedRow) {
-  const employeeCode = String(row.employeeEmpId ?? "").trim() || row.employeePkId;
+  const employeeCode =
+    String(row.employeeEmpId ?? "").trim() || row.employeePkId;
   const designation =
     String((row as any)?.employeeDesignation ?? "").trim() ||
     String(row.employeeLine ?? "").trim() ||
@@ -250,7 +256,8 @@ function normalizeListQuery(req: Request): GatepassListQueryInput {
 export async function listGatepassTypes(req: Request, res: Response) {
   try {
     const companyId = getCompanyId(req);
-    if (!companyId) return res.status(400).json({ error: "Missing company id" });
+    if (!companyId)
+      return res.status(400).json({ error: "Missing company id" });
 
     const types = await listCompanyGatepassTypes(companyId);
     return res.json(types);
@@ -265,7 +272,8 @@ export async function listGatepassTypes(req: Request, res: Response) {
 export async function listGatepassRecords(req: Request, res: Response) {
   try {
     const companyId = getCompanyId(req);
-    if (!companyId) return res.status(400).json({ error: "Missing company id" });
+    if (!companyId)
+      return res.status(400).json({ error: "Missing company id" });
 
     const query = normalizeListQuery(req);
     const limit = query.limit || 300;
@@ -275,7 +283,8 @@ export async function listGatepassRecords(req: Request, res: Response) {
     ];
 
     if (query.fromDate || query.toDate) {
-      const fromDateStr = query.fromDate || query.toDate || dhakaTodayYYYYMMDD();
+      const fromDateStr =
+        query.fromDate || query.toDate || dhakaTodayYYYYMMDD();
       const toDateStr = query.toDate || query.fromDate || dhakaTodayYYYYMMDD();
       if (fromDateStr > toDateStr) {
         return res.status(400).json({
@@ -284,30 +293,32 @@ export async function listGatepassRecords(req: Request, res: Response) {
       }
       const { start } = dhakaDayRange(fromDateStr);
       const { end } = dhakaDayRange(toDateStr);
-      whereClauses.push(Prisma.sql`gp."outTime" >= ${start} AND gp."outTime" < ${end}`);
+      whereClauses.push(
+        Prisma.sql`gp."outTime" >= ${start} AND gp."outTime" < ${end}`,
+      );
     } else if (query.date) {
       const { start } = dhakaDayRange(query.date);
       const { end } = dhakaDayRange(query.date);
       whereClauses.push(
-        Prisma.sql`((gp."outTime" >= ${start} AND gp."outTime" < ${end}) OR (gp."status" = 'out' AND gp."inTime" IS NULL))`
+        Prisma.sql`((gp."outTime" >= ${start} AND gp."outTime" < ${end}) OR (gp."status" = 'out' AND gp."inTime" IS NULL))`,
       );
     } else {
       const todayStr = dhakaTodayYYYYMMDD();
       const { start } = dhakaDayRange(todayStr);
       const { end } = dhakaDayRange(todayStr);
       whereClauses.push(
-        Prisma.sql`((gp."outTime" >= ${start} AND gp."outTime" < ${end}) OR (gp."status" = 'out' AND gp."inTime" IS NULL))`
+        Prisma.sql`((gp."outTime" >= ${start} AND gp."outTime" < ${end}) OR (gp."status" = 'out' AND gp."inTime" IS NULL))`,
       );
     }
 
     if (query.leaveTypeId) {
       if (query.leaveTypeId === "Long Leave") {
         whereClauses.push(
-          Prisma.sql`(gp."leaveTypeId" = 'Long Leave' OR gp."leaveType" ILIKE 'long%' OR gp."leaveType" = 'Long Leave')`
+          Prisma.sql`(gp."leaveTypeId" = 'Long Leave' OR gp."leaveType" ILIKE 'long%' OR gp."leaveType" = 'Long Leave')`,
         );
       } else if (query.leaveTypeId === "short leave") {
         whereClauses.push(
-          Prisma.sql`(gp."leaveTypeId" IS NULL OR (gp."leaveTypeId" <> 'Long Leave' AND gp."leaveType" NOT ILIKE 'long%' AND gp."leaveType" <> 'Long Leave'))`
+          Prisma.sql`(gp."leaveTypeId" IS NULL OR (gp."leaveTypeId" <> 'Long Leave' AND gp."leaveType" NOT ILIKE 'long%' AND gp."leaveType" <> 'Long Leave'))`,
         );
       } else {
         whereClauses.push(Prisma.sql`gp."leaveTypeId" = ${query.leaveTypeId}`);
@@ -349,33 +360,48 @@ export async function listGatepassRecords(req: Request, res: Response) {
 export async function createGatepassRecord(req: Request, res: Response) {
   try {
     const companyId = getCompanyId(req);
-    if (!companyId) return res.status(400).json({ error: "Missing company id" });
+    if (!companyId)
+      return res.status(400).json({ error: "Missing company id" });
 
     const payload = normalizeCreateInput(req);
     const trimmedPurpose = payload.purpose.trim();
     const normalizedDestination = payload.destination ?? null;
     const recognizedAt =
-      parseInputDate(payload.recognizedAt ?? undefined, "recognizedAt") ?? new Date();
+      parseInputDate(payload.recognizedAt ?? undefined, "recognizedAt") ??
+      new Date();
 
     const employee = await findEmployeeByAnyId(payload.employeeId, companyId);
     if (!employee) {
-      return res.status(404).json({ error: "Employee not found for this company" });
+      return res
+        .status(404)
+        .json({ error: "Employee not found for this company" });
     }
 
     let camera = payload.cameraId
       ? await findCameraByAnyId(payload.cameraId, companyId)
       : null;
     if (payload.cameraId && !camera) {
-      if (payload.cameraId.startsWith("laptop-") || payload.cameraId === "cmkdpsq300000j7284bwluxh2") {
+      if (
+        payload.cameraId.startsWith("laptop-") ||
+        payload.cameraId === "cmkdpsq300000j7284bwluxh2"
+      ) {
         camera = await prisma.camera.findFirst({
           where: {
             companyId,
-            camId: { startsWith: "laptop-" }
-          }
+            camId: { startsWith: "laptop-" },
+          },
         });
       }
-      if (!camera && !(payload.cameraId.startsWith("laptop-") || payload.cameraId === "cmkdpsq300000j7284bwluxh2")) {
-        return res.status(404).json({ error: "Camera not found for this company" });
+      if (
+        !camera &&
+        !(
+          payload.cameraId.startsWith("laptop-") ||
+          payload.cameraId === "cmkdpsq300000j7284bwluxh2"
+        )
+      ) {
+        return res
+          .status(404)
+          .json({ error: "Camera not found for this company" });
       }
     }
 
@@ -392,8 +418,13 @@ export async function createGatepassRecord(req: Request, res: Response) {
     });
 
     if (!erpSubmit.gatePassId) {
+      const responseMessage = (erpSubmit.payload?.responseData as any)?.message;
+      const errorMsg = responseMessage
+        ? `Submission unsuccessful. Please try again. ERP Error: (${responseMessage})`
+        : "Submission unsuccessful. Please try again.";
+
       return res.status(400).json({
-        error: "Failed to submit gatepass: ERP server did not return a Gatepass ID. Please re-submit.",
+        error: errorMsg,
         externalApiCalled: erpSubmit.attempted,
         externalApiAcknowledged: erpSubmit.acknowledged,
         externalApiError: erpSubmit.errorMessage,
@@ -455,7 +486,8 @@ export async function createGatepassRecord(req: Request, res: Response) {
     );
 
     const row = await loadGatepassById(companyId, gatepassId);
-    if (!row) return res.status(404).json({ error: "Gatepass record not found" });
+    if (!row)
+      return res.status(404).json({ error: "Gatepass record not found" });
 
     return res.status(201).json({
       ok: true,
@@ -480,31 +512,46 @@ export async function createGatepassRecord(req: Request, res: Response) {
 export async function markGatepassReturn(req: Request, res: Response) {
   try {
     const companyId = getCompanyId(req);
-    if (!companyId) return res.status(400).json({ error: "Missing company id" });
+    if (!companyId)
+      return res.status(400).json({ error: "Missing company id" });
 
     const payload = normalizeReturnInput(req);
     const recognizedAt =
-      parseInputDate(payload.recognizedAt ?? undefined, "recognizedAt") ?? new Date();
+      parseInputDate(payload.recognizedAt ?? undefined, "recognizedAt") ??
+      new Date();
 
     const employee = await findEmployeeByAnyId(payload.employeeId, companyId);
     if (!employee) {
-      return res.status(404).json({ error: "Employee not found for this company" });
+      return res
+        .status(404)
+        .json({ error: "Employee not found for this company" });
     }
 
     let camera = payload.cameraId
       ? await findCameraByAnyId(payload.cameraId, companyId)
       : null;
     if (payload.cameraId && !camera) {
-      if (payload.cameraId.startsWith("laptop-") || payload.cameraId === "cmkdpsq300000j7284bwluxh2") {
+      if (
+        payload.cameraId.startsWith("laptop-") ||
+        payload.cameraId === "cmkdpsq300000j7284bwluxh2"
+      ) {
         camera = await prisma.camera.findFirst({
           where: {
             companyId,
-            camId: { startsWith: "laptop-" }
-          }
+            camId: { startsWith: "laptop-" },
+          },
         });
       }
-      if (!camera && !(payload.cameraId.startsWith("laptop-") || payload.cameraId === "cmkdpsq300000j7284bwluxh2")) {
-        return res.status(404).json({ error: "Camera not found for this company" });
+      if (
+        !camera &&
+        !(
+          payload.cameraId.startsWith("laptop-") ||
+          payload.cameraId === "cmkdpsq300000j7284bwluxh2"
+        )
+      ) {
+        return res
+          .status(404)
+          .json({ error: "Camera not found for this company" });
       }
     }
 
@@ -547,7 +594,11 @@ export async function markGatepassReturn(req: Request, res: Response) {
       const recognizedTimeMs = new Date(recognizedAt).getTime();
 
       if (recognizedTimeMs > limitMs) {
-        return res.json({ ok: true, updated: false, reason: "no_open_gatepass" });
+        return res.json({
+          ok: true,
+          updated: false,
+          reason: "no_open_gatepass",
+        });
       }
     }
 
@@ -611,7 +662,9 @@ export async function markGatepassReturn(req: Request, res: Response) {
 
     const updated = await loadGatepassById(companyId, openGatepass.id);
     if (!updated) {
-      return res.status(404).json({ error: "Updated gatepass record not found" });
+      return res
+        .status(404)
+        .json({ error: "Updated gatepass record not found" });
     }
 
     return res.json({
@@ -674,15 +727,21 @@ export async function updateGatepassErpStatus(req: Request, res: Response) {
     });
 
     if (!record) {
-      return res.status(404).json({ error: `Gatepass record with refid ${refid} not found` });
+      return res
+        .status(404)
+        .json({ error: `Gatepass record with refid ${refid} not found` });
     }
 
     await prisma.gatepassTable.update({
       where: { id: record.id },
       data: {
         erpStatus: normalizedStatus,
-        approvedByName: finalApprovedByName ? String(finalApprovedByName).trim() : null,
-        approvedByDesignation: finalApprovedByDesignation ? String(finalApprovedByDesignation).trim() : null,
+        approvedByName: finalApprovedByName
+          ? String(finalApprovedByName).trim()
+          : null,
+        approvedByDesignation: finalApprovedByDesignation
+          ? String(finalApprovedByDesignation).trim()
+          : null,
         updatedAt: new Date(),
       },
     });
@@ -702,10 +761,12 @@ export async function updateGatepassErpStatus(req: Request, res: Response) {
 export async function getGatepassExternalDetails(req: Request, res: Response) {
   try {
     const companyId = getCompanyId(req);
-    if (!companyId) return res.status(400).json({ error: "Missing company id" });
+    if (!companyId)
+      return res.status(400).json({ error: "Missing company id" });
 
     const { id } = req.params;
-    if (!id || typeof id !== "string") return res.status(400).json({ error: "Missing gatepass id" });
+    if (!id || typeof id !== "string")
+      return res.status(400).json({ error: "Missing gatepass id" });
 
     const record = await prisma.gatepassTable.findFirst({
       where: {
@@ -721,13 +782,22 @@ export async function getGatepassExternalDetails(req: Request, res: Response) {
     let targetExtId: string | null = record.externalGatepassId ?? null;
     if (!targetExtId && record.externalSubmitPayload) {
       try {
-        const payload = typeof record.externalSubmitPayload === "string"
-          ? JSON.parse(record.externalSubmitPayload)
-          : (record.externalSubmitPayload as any);
+        const payload =
+          typeof record.externalSubmitPayload === "string"
+            ? JSON.parse(record.externalSubmitPayload)
+            : (record.externalSubmitPayload as any);
         const respData = payload?.responseData || payload;
-        const firstItem = Array.isArray(respData?.data) ? respData.data[0] : (respData?.data || respData);
+        const firstItem = Array.isArray(respData?.data)
+          ? respData.data[0]
+          : respData?.data || respData;
         if (firstItem && typeof firstItem === "object") {
-          const val = firstItem.reqMasterId ?? firstItem.reqMasterID ?? firstItem.gatePassId ?? firstItem.gatepassId ?? firstItem.masterId ?? firstItem.id;
+          const val =
+            firstItem.reqMasterId ??
+            firstItem.reqMasterID ??
+            firstItem.gatePassId ??
+            firstItem.gatepassId ??
+            firstItem.masterId ??
+            firstItem.id;
           if (val) targetExtId = String(val);
         }
       } catch {
@@ -739,11 +809,16 @@ export async function getGatepassExternalDetails(req: Request, res: Response) {
       targetExtId = record.id;
     }
 
-    const settings = await getCompanyErpSettings(companyId, "getgatepassdetails");
+    const settings = await getCompanyErpSettings(
+      companyId,
+      "getgatepassdetails",
+    );
     const url = resolveConfiguredErpUrl(settings);
 
     if (url && targetExtId) {
-      console.log(`[ERP GET DETAILS] Calling ERP URL: ${url} for reqMasterId: ${targetExtId}`);
+      console.log(
+        `[ERP GET DETAILS] Calling ERP URL: ${url} for reqMasterId: ${targetExtId}`,
+      );
 
       try {
         const response = await axios.post(
@@ -759,20 +834,30 @@ export async function getGatepassExternalDetails(req: Request, res: Response) {
             },
             timeout: 10000,
             validateStatus: () => true,
-          }
+          },
         );
 
-        console.log(`[ERP GET DETAILS] ERP response status: ${response.status}`, response.data);
+        console.log(
+          `[ERP GET DETAILS] ERP response status: ${response.status}`,
+          response.data,
+        );
 
         if (response.status >= 200 && response.status < 300 && response.data) {
           const resData = response.data;
           // Ensure response structure is cleanly passed back to frontend
-          if (resData && typeof resData === "object" && !resData.data && !resData.error) {
+          if (
+            resData &&
+            typeof resData === "object" &&
+            !resData.data &&
+            !resData.error
+          ) {
             return res.json({ ok: true, data: resData });
           }
           return res.json(resData);
         } else {
-          console.warn(`[ERP GET DETAILS] ERP returned status ${response.status}. Falling back to DB record details.`);
+          console.warn(
+            `[ERP GET DETAILS] ERP returned status ${response.status}. Falling back to DB record details.`,
+          );
         }
       } catch (axiosErr) {
         console.warn(`[ERP GET DETAILS] ERP request threw error:`, axiosErr);
@@ -789,15 +874,21 @@ export async function getGatepassExternalDetails(req: Request, res: Response) {
     const fallbackData = {
       organization: "Pakiza Apparels Limited",
       organizationAddress: "Khordo Nowpara, Rasulpur, Madhabdi, Narsingdi",
-      date_: record.outTime ? new Date(record.outTime).toLocaleDateString("en-GB") : "",
+      date_: record.outTime
+        ? new Date(record.outTime).toLocaleDateString("en-GB")
+        : "",
       employeeId: employee?.empId || record.employeeId || "",
       employeeName: employee?.name || "N/A",
       department: employee?.department || "N/A",
       designation: employee?.designation || "N/A",
       docName: "Gate-Pass",
       passTitleName: record.passType || record.purpose || "Gate-Pass",
-      timeStart: record.outTime ? new Date(record.outTime).toLocaleTimeString("en-GB") : "N/A",
-      timeEnd: record.returnTime ? new Date(record.returnTime).toLocaleTimeString("en-GB") : "N/A",
+      timeStart: record.outTime
+        ? new Date(record.outTime).toLocaleTimeString("en-GB")
+        : "N/A",
+      timeEnd: record.returnTime
+        ? new Date(record.returnTime).toLocaleTimeString("en-GB")
+        : "N/A",
       remarks: record.remarks || record.purpose || "N/A",
       prepareByName: employee?.name || "N/A",
       prepareByDesi: employee?.designation || "N/A",
