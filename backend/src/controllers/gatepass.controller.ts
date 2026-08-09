@@ -382,6 +382,25 @@ export async function createGatepassRecord(req: Request, res: Response) {
     const gatepassId = randomUUID();
     const createdAt = new Date();
 
+    const erpSubmit = await submitGatepassToErp(companyId, {
+      empId: employee.empId,
+      passTitle: payload.leaveType,
+      passTitleId: payload.leaveTypeId,
+      destination: normalizedDestination,
+      outTime: recognizedAt,
+      remarks: trimmedPurpose,
+    });
+
+    if (!erpSubmit.gatePassId) {
+      return res.status(400).json({
+        error: "Failed to submit gatepass: ERP server did not return a Gatepass ID. Please re-submit.",
+        externalApiCalled: erpSubmit.attempted,
+        externalApiAcknowledged: erpSubmit.acknowledged,
+        externalApiError: erpSubmit.errorMessage,
+        externalApi: erpSubmit.payload,
+      });
+    }
+
     await prisma.$executeRaw(
       Prisma.sql`
       INSERT INTO "GatepassTable" (
@@ -401,7 +420,13 @@ export async function createGatepassRecord(req: Request, res: Response) {
         "updatedAt",
         "passType",
         "remarks",
-        "returnTime"
+        "returnTime",
+        "externalSubmitAckAt",
+        "externalSubmitPayload",
+        "externalGatepassId",
+        "erpStatus",
+        "approvedByName",
+        "approvedByDesignation"
       ) VALUES (
         ${gatepassId},
         ${companyId},
@@ -419,38 +444,15 @@ export async function createGatepassRecord(req: Request, res: Response) {
         ${createdAt},
         ${payload.passType ?? null},
         ${payload.remarks ?? null},
-        ${payload.returnTime ?? null}
+        ${payload.returnTime ?? null},
+        ${erpSubmit.ackAt},
+        CAST(${JSON.stringify(erpSubmit.payload)} AS jsonb),
+        ${erpSubmit.gatePassId},
+        ${erpSubmit.acknowledged ? "pending" : "failed"},
+        ${erpSubmit.approvedByName ?? null},
+        ${erpSubmit.approvedByDesignation ?? null}
       )`,
     );
-
-    const erpSubmit = await submitGatepassToErp(companyId, {
-      empId: employee.empId,
-      passTitle: payload.leaveType,
-      passTitleId: payload.leaveTypeId,
-      destination: normalizedDestination,
-      outTime: recognizedAt,
-      remarks: trimmedPurpose,
-    });
-
-    try {
-      await prisma.$executeRaw(
-        Prisma.sql`
-          UPDATE "GatepassTable"
-          SET
-            "externalSubmitAckAt" = ${erpSubmit.ackAt},
-            "externalSubmitPayload" = CAST(${JSON.stringify(erpSubmit.payload)} AS jsonb),
-            "externalGatepassId" = ${erpSubmit.gatePassId ?? null},
-            "erpStatus" = ${erpSubmit.acknowledged ? "pending" : "failed"},
-            "approvedByName" = ${erpSubmit.approvedByName ?? null},
-            "approvedByDesignation" = ${erpSubmit.approvedByDesignation ?? null},
-            "updatedAt" = ${new Date()}
-          WHERE "id" = ${gatepassId}
-            AND "companyId" = ${companyId}
-        `,
-      );
-    } catch {
-      // Local gatepass creation already succeeded. Keep the request successful.
-    }
 
     const row = await loadGatepassById(companyId, gatepassId);
     if (!row) return res.status(404).json({ error: "Gatepass record not found" });

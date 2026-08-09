@@ -1600,7 +1600,7 @@ export function useGatepassPage() {
             continue;
           }
 
-          await axiosInstance.post(API.GATEPASS_TABLE, {
+          const response = await axiosInstance.post(API.GATEPASS_TABLE, {
             employeeId,
             cameraId: selectedGatepassCamera.id,
             leaveTypeId: isShortLeave
@@ -1619,6 +1619,17 @@ export function useGatepassPage() {
             returnTime: approxReturnTime ? parseInt(approxReturnTime, 10) : null,
           });
 
+          const createdGatepass = response?.data?.gatepass;
+          const gatePassId =
+            createdGatepass?.externalGatepassId ||
+            response?.data?.externalApi?.responseData?.data?.[0]?.gatePassId;
+
+          if (!gatePassId) {
+            throw new Error(
+              "ERP server did not return a Gatepass ID. Please re-submit.",
+            );
+          }
+
           successCount += 1;
           if (!firstSuccessfulName) {
             firstSuccessfulName = employeeName;
@@ -1629,7 +1640,10 @@ export function useGatepassPage() {
 
           if (failedNames.length === 1) {
             toast.error(
-              normalizeApiError(error, `Failed to submit ${row.employee.name}`),
+              normalizeApiError(
+                error,
+                `Failed to submit gatepass for ${row.employee.name}. Please re-submit.`,
+              ),
             );
           }
         }
