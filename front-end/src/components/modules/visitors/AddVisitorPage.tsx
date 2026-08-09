@@ -2060,6 +2060,11 @@ export default function AddVisitorPage() {
                       : "Open Camera to Verify"}
                   </Button>
                 )}
+                {form.formState.errors.visitorPhoto && (
+                  <p className="text-[11px] font-medium text-red-500 text-center block mt-1">
+                    {form.formState.errors.visitorPhoto.message}
+                  </p>
+                )}
               </div>
             </div>
           </div>

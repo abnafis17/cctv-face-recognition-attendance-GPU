@@ -33,7 +33,7 @@ export const visitorSchema = z.object({
   entryAuthorizedBy: z.string().optional().or(z.literal("")),
   remarks: z.string().optional().or(z.literal("")),
   
-  visitorPhoto: z.string().optional().or(z.literal("")),
+  visitorPhoto: z.string().min(1, "Visitor photo is required"),
 }).superRefine((data, ctx) => {
   const extraCount = data.extraGuest ? parseInt(data.extraGuest, 10) : 0;
   if (extraCount > 0 && data.visitorPassNo) {
