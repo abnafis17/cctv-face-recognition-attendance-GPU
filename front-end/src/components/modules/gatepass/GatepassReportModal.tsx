@@ -114,7 +114,11 @@ export default function GatepassReportModal({
   }, [open, record?.id]);
 
   const signatureList = React.useMemo(() => {
-    if (!erpDetails?.apWorkflowSignatureList || !Array.isArray(erpDetails.apWorkflowSignatureList)) return [];
+    if (
+      !erpDetails?.apWorkflowSignatureList ||
+      !Array.isArray(erpDetails.apWorkflowSignatureList)
+    )
+      return [];
     return [...erpDetails.apWorkflowSignatureList].sort((a: any, b: any) => {
       const pA = parseInt(a.priority || "0", 10);
       const pB = parseInt(b.priority || "0", 10);
@@ -155,7 +159,8 @@ export default function GatepassReportModal({
     );
     if (!printWindow) return;
 
-    const logoUrl = erpDetails?.logoPath || window.location.origin + PakizaLogo.src;
+    const logoUrl =
+      erpDetails?.logoPath || window.location.origin + PakizaLogo.src;
 
     const printHeaders = displaySlots
       .map((slot) => {
@@ -431,7 +436,12 @@ export default function GatepassReportModal({
   };
 
   return (
-    <ReusableModal open={open} onClose={onClose} title="Gate Pass Report" maxWidth="4xl">
+    <ReusableModal
+      open={open}
+      onClose={onClose}
+      title="Gate Pass Report"
+      maxWidth="4xl"
+    >
       <div className="flex flex-col gap-4">
         {/* Action Header / Print Button */}
         <div className="flex items-center justify-end pb-2 border-b border-zinc-100">
@@ -615,7 +625,7 @@ export default function GatepassReportModal({
                 <tbody>
                   <tr>
                     <td className="w-[18%] bg-zinc-100/80 border-r border-zinc-400 px-3 py-3.5 font-semibold text-zinc-700">
-                      Remarks
+                      Destination
                     </td>
                     <td className="w-[82%] px-3 py-3.5 text-zinc-900 font-medium">
                       {valOrDash(erpDetails?.remarks)}
