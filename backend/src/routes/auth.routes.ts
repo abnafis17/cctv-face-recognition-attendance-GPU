@@ -1,6 +1,6 @@
-// src/routes/auth.routes.ts
 import { Router, Request, Response } from "express";
 import { ZodError } from "zod";
+import axios from "axios";
 import { prisma } from "../prisma";
 import { verifyAccessToken } from "../utils/jwt";
 
@@ -14,16 +14,12 @@ import {
 
 export const authRouter = Router();
 
-/**
- * Normalize API error responses (supports Zod + custom statusCode)
- */
 function sendError(
   res: Response,
   e: unknown,
   fallbackMessage: string,
   fallbackStatus = 400
 ) {
-  // ✅ Zod validation errors
   if (e instanceof ZodError) {
     const first = e.issues?.[0];
     const message =
@@ -35,16 +31,13 @@ function sendError(
     return res.status(400).json({
       ok: false,
       message,
-      issues: e.issues, // helpful for forms
+      issues: e.issues,
     });
   }
 
-  // ✅ Custom service errors (you set err.statusCode in service)
   const anyErr = e as { statusCode?: number; message?: string };
-
   const status =
     typeof anyErr?.statusCode === "number" ? anyErr.statusCode : fallbackStatus;
-
   const message = anyErr?.message || fallbackMessage;
 
   return res.status(status).json({ ok: false, message });
@@ -64,12 +57,93 @@ authRouter.post("/register", async (req: Request, res: Response) => {
   }
 });
 
+authRouter.get("/roles", async (req: Request, res: Response) => {
+  try {
+    const roles = await prisma.user.findMany({
+      select: { role: true },
+      distinct: ["role"],
+    });
+
+    const list = roles.map((r) => r.role).filter(Boolean);
+    const defaults = ["ADMIN", "GENERAL_USER", "OPERATOR"];
+    const unique = Array.from(new Set([...defaults, ...list]));
+
+    return res.status(200).json({
+      ok: true,
+      results: unique,
+    });
+  } catch (e) {
+    return sendError(res, e, "Failed to fetch roles", 500);
+  }
+});
+
+authRouter.get("/companies", async (req: Request, res: Response) => {
+  try {
+    const response = await axios.post(
+      "http://172.20.60.101:7001/api/v2/Organization/GetAllHrOrginationRecord",
+      "",
+      {
+        headers: {
+          accept: "*/*",
+        },
+        timeout: 5000,
+      }
+    );
+
+    if (response.data && Array.isArray(response.data.data)) {
+      const list = response.data.data
+        .map((c: any) => ({
+          id: c.id || c.orginationId || c.organizationId,
+          name: c.name,
+        }))
+        .filter((c: any) => c.id && c.name);
+
+      return res.status(200).json({
+        ok: true,
+        results: list,
+      });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      results: [],
+    });
+  } catch (e) {
+    console.error("Failed to fetch ERP companies:", e);
+    return res.status(200).json({
+      ok: true,
+      results: [],
+    });
+  }
+});
+
+authRouter.get("/modules", async (req: Request, res: Response) => {
+  try {
+    const modules = await prisma.module.findMany({
+      orderBy: { sortOrder: "asc" },
+      include: {
+        subModules: {
+          orderBy: { sortOrder: "asc" },
+        },
+      },
+    });
+
+    const topLevel = modules.filter((m) => !m.parentId);
+
+    return res.status(200).json({
+      ok: true,
+      results: topLevel,
+    });
+  } catch (e) {
+    return sendError(res, e, "Failed to fetch modules", 500);
+  }
+});
+
 authRouter.post("/login", async (req: Request, res: Response) => {
   try {
     const parsed = loginSchema.parse(req.body);
 
     const result = await loginUser(parsed, {
-      // If behind proxy: app.set("trust proxy", 1)
       ip: req.ip,
       userAgent: String(req.headers["user-agent"] ?? ""),
     });
@@ -83,12 +157,6 @@ authRouter.post("/login", async (req: Request, res: Response) => {
   }
 });
 
-/**
- * ✅ Must match axiosInstance.ts:
- * GET /api/auth/refresh
- * Header: refreshtoken: Bearer <token>
- * Response: { results: { accessToken } }
- */
 authRouter.get("/refresh", async (req: Request, res: Response) => {
   try {
     const header = String(req.headers["refreshtoken"] ?? "");
@@ -160,6 +228,26 @@ authRouter.get("/me", async (req: Request, res: Response) => {
       return res.status(404).json({ ok: false, message: "User not found" });
     }
 
+    const dbPermissions = await prisma.permission.findMany({
+      where: {
+        companyId: user.companyId,
+        role: user.role,
+      },
+    });
+
+    const permissionsMap: Record<string, boolean> = {};
+    const modulesList = await prisma.module.findMany({
+      select: { route: true },
+      where: { route: { not: null } }
+    });
+    const ALL_MODULES = modulesList.map(m => m.route as string);
+    for (const mod of ALL_MODULES) {
+      permissionsMap[mod] = true;
+    }
+    for (const p of dbPermissions) {
+      permissionsMap[p.module] = p.allowed;
+    }
+
     return res.status(200).json({
       ok: true,
       results: {
@@ -172,9 +260,142 @@ authRouter.get("/me", async (req: Request, res: Response) => {
         companyName: user?.company?.companyName ?? null,
         organizationId: user?.company?.organization_id ?? null,
         oragnizationId: user?.company?.organization_id ?? null,
+        permissions: permissionsMap,
       },
     });
   } catch (e) {
     return sendError(res, e, "Unauthorized", 401);
+  }
+});
+
+authRouter.get("/permissions", async (req: Request, res: Response) => {
+  try {
+    const auth = String(req.headers.authorization ?? "").trim();
+    if (!auth.startsWith("Bearer ")) {
+      return res.status(401).json({ ok: false, message: "Unauthorized" });
+    }
+
+    const token = auth.slice("Bearer ".length).trim();
+    if (!token) {
+      return res.status(401).json({ ok: false, message: "Unauthorized" });
+    }
+
+    const payload = verifyAccessToken(token);
+    const userId = String(payload.sub ?? "").trim();
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      return res.status(401).json({ ok: false, message: "Unauthorized" });
+    }
+
+    const role = String(req.query.role ?? "").trim();
+    if (!role) {
+      return res.status(400).json({ ok: false, message: "role is required" });
+    }
+
+    const dbPermissions = await prisma.permission.findMany({
+      where: {
+        companyId: user.companyId,
+        role: role,
+      },
+    });
+
+    const permissionsMap: Record<string, boolean> = {};
+    const modulesList = await prisma.module.findMany({
+      select: { route: true },
+      where: { route: { not: null } }
+    });
+    const ALL_MODULES = modulesList.map(m => m.route as string);
+    for (const mod of ALL_MODULES) {
+      permissionsMap[mod] = true;
+    }
+    for (const p of dbPermissions) {
+      permissionsMap[p.module] = p.allowed;
+    }
+
+    const results = ALL_MODULES.map((mod) => ({
+      module: mod,
+      allowed: permissionsMap[mod],
+    }));
+
+    return res.status(200).json({
+      ok: true,
+      results,
+    });
+  } catch (e) {
+    return sendError(res, e, "Failed to fetch permissions", 500);
+  }
+});
+
+authRouter.post("/permissions", async (req: Request, res: Response) => {
+  try {
+    const auth = String(req.headers.authorization ?? "").trim();
+    if (!auth.startsWith("Bearer ")) {
+      return res.status(401).json({ ok: false, message: "Unauthorized" });
+    }
+
+    const token = auth.slice("Bearer ".length).trim();
+    if (!token) {
+      return res.status(401).json({ ok: false, message: "Unauthorized" });
+    }
+
+    const payload = verifyAccessToken(token);
+    const userId = String(payload.sub ?? "").trim();
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      return res.status(401).json({ ok: false, message: "Unauthorized" });
+    }
+
+    if (!user.companyId) {
+      return res.status(400).json({ ok: false, message: "User must be associated with a company" });
+    }
+
+    const role = String(req.body.role ?? "").trim();
+    const permissions = req.body.permissions;
+
+    if (!role) {
+      return res.status(400).json({ ok: false, message: "role is required" });
+    }
+    if (!Array.isArray(permissions)) {
+      return res.status(400).json({ ok: false, message: "permissions array is required" });
+    }
+
+    for (const p of permissions) {
+      const module = String(p.module ?? "").trim();
+      const allowed = !!p.allowed;
+
+      if (!module) continue;
+
+      await prisma.permission.upsert({
+        where: {
+          companyId_role_module: {
+            companyId: user.companyId,
+            role: role,
+            module: module,
+          },
+        },
+        update: {
+          allowed: allowed,
+        },
+        create: {
+          companyId: user.companyId,
+          role: role,
+          module: module,
+          allowed: allowed,
+        },
+      });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      message: "Permissions updated successfully",
+    });
+  } catch (e) {
+    return sendError(res, e, "Failed to update permissions", 500);
   }
 });

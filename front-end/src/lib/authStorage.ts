@@ -27,6 +27,7 @@ export function setTokens(accessToken: string, refreshToken: string) {
 export function setUser(user: any) {
   if (!isBrowser()) return;
   localStorage.setItem(USER_INFO, JSON.stringify(user));
+  window.dispatchEvent(new Event("userInfoUpdated"));
 }
 
 export function clearAccessToken() {
@@ -34,6 +35,7 @@ export function clearAccessToken() {
   localStorage.removeItem(ACCESS_TOKEN_KEY);
   localStorage.removeItem(REFRESH_TOKEN_KEY);
   localStorage.removeItem(USER_INFO);
+  window.dispatchEvent(new Event("userInfoUpdated"));
 }
 
 export function getAccessToken() {
@@ -52,4 +54,41 @@ export function getCompanyIdFromToken(): string | null {
   const payload = decodeJwtPayload(token);
   const value = payload?.companyId ?? payload?.company_id;
   return value ? String(value) : null;
+}
+
+export function getLandingRoute(permissions: Record<string, boolean> | null | undefined): string {
+  const defaultOrder = [
+    "/cameras",
+    "/camera-list",
+    "/enroll",
+    "/employees",
+    "/daily-attendance",
+    "/attendance",
+    "/unknown-recognition",
+    "/gatepass",
+    "/visitors",
+    "/master-data",
+    "/settings/urls",
+    "/settings/users",
+    "/permissions",
+  ];
+  if (permissions) {
+    for (const route of defaultOrder) {
+      if (permissions[route] !== false) {
+        return route;
+      }
+    }
+  }
+  return "/cameras";
+}
+
+export function getLandingRouteFromStorage(): string {
+  if (!isBrowser()) return "/cameras";
+  try {
+    const raw = localStorage.getItem("userInfo");
+    const userInfo = raw ? JSON.parse(raw) : null;
+    return getLandingRoute(userInfo?.permissions);
+  } catch {
+    return "/cameras";
+  }
 }

@@ -45,6 +45,7 @@ export const API = {
   // Settings
   SETTINGS_RELAY: "/settings/relay",
   SETTINGS_ERP: "/settings/erp",
+  SETTINGS_USERS: "/settings/users",
 
   // Master Data
   MASTER_DATA_VISITOR_TYPES: "/master-data/visitor-types",

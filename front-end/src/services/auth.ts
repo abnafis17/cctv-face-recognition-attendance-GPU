@@ -1,5 +1,4 @@
 import axiosInstance from "@/config/axiosInstance";
-import { API } from "@/constant/API_PATH";
 import {
   setTokens,
   clearAccessToken,
@@ -7,7 +6,13 @@ import {
   setUser,
 } from "@/lib/authStorage";
 
-type AuthUser = {
+const AUTH = {
+  LOGIN: "/auth/login",
+  REGISTER: "/auth/register",
+  LOGOUT: "/auth/logout",
+};
+
+export type AuthUser = {
   id: string;
   name?: string | null;
   email: string;
@@ -16,9 +21,10 @@ type AuthUser = {
   oragnizationId?: string | null;
   role: string;
   isActive: boolean;
+  permissions?: Record<string, boolean>;
 };
 
-type AuthResponse = {
+export type AuthResponse = {
   user: AuthUser;
   accessToken: string;
   refreshToken: string;
@@ -26,7 +32,7 @@ type AuthResponse = {
 
 export async function loginApi(input: { email: string; password: string }) {
   try {
-    const res = await axiosInstance.post(API.LOGIN, input, {
+    const res = await axiosInstance.post(AUTH.LOGIN, input, {
       _skipAuth: true,
     } as any);
 
@@ -47,15 +53,19 @@ export async function registerApi(input: {
   email: string;
   password: string;
   companyName: string;
+  organization_id?: string;
+  role?: string;
 }) {
   try {
     const payload = {
       ...input,
       name: input.name?.trim() ? input.name.trim() : undefined,
       companyName: input.companyName.trim(),
+      organization_id: input.organization_id?.trim() ? input.organization_id.trim() : undefined,
+      role: input.role?.trim() ? input.role.trim() : undefined,
     };
 
-    const res = await axiosInstance.post(API.SIGNUP, payload, {
+    const res = await axiosInstance.post(AUTH.REGISTER, payload, {
       _skipAuth: true,
     } as any);
 
@@ -77,7 +87,7 @@ export async function logoutApi() {
   try {
     const refreshToken = getRefreshToken();
     if (refreshToken) {
-      await axiosInstance.post(API.LOGOUT, { refreshToken });
+      await axiosInstance.post(AUTH.LOGOUT, { refreshToken });
     }
   } catch {
     // ignore

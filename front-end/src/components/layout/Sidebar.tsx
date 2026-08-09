@@ -10,7 +10,6 @@ import {
   CalendarClock,
   LogOut,
   Building2,
-  Mail,
   Cctv,
   History,
   UserX,
@@ -18,18 +17,52 @@ import {
   Menu,
   X,
   Settings,
-  Home,
+  Link2,
   ChevronDown,
   ChevronUp,
-  List,
-  BarChart3,
   Database,
+  ChevronLeft,
+  ChevronRight,
+  ScanFace,
+  IdCard,
+  UserSearch,
+  ClipboardList,
+  PieChart,
+  BarChart3,
+  ShieldCheck,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import { clearAccessToken, getAccessToken } from "@/lib/authStorage";
+import * as LucideIcons from "lucide-react";
+import { useEffect, useState } from "react";
+import { clearAccessToken } from "@/lib/authStorage";
 import { cn } from "@/lib/utils";
 import axiosInstance from "@/config/axiosInstance";
-import { API } from "@/constant/API_PATH";
+
+function getIconForRoute(route: string | null | undefined, label: string) {
+  if (route === "/cameras") return LucideIcons.Cctv;
+  if (route === "/camera-list") return LucideIcons.ListVideo;
+  if (route === "/enroll") return LucideIcons.ScanFace;
+  if (route === "/employees") return LucideIcons.Users;
+  if (route === "/daily-attendance") return LucideIcons.CalendarClock;
+  if (route === "/attendance") return LucideIcons.History;
+  if (route === "/unknown-recognition") return LucideIcons.UserX;
+  if (route === "/gatepass") return LucideIcons.ScanFace;
+  if (route === "/gatepass/history") return LucideIcons.ClipboardList;
+  if (route === "/visitors/add") return LucideIcons.UserPlus;
+  if (route === "/visitors") return LucideIcons.ClipboardList;
+  if (route === "/visitors/employee-wise-visit") return LucideIcons.BarChart3;
+  if (route === "/visitors/visitor-wise-visit") return LucideIcons.PieChart;
+  if (route === "/master-data") return LucideIcons.Database;
+  if (route === "/settings/urls") return LucideIcons.Link2;
+  if (route === "/settings/users") return LucideIcons.Users;
+  if (route === "/settings") return LucideIcons.Settings;
+  if (route === "/permissions") return LucideIcons.ShieldCheck;
+
+  if (label === "Gate Pass") return LucideIcons.IdCard;
+  if (label === "Visitor") return LucideIcons.UserSearch;
+  if (label === "Settings" || label === "Setting") return LucideIcons.Settings;
+
+  return LucideIcons.ShieldAlert;
+}
 
 interface SubNavItem {
   href: string;
@@ -44,36 +77,48 @@ interface NavItem {
   subItems?: SubNavItem[];
 }
 
-const nav: NavItem[] = [
-  // { href: "/dashboard", label: "Home", icon: Home },
+const staticNav: NavItem[] = [
   { href: "/cameras", label: "Cameras (Live)", icon: Cctv },
   { href: "/camera-list", label: "Camera List", icon: ListVideo },
-  { href: "/headcount", label: "Headcount Camera", icon: Video },
-  { href: "/presence", label: "Presence (Dwell)", icon: Activity },
-  { href: "/enroll", label: "Enrollment(Auto)", icon: UserPlus },
+  { href: "/enroll", label: "Enrollment (Auto)", icon: ScanFace },
   { href: "/employees", label: "Employees", icon: Users },
   { href: "/daily-attendance", label: "Daily Attendance", icon: CalendarClock },
   { href: "/attendance", label: "Recognition History", icon: History },
   { href: "/unknown-recognition", label: "Unknown History", icon: UserX },
-  { href: "/gatepass", label: "Gate Pass", icon: Mail },
   {
-    label: "Visitor",
-    icon: UserPlus,
+    label: "Gate Pass",
+    icon: IdCard,
     subItems: [
-      { href: "/visitors/add", label: "Add Visitor", icon: UserPlus },
-      { href: "/visitors", label: "Visitor List", icon: List },
-      { href: "/visitors/employee-wise-visit", label: "Employee Wise Visit Report", icon: BarChart3 },
-      { href: "/visitors/visitor-wise-visit", label: "Visitor Wise Visit Report", icon: BarChart3 },
+      { href: "/gatepass", label: "Gate Pass Form", icon: ScanFace },
+      { href: "/gatepass/history", label: "Gate Pass Log", icon: ClipboardList },
     ],
   },
-  { href: "/bounding-box", label: "Bounding Box", icon: Video },
+  {
+    label: "Visitor",
+    icon: UserSearch,
+    subItems: [
+      { href: "/visitors/add", label: "Add Visitor", icon: UserPlus },
+      { href: "/visitors", label: "Visitor List", icon: ClipboardList },
+      { href: "/visitors/employee-wise-visit", label: "Employee Wise Visit", icon: BarChart3 },
+      { href: "/visitors/visitor-wise-visit", label: "Visitor Wise Visit", icon: PieChart },
+    ],
+  },
   { href: "/master-data", label: "Master Data", icon: Database },
-  { href: "/settings", label: "Settings", icon: Settings }
+  {
+    label: "Settings",
+    icon: Settings,
+    subItems: [
+      { href: "/settings/urls", label: "URLs", icon: Link2 },
+      { href: "/settings/users", label: "Users", icon: Users },
+    ],
+  },
+  { href: "/permissions", label: "Permissions", icon: ShieldCheck },
 ];
 
 function isActive(pathname: string, href: string) {
   if (href === "/dashboard") return pathname === "/dashboard";
   if (href === "/visitors") return pathname === "/visitors";
+  if (href === "/gatepass") return pathname === "/gatepass";
   return pathname === href || pathname.startsWith(href + "/");
 }
 
@@ -82,85 +127,97 @@ type SidebarIdentity = {
   email: string;
 };
 
-function decodeJwtPayload(token: string): Record<string, unknown> | null {
-  const parts = String(token || "").split(".");
-  if (parts.length < 2) return null;
-
-  const raw = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-  const padded = raw + "=".repeat((4 - (raw.length % 4)) % 4);
-
-  try {
-    return JSON.parse(atob(padded));
-  } catch {
-    return null;
-  }
-}
-
-function readSidebarIdentity(): SidebarIdentity {
-  if (typeof window === "undefined") {
-    return {
-      companyName: "Company Account",
-      email: "Not available",
-    };
-  }
-
-  let companyName = "";
-  let email = "";
-
-  try {
-    const rawUserInfo = localStorage.getItem("userInfo");
-    const userInfo = rawUserInfo ? JSON.parse(rawUserInfo) : null;
-
-    companyName = String(
-      userInfo?.companyName ?? userInfo?.company?.companyName ?? "",
-    ).trim();
-    email = String(userInfo?.email ?? "").trim();
-  } catch {
-    // ignore localStorage parse errors
-  }
-
-  const accessToken = getAccessToken();
-  const payload = accessToken ? decodeJwtPayload(accessToken) : null;
-
-  if (payload) {
-    if (!email) {
-      email = String(payload.email ?? "").trim();
-    }
-
-    if (!companyName) {
-      companyName = String(
-        payload.companyName ?? payload.company_name ?? "",
-      ).trim();
-    }
-  }
-
-  return {
-    companyName: companyName || "Company Account",
-    email: email || "Not available",
-  };
-}
-
 function SidebarContent({
   compact = false,
   onNavigate,
+  isCollapsed,
+  onToggleCollapse,
 }: {
   compact?: boolean;
   onNavigate?: () => void;
+  isCollapsed?: boolean;
+  onToggleCollapse?: () => void;
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [identity, setIdentity] = useState<SidebarIdentity>(() =>
-    readSidebarIdentity(),
-  );
-  const syncedTokenRef = useRef<string>("");
+  const [identity, setIdentity] = useState<SidebarIdentity>({
+    companyName: "",
+    email: "",
+  });
 
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
+  const [permissions, setPermissions] = useState<Record<string, boolean>>({});
+  const [dynamicNav, setDynamicNav] = useState<NavItem[]>([]);
 
   useEffect(() => {
     if (pathname.startsWith("/visitors")) {
       setOpenMenus((prev) => ({ ...prev, Visitor: true }));
     }
+    if (pathname.startsWith("/gatepass")) {
+      setOpenMenus((prev) => ({ ...prev, "Gate Pass": true }));
+    }
+    if (pathname.startsWith("/settings")) {
+      setOpenMenus((prev) => ({ ...prev, Settings: true }));
+    }
   }, [pathname]);
+
+  useEffect(() => {
+    function loadUserInfo() {
+      try {
+        const raw = localStorage.getItem("userInfo");
+        const userInfo = raw ? JSON.parse(raw) : null;
+        if (userInfo?.permissions) {
+          setPermissions(userInfo.permissions);
+        }
+        const companyName = String(
+          userInfo?.companyName ?? userInfo?.company?.companyName ?? "Company Account"
+        ).trim();
+        const email = String(userInfo?.email ?? "Not available").trim();
+        setIdentity({ companyName, email });
+      } catch (err) {
+        console.error("Failed to load user info in sidebar:", err);
+      }
+    }
+    loadUserInfo();
+
+    window.addEventListener("userInfoUpdated", loadUserInfo);
+    return () => {
+      window.removeEventListener("userInfoUpdated", loadUserInfo);
+    };
+  }, []);
+
+  useEffect(() => {
+    async function fetchModules() {
+      try {
+        const res = await axiosInstance.get("/auth/modules");
+        if (res.data?.ok && Array.isArray(res.data?.results)) {
+          const mapped: NavItem[] = res.data.results.map((m: any) => ({
+            href: m.route || undefined,
+            label: m.name,
+            icon: getIconForRoute(m.route, m.name),
+            subItems: m.subModules && m.subModules.length > 0
+              ? (() => {
+                  const filtered = m.subModules.filter((sub: any) => sub.route && !sub.route.startsWith("/employees/"));
+                  return filtered.length > 0
+                    ? filtered.map((sub: any) => ({
+                        href: sub.route,
+                        label: sub.name,
+                        icon: getIconForRoute(sub.route, sub.name)
+                      }))
+                    : undefined;
+                })()
+              : undefined
+          }));
+          setDynamicNav(mapped);
+        }
+      } catch (err) {
+        console.error("Failed to load dynamic nav modules:", err);
+      }
+    }
+    fetchModules();
+  }, []);
+
+  const currentNav = dynamicNav.length > 0 ? dynamicNav : staticNav;
 
   const toggleMenu = (label: string) => {
     setOpenMenus((prev) => ({
@@ -169,118 +226,96 @@ function SidebarContent({
     }));
   };
 
-  useEffect(() => {
-    const localIdentity = readSidebarIdentity();
-    setIdentity(localIdentity);
-
-    const token = getAccessToken();
-    if (!token) {
-      syncedTokenRef.current = "";
-      return;
-    }
-
-    if (syncedTokenRef.current === token) return;
-
-    let cancelled = false;
-
-    const syncIdentityFromDb = async () => {
-      try {
-        const res = await axiosInstance.get(API.ME);
-        const me = res?.data?.results ?? {};
-        const companyName = String(
-          me?.companyName ?? me?.company?.companyName ?? "",
-        ).trim();
-        const email = String(me?.email ?? "").trim();
-
-        if (!cancelled && (companyName || email)) {
-          syncedTokenRef.current = token;
-          const nextIdentity: SidebarIdentity = {
-            companyName: companyName || localIdentity.companyName,
-            email: email || localIdentity.email,
-          };
-          setIdentity(nextIdentity);
-
-          try {
-            const raw = localStorage.getItem("userInfo");
-            const current = raw ? JSON.parse(raw) : {};
-            localStorage.setItem(
-              "userInfo",
-              JSON.stringify({
-                ...current,
-                ...me,
-                companyName: companyName || current?.companyName || "",
-              }),
-            );
-          } catch {
-            // ignore localStorage parse errors
-          }
-        }
-      } catch {
-        // keep local identity if /auth/me fails
-      }
-    };
-
-    void syncIdentityFromDb();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [pathname]);
-
   function onLogout() {
     clearAccessToken();
     router.replace("/login");
     onNavigate?.();
   }
 
+  const filteredNav = currentNav.filter((n) => {
+    if (Object.keys(permissions).length === 0) return true;
+
+    if (n.subItems && n.subItems.length > 0) {
+      const allowedSubs = n.subItems.filter(
+        (sub) => permissions[sub.href] !== false
+      );
+      return allowedSubs.length > 0;
+    }
+
+    if (n.href) {
+      return permissions[n.href] !== false;
+    }
+
+    return true;
+  });
+
   return (
     <>
       <div
         className={cn(
-          "shrink-0 border-b border-white/10",
-          compact ? "px-3 py-4" : "px-5 py-5",
+          "shrink-0 border-b border-zinc-150 bg-[#f8fafc]",
+          compact ? "p-4 flex items-center justify-center" : "px-5 py-4 flex items-center justify-between gap-3",
         )}
       >
-        <div
-          className={cn(
-            "flex items-center",
-            compact ? "justify-center" : "gap-3",
-          )}
-        >
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-white ring-1 ring-white/20">
-            <Video className="h-5 w-5" />
-          </div>
-          {!compact && (
-            <div>
-              <div className="text-sm font-semibold text-white">CCTV Panel</div>
-              <div className="text-xs text-zinc-400">
-                Face Recognition Admin
+        {!compact ? (
+          <>
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-violet-600 to-indigo-500 text-white ring-2 ring-violet-500/25 shadow-lg shadow-violet-500/10">
+                <Video className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <div className="truncate text-base font-black tracking-tight text-zinc-900 leading-tight">
+                  CRIPTON VISION
+                </div>
+                <div className="truncate text-[10px] font-bold uppercase tracking-[0.2em] text-violet-600">
+                  AI Attendance
+                </div>
               </div>
             </div>
-          )}
-        </div>
-      </div>
-
-      <nav
-        className={cn(
-          "flex-1 overflow-y-auto",
-          compact ? "px-2 py-3" : "px-3 py-4",
-        )}
-        style={{ WebkitOverflowScrolling: "touch" }}
-      >
-        {!compact && (
-          <div className="mb-2 px-2 text-[11px] font-medium uppercase tracking-[0.18em] text-zinc-500">
-            Navigation
+            {onToggleCollapse && (
+              <button
+                type="button"
+                onClick={onToggleCollapse}
+                className="hidden md:flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 transition"
+                title="Collapse sidebar"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+            )}
+          </>
+        ) : (
+          <div className="flex flex-col items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-violet-600 to-indigo-500 text-white shadow-md">
+              <Video className="h-5 w-5" />
+            </div>
+            {onToggleCollapse && (
+              <button
+                type="button"
+                onClick={onToggleCollapse}
+                className="hidden md:flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 transition"
+                title="Expand sidebar"
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
         )}
+      </div>
 
+      <nav className="flex-1 overflow-y-auto px-3 py-4">
         <div className="space-y-1">
-          {nav.map((n) => {
-            const hasSubItems = !!n.subItems && n.subItems.length > 0;
+          {filteredNav.map((n) => {
+            if (n.subItems && n.subItems.length > 0) {
+              const visibleSubItems = n.subItems.filter(
+                (sub) => Object.keys(permissions).length === 0 || permissions[sub.href] !== false
+              );
+              if (visibleSubItems.length === 0) return null;
 
-            if (hasSubItems) {
-              const isOpen = openMenus[n.label] ?? false;
-              const Icon = n.icon;
+              const isGroupActive = visibleSubItems.some((sub) =>
+                isActive(pathname, sub.href),
+              );
+              const isOpen = openMenus[n.label] ?? isGroupActive;
+              const ParentIcon = n.icon;
 
               return (
                 <div key={n.label} className="space-y-1">
@@ -288,37 +323,42 @@ function SidebarContent({
                     onClick={() => toggleMenu(n.label)}
                     title={compact ? n.label : undefined}
                     className={cn(
-                      "group flex w-full items-center justify-between rounded-2xl transition-all duration-200 cursor-pointer text-left",
-                      compact ? "justify-center px-2 py-3" : "px-3 py-2.5",
-                      "text-zinc-300 hover:bg-white/10 hover:text-white",
+                      "group flex w-full items-center rounded-lg transition-all duration-200 border-l-2 cursor-pointer",
+                      compact ? "justify-center px-2 py-3 border-l-transparent" : "justify-between px-3 py-2.5",
+                      isGroupActive
+                        ? "bg-violet-50/70 text-violet-900 border-l-violet-600 font-bold"
+                        : "text-zinc-650 hover:bg-zinc-50 hover:text-zinc-900 border-l-transparent",
                     )}
                   >
-                    <div className="flex items-center gap-3">
-                      <Icon
+                    <div className="flex items-center gap-3 min-w-0">
+                      <ParentIcon
                         className={cn(
                           compact ? "h-5 w-5" : "h-4 w-4",
-                          "text-zinc-400 group-hover:text-zinc-100",
+                          isGroupActive
+                            ? "text-violet-600"
+                            : "text-zinc-450 group-hover:text-zinc-750",
                         )}
                       />
-                      {!compact && <span className="truncate text-sm">{n.label}</span>}
+                      {!compact && (
+                        <span className="truncate text-sm font-medium">
+                          {n.label}
+                        </span>
+                      )}
                     </div>
                     {!compact && (
-                      isOpen ? (
-                        <ChevronUp className="h-4 w-4 text-zinc-400 group-hover:text-zinc-100" />
-                      ) : (
-                        <ChevronDown className="h-4 w-4 text-zinc-400 group-hover:text-zinc-100" />
-                      )
+                      <span className="text-zinc-400">
+                        {isOpen ? (
+                          <ChevronUp className="h-4 w-4" />
+                        ) : (
+                          <ChevronDown className="h-4 w-4" />
+                        )}
+                      </span>
                     )}
                   </button>
 
                   {isOpen && (
-                    <div
-                      className={cn(
-                        "space-y-1 relative transition-all duration-200",
-                        !compact && "ml-5 pl-3 border-l border-white/10"
-                      )}
-                    >
-                      {n.subItems!.map((sub) => {
+                    <div className={cn("space-y-1", compact ? "pl-0" : "pl-7")}>
+                      {visibleSubItems.map((sub) => {
                         const subActive = isActive(pathname, sub.href);
                         const SubIcon = sub.icon;
 
@@ -329,19 +369,19 @@ function SidebarContent({
                             onClick={onNavigate}
                             title={compact ? sub.label : undefined}
                             className={cn(
-                              "group flex items-center rounded-xl transition-all duration-200",
-                              compact ? "justify-center px-2 py-2" : "gap-3 px-3 py-2",
+                              "group flex items-center rounded-lg transition-all duration-200 font-medium",
+                              compact ? "justify-center px-2 py-2" : "gap-2.5 px-3 py-2",
                               subActive
-                                ? "bg-white/10 text-white font-medium"
-                                : "text-zinc-400 hover:bg-white/5 hover:text-white",
+                                ? "bg-violet-100/70 text-violet-900 font-bold"
+                                : "text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900",
                             )}
                           >
                             <SubIcon
                               className={cn(
                                 compact ? "h-4 w-4" : "h-4 w-4",
                                 subActive
-                                  ? "text-white"
-                                  : "text-zinc-500 group-hover:text-zinc-300",
+                                  ? "text-violet-600"
+                                  : "text-zinc-400 group-hover:text-zinc-750",
                               )}
                             />
                             {!compact && (
@@ -361,30 +401,30 @@ function SidebarContent({
 
             return (
               <Link
-                key={n.href}
+                key={n.href || "#"}
                 href={n.href || "#"}
                 onClick={onNavigate}
                 title={compact ? n.label : undefined}
                 className={cn(
-                  "group flex items-center rounded-2xl transition-all duration-200",
-                  compact ? "justify-center px-2 py-3" : "gap-3 px-3 py-2.5",
+                  "group flex items-center rounded-lg transition-all duration-200 border-l-2",
+                  compact ? "justify-center px-2 py-3 border-l-transparent" : "gap-3 px-3 py-2.5",
                   active
-                    ? "bg-white text-zinc-900 shadow-sm"
-                    : "text-zinc-300 hover:bg-white/10 hover:text-white",
+                    ? "bg-violet-50 text-violet-700 border-l-violet-600 font-bold shadow-xs"
+                    : "text-zinc-650 hover:bg-zinc-50 hover:text-zinc-900 border-l-transparent",
                 )}
               >
                 <Icon
                   className={cn(
                     compact ? "h-5 w-5" : "h-4 w-4",
                     active
-                      ? "text-zinc-900"
-                      : "text-zinc-400 group-hover:text-zinc-100",
+                      ? "text-violet-600"
+                      : "text-zinc-450 group-hover:text-zinc-750",
                   )}
                 />
                 {compact ? (
                   <span className="sr-only">{n.label}</span>
                 ) : (
-                  <span className="truncate text-sm">{n.label}</span>
+                  <span className="truncate text-sm font-medium">{n.label}</span>
                 )}
               </Link>
             );
@@ -394,35 +434,13 @@ function SidebarContent({
 
       <div
         className={cn(
-          "shrink-0 border-t border-white/10",
+          "shrink-0 border-t border-zinc-150 bg-[#f8fafc]",
           compact ? "px-2 pb-3 pt-3" : "p-3",
         )}
       >
-        {!compact && (
-          <div className="mb-3 rounded-xl border border-white/15 bg-white/5 px-3 py-2.5">
-            <div className="text-[10px] font-medium uppercase tracking-[0.14em] text-zinc-500">
-              Account
-            </div>
-            <div className="mt-2 flex items-start gap-2.5">
-              <div className="mt-0.5 rounded-md bg-white/10 p-1.5 text-zinc-300">
-                <Building2 className="h-3.5 w-3.5" />
-              </div>
-              <div className="min-w-0">
-                <div
-                  className="truncate text-sm font-semibold text-white"
-                  title={identity.companyName}
-                >
-                  {identity.companyName}
-                </div>
-                <div
-                  className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-zinc-400"
-                  title={identity.email}
-                >
-                  <Mail className="h-3 w-3 shrink-0" />
-                  <span className="truncate">{identity.email}</span>
-                </div>
-              </div>
-            </div>
+        {!compact && identity.companyName && (
+          <div className="mb-3 px-2 text-[11px] font-bold text-zinc-500 uppercase tracking-wider truncate text-center" title={identity.companyName}>
+            {identity.companyName}
           </div>
         )}
 
@@ -430,10 +448,10 @@ function SidebarContent({
           onClick={onLogout}
           title={compact ? "Logout" : undefined}
           className={cn(
-            "flex w-full items-center rounded-xl border border-white/20 px-3 py-2.5 text-sm font-medium text-zinc-100 transition",
+            "flex w-full items-center rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-sm font-semibold text-zinc-655 hover:bg-zinc-50 hover:text-zinc-800 transition cursor-pointer",
             compact
               ? "justify-center"
-              : "justify-center gap-2 hover:bg-white/10 active:scale-[0.99]",
+              : "justify-center gap-2 active:scale-[0.99] shadow-xs",
           )}
         >
           <LogOut className="h-4 w-4" />
@@ -441,7 +459,7 @@ function SidebarContent({
         </button>
 
         {!compact && (
-          <div className="mt-3 px-1 text-center text-xs text-zinc-500">
+          <div className="mt-3 px-1 text-center text-[10px] text-zinc-400">
             (c) {new Date().getFullYear()} Pakiza Software Ltd
           </div>
         )}
@@ -453,6 +471,30 @@ function SidebarContent({
 export default function Sidebar() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("sidebar-collapsed") === "true";
+    }
+    return false;
+  });
+
+  const toggleCollapse = () => {
+    setIsCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem("sidebar-collapsed", String(next));
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (pathname === "/visitors/add") {
+      setIsCollapsed(true);
+    } else {
+      if (typeof window !== "undefined") {
+        setIsCollapsed(localStorage.getItem("sidebar-collapsed") === "true");
+      }
+    }
+  }, [pathname]);
 
   useEffect(() => {
     setMobileOpen(false);
@@ -486,18 +528,18 @@ export default function Sidebar() {
 
   return (
     <>
-      <header className="fixed inset-x-0 top-0 z-40 border-b border-zinc-200/80 bg-white/90 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] backdrop-blur md:hidden">
+      <header className="fixed inset-x-0 top-0 z-40 border-b border-zinc-100 bg-white/90 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] backdrop-blur md:hidden">
         <div className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-zinc-900 text-white">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-violet-600 to-indigo-500 text-white shadow-md shadow-violet-500/20">
               <Video className="h-4 w-4" />
             </div>
             <div className="min-w-0">
-              <div className="truncate text-sm font-semibold text-zinc-900">
-                CCTV Panel
+              <div className="truncate text-sm font-bold text-zinc-900 tracking-tight">
+                Cripton Vision
               </div>
-              <div className="truncate text-[11px] text-zinc-500">
-                Face Recognition Admin
+              <div className="truncate text-[9.5px] font-bold uppercase tracking-wider text-violet-600 mt-0.5">
+                AI Attendance
               </div>
             </div>
           </div>
@@ -530,7 +572,7 @@ export default function Sidebar() {
           aria-label="Close sidebar"
           onClick={() => setMobileOpen(false)}
           className={cn(
-            "absolute inset-0 bg-zinc-950/45 backdrop-blur-[2px] transition-opacity duration-200",
+            "absolute inset-0 bg-zinc-950/25 backdrop-blur-[1px] transition-opacity duration-200",
             mobileOpen ? "opacity-100" : "opacity-0",
           )}
         />
@@ -538,7 +580,7 @@ export default function Sidebar() {
         <aside
           id="mobile-sidebar"
           className={cn(
-            "ui-readable-dark absolute inset-y-0 left-0 flex w-[85vw] max-w-[330px] flex-col bg-zinc-950 pt-[env(safe-area-inset-top)] text-zinc-100 shadow-2xl transition-transform duration-300 ease-out",
+            "ui-readable absolute inset-y-0 left-0 flex w-[85vw] max-w-[330px] flex-col bg-white pt-[env(safe-area-inset-top)] text-zinc-800 shadow-[5px_0_30px_rgba(0,0,0,0.12)] transition-transform duration-300 ease-out border-r border-zinc-150",
             mobileOpen ? "translate-x-0" : "-translate-x-full",
           )}
         >
@@ -547,12 +589,17 @@ export default function Sidebar() {
         </aside>
       </div>
 
-      <aside className="ui-readable-dark hidden h-dvh w-20 flex-col border-r border-zinc-200 bg-zinc-950 text-zinc-100 md:flex lg:hidden">
-        <SidebarContent compact />
-      </aside>
-
-      <aside className="ui-readable-dark hidden h-dvh w-72 flex-col border-r border-zinc-200 bg-zinc-950 text-zinc-100 lg:flex">
-        <SidebarContent />
+      <aside className={cn(
+        "ui-readable hidden h-dvh flex-col bg-slate-50 p-3 md:flex transition-all duration-350 ease-in-out shrink-0",
+        isCollapsed ? "w-20" : "w-72"
+      )}>
+        <div className="flex flex-col h-full bg-white rounded-2xl border border-zinc-200/80 shadow-[0_8px_30px_rgb(0,0,0,0.04),_0_1px_3px_rgba(0,0,0,0.02)] overflow-hidden">
+          <SidebarContent 
+            compact={isCollapsed} 
+            isCollapsed={isCollapsed} 
+            onToggleCollapse={toggleCollapse} 
+          />
+        </div>
       </aside>
     </>
   );

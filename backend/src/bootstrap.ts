@@ -163,4 +163,209 @@ export async function bootstrap() {
 
     console.log(`✅ Migrated employee PK for empId=${publicId}`);
   }
+
+  // Seed modules if table is empty
+  try {
+    const modulesCount = await prisma.module.count();
+    if (modulesCount === 0) {
+      console.log("Seeding default system modules...");
+
+      // Top-level modules
+      await prisma.module.create({
+        data: { name: "Cameras (Live)", route: "/cameras", sortOrder: 10 }
+      });
+      await prisma.module.create({
+        data: { name: "Camera List", route: "/camera-list", sortOrder: 20 }
+      });
+      await prisma.module.create({
+        data: { name: "Enrollment (Auto)", route: "/enroll", sortOrder: 30 }
+      });
+      await prisma.module.create({
+        data: { name: "Employees", route: "/employees", sortOrder: 40 }
+      });
+      await prisma.module.create({
+        data: { name: "Daily Attendance", route: "/daily-attendance", sortOrder: 50 }
+      });
+      await prisma.module.create({
+        data: { name: "Recognition History", route: "/attendance", sortOrder: 60 }
+      });
+      await prisma.module.create({
+        data: { name: "Unknown History", route: "/unknown-recognition", sortOrder: 70 }
+      });
+
+      // Parent group: Gate Pass
+      const gatepassGroup = await prisma.module.create({
+        data: { name: "Gate Pass", sortOrder: 80 }
+      });
+      await prisma.module.create({
+        data: { name: "Gate Pass Form", route: "/gatepass", parentId: gatepassGroup.id, sortOrder: 81 }
+      });
+      await prisma.module.create({
+        data: { name: "Gate Pass Log", route: "/gatepass/history", parentId: gatepassGroup.id, sortOrder: 82 }
+      });
+
+      // Parent group: Visitor
+      const visitorGroup = await prisma.module.create({
+        data: { name: "Visitor", sortOrder: 90 }
+      });
+      await prisma.module.create({
+        data: { name: "Add Visitor", route: "/visitors/add", parentId: visitorGroup.id, sortOrder: 91 }
+      });
+      await prisma.module.create({
+        data: { name: "Visitor List", route: "/visitors", parentId: visitorGroup.id, sortOrder: 92 }
+      });
+      await prisma.module.create({
+        data: { name: "Employee Wise Visit", route: "/visitors/employee-wise-visit", parentId: visitorGroup.id, sortOrder: 93 }
+      });
+      await prisma.module.create({
+        data: { name: "Visitor Wise Visit", route: "/visitors/visitor-wise-visit", parentId: visitorGroup.id, sortOrder: 94 }
+      });
+
+      // Remainder
+      await prisma.module.create({
+        data: { name: "Master Data", route: "/master-data", sortOrder: 100 }
+      });
+      const settingsGroup = await prisma.module.create({
+        data: { name: "Settings", sortOrder: 110 }
+      });
+      await prisma.module.create({
+        data: { name: "URLs", route: "/settings/urls", parentId: settingsGroup.id, sortOrder: 111 }
+      });
+      await prisma.module.create({
+        data: { name: "Users", route: "/settings/users", parentId: settingsGroup.id, sortOrder: 112 }
+      });
+      await prisma.module.create({
+        data: { name: "Permissions", route: "/permissions", sortOrder: 120 }
+      });
+
+      console.log("Seeding system modules completed.");
+    } else {
+      // Migrate legacy database structure for Settings module
+      const oldSettings = await prisma.module.findFirst({
+        where: { route: "/settings" }
+      });
+
+      if (oldSettings) {
+        console.log("Migrating legacy settings module in database...");
+        
+        await prisma.module.update({
+          where: { id: oldSettings.id },
+          data: { route: null }
+        });
+
+        let urlsSubModule = await prisma.module.findFirst({
+          where: { route: "/settings/urls", parentId: oldSettings.id }
+        });
+
+        if (!urlsSubModule) {
+          urlsSubModule = await prisma.module.create({
+            data: {
+              name: "URLs",
+              route: "/settings/urls",
+              parentId: oldSettings.id,
+              sortOrder: 111
+            }
+          });
+          console.log("Created URLs submodule under Settings.");
+        }
+
+        const oldPermissions = await prisma.permission.findMany({
+          where: { module: "/settings" }
+        });
+
+        if (oldPermissions.length > 0) {
+          for (const perm of oldPermissions) {
+            const companyId = perm.companyId || "";
+            const existingPerm = await prisma.permission.findUnique({
+              where: {
+                companyId_role_module: {
+                  companyId: companyId,
+                  role: perm.role,
+                  module: "/settings/urls"
+                }
+              }
+            });
+
+            if (!existingPerm) {
+              await prisma.permission.create({
+                data: {
+                  companyId: perm.companyId,
+                  role: perm.role,
+                  module: "/settings/urls",
+                  allowed: perm.allowed
+                }
+              });
+            } else {
+              await prisma.permission.update({
+                where: { id: existingPerm.id },
+                data: { allowed: perm.allowed }
+              });
+            }
+          }
+
+          await prisma.permission.deleteMany({
+            where: { module: "/settings" }
+          });
+          console.log("Settings permissions migration completed.");
+        }
+      }
+    }
+
+    // Ensure Employee action submodules exist
+    const employeesModule = await prisma.module.findFirst({
+      where: { route: "/employees" }
+    });
+    if (employeesModule) {
+      const actions = [
+        { name: "Edit", route: "/employees/edit", sortOrder: 41 },
+        { name: "Re-enroll Face", route: "/employees/re-enroll", sortOrder: 42 },
+        { name: "Delete", route: "/employees/delete", sortOrder: 43 }
+      ];
+      for (const act of actions) {
+        const existing = await prisma.module.findFirst({
+          where: { route: act.route }
+        });
+        if (!existing) {
+          await prisma.module.create({
+            data: {
+              name: act.name,
+              route: act.route,
+              parentId: employeesModule.id,
+              sortOrder: act.sortOrder
+            }
+          });
+          console.log(`✅ Seeded missing employee action module: ${act.name}`);
+        }
+      }
+    }
+
+    // Ensure Settings submodules exist (URLs, Users)
+    const settingsModule = await prisma.module.findFirst({
+      where: { name: "Settings", parentId: null }
+    });
+    if (settingsModule) {
+      const submods = [
+        { name: "URLs", route: "/settings/urls", sortOrder: 111 },
+        { name: "Users", route: "/settings/users", sortOrder: 112 }
+      ];
+      for (const sub of submods) {
+        const existing = await prisma.module.findFirst({
+          where: { route: sub.route }
+        });
+        if (!existing) {
+          await prisma.module.create({
+            data: {
+              name: sub.name,
+              route: sub.route,
+              parentId: settingsModule.id,
+              sortOrder: sub.sortOrder
+            }
+          });
+          console.log(`✅ Seeded missing settings submodule: ${sub.name}`);
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Failed to seed system modules:", err);
+  }
 }

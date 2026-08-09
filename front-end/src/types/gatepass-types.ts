@@ -18,6 +18,7 @@ export type GatepassEmployee = {
   unit: string;
   shift: string;
   headcountNote: string;
+  designation?: string | null;
 };
 
 export type GatepassRecord = {
@@ -31,6 +32,18 @@ export type GatepassRecord = {
   status: GatepassStatus;
   note: string;
   requestedAt: string;
+  passType?: string | null;
+  remarks?: string | null;
+  purpose?: string;
+  destination?: string | null;
+  externalGatepassId?: string | null;
+  erpStatus?: string | null;
+  returnTime?: number | null;
+  rawOutTime?: string;
+  rawInTime?: string | null;
+  approvedByName?: string | null;
+  approvedByDesignation?: string | null;
+  updatedAt?: string;
 };
 
 export type GatepassApiRecord = {
@@ -48,6 +61,17 @@ export type GatepassApiRecord = {
   inTime?: string | null;
   status: GatepassStatus;
   requestedAt?: string;
+  passType?: string | null;
+  remarks?: string | null;
+  externalGatepassId?: string | null;
+  erpStatus?: string | null;
+  returnTime?: number | null;
+  rawOutTime?: string;
+  rawInTime?: string | null;
+  approvedByName?: string | null;
+  approvedByDesignation?: string | null;
+  designation?: string | null;
+  updatedAt?: string;
 };
 
 export type EmployeeDirectoryRow = Employee & {
@@ -84,6 +108,7 @@ export type RecognizedGatepassRow = RecognizedPerson & {
 export type FormErrors = {
   leaveType?: string;
   purpose?: string;
+  approxReturnTime?: string;
 };
 
 export type GatepassCamera = CameraOption;

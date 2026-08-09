@@ -29,6 +29,7 @@ model Company {
   relayAgents             RelayAgent[]
   unknownRecognitions     UnknownRecognition[]
   users                   User[]
+  permissions             Permission[]
   visitors                Visitor[]
   visitorTypes            VisitorType[]
 }
@@ -38,13 +39,48 @@ model User {
   name          String?
   email         String         @unique
   passwordHash  String
-  role          UserRole       @default(ADMIN)
+  password      String?
+  role          String         @default("ADMIN")
   isActive      Boolean        @default(true)
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   companyId     String?
   refreshTokens RefreshToken[]
   company       Company?       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
+model Permission {
+  id        String   @id @default(cuid())
+  role      String
+  module    String   // e.g. "/cameras", "/camera-list", "/enroll", "/employees", "/daily-attendance", "/attendance", "/unknown-recognition", "gatepass", "visitors", "/master-data", "/settings", "/permissions"
+  allowed   Boolean  @default(true)
+
+  companyId String?
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, role, module])
+  @@index([companyId])
+}
+
+model Module {
+  id          String   @id @default(cuid())
+  name        String
+  route       String?
+  description String?
+  sortOrder   Int      @default(0)
+
+  parentId    String?
+  parent      Module?  @relation("SubModules", fields: [parentId], references: [id], onDelete: Cascade)
+  subModules  Module[] @relation("SubModules")
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([parentId])
+  @@index([route])
 }
 
 model Employee {
