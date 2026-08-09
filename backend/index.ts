@@ -1,7 +1,7 @@
 import dotenv from "dotenv";
 import { app } from "./src/app";
 import { bootstrap } from "./src/bootstrap";
-import { autoStartRtspCamerasOnBoot } from "./src/services/cameraAutostart.service";
+import { autoStartRtspCamerasOnBoot } from "./src/modules/v1/cameras/autostart.service";
 
 dotenv.config();
 
