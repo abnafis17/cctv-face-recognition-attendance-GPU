@@ -254,20 +254,20 @@ function SidebarContent({
       <div
         className={cn(
           "shrink-0 border-b border-zinc-150 bg-[#f8fafc]",
-          compact ? "p-4 flex items-center justify-center" : "px-5 py-4 flex items-center justify-between gap-3",
+          compact ? "p-3 flex items-center justify-center" : "px-4 py-3.5 flex items-center justify-between gap-2.5",
         )}
       >
         {!compact ? (
           <>
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-violet-600 to-indigo-500 text-white ring-2 ring-violet-500/25 shadow-lg shadow-violet-500/10">
-                <Video className="h-5 w-5" />
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-violet-600 to-indigo-500 text-white ring-2 ring-violet-500/20 shadow-md shadow-violet-500/10">
+                <Video className="h-4.5 w-4.5" />
               </div>
               <div className="min-w-0">
-                <div className="truncate text-base font-black tracking-tight text-zinc-900 leading-tight">
+                <div className="text-[13px] font-black tracking-tight text-zinc-900 leading-none whitespace-nowrap">
                   CRIPTON VISION
                 </div>
-                <div className="truncate text-[10px] font-bold uppercase tracking-[0.2em] text-violet-600">
+                <div className="text-[9px] font-extrabold uppercase tracking-[0.18em] text-violet-600 mt-1 whitespace-nowrap">
                   AI Attendance
                 </div>
               </div>
@@ -276,7 +276,7 @@ function SidebarContent({
               <button
                 type="button"
                 onClick={onToggleCollapse}
-                className="hidden md:flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 transition"
+                className="hidden md:flex h-7.5 w-7.5 shrink-0 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 transition cursor-pointer"
                 title="Collapse sidebar"
               >
                 <ChevronLeft className="h-4 w-4" />
@@ -285,14 +285,14 @@ function SidebarContent({
           </>
         ) : (
           <div className="flex flex-col items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-violet-600 to-indigo-500 text-white shadow-md">
-              <Video className="h-5 w-5" />
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-violet-600 to-indigo-500 text-white shadow-md">
+              <Video className="h-4.5 w-4.5" />
             </div>
             {onToggleCollapse && (
               <button
                 type="button"
                 onClick={onToggleCollapse}
-                className="hidden md:flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 transition"
+                className="hidden md:flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 transition cursor-pointer"
                 title="Expand sidebar"
               >
                 <ChevronRight className="h-3.5 w-3.5" />
