@@ -37,6 +37,7 @@ export default function LoginPage() {
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
   const [focusedField, setFocusedField] = useState<string | null>(null);
+  const [remember, setRemember] = useState(true);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -46,6 +47,27 @@ export default function LoginPage() {
 
   const { onBlur: emailBlur, ...emailRegister } = form.register("email");
   const { onBlur: passwordBlur, ...passwordRegister } = form.register("password");
+
+  // Load remembered credentials if present
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = localStorage.getItem("remember_creds");
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        if (parsed.email) form.setValue("email", parsed.email);
+        if (parsed.password) form.setValue("password", parsed.password);
+        setRemember(true);
+      } catch (e) {
+        console.error("Failed to parse remembered credentials:", e);
+      }
+    } else {
+      const rememberPref = localStorage.getItem("remember_me");
+      if (rememberPref === "false") {
+        setRemember(false);
+      }
+    }
+  }, [form]);
 
   useEffect(() => {
     if (!accessToken) return;
@@ -62,6 +84,18 @@ export default function LoginPage() {
     try {
       await loginApi(values);
       toast.dismiss("login-error");
+
+      // Handle Remember Me persistence
+      if (remember) {
+        localStorage.setItem(
+          "remember_creds",
+          JSON.stringify({ email: values.email, password: values.password })
+        );
+        localStorage.setItem("remember_me", "true");
+      } else {
+        localStorage.removeItem("remember_creds");
+        localStorage.setItem("remember_me", "false");
+      }
 
       const next = safeNextUrl(
         new URLSearchParams(window.location.search).get("next"),
@@ -235,6 +269,8 @@ export default function LoginPage() {
                   <input
                     type="checkbox"
                     id="remember"
+                    checked={remember}
+                    onChange={(e) => setRemember(e.target.checked)}
                     className="h-4 w-4 rounded border-zinc-300 text-violet-600 focus:ring-violet-500 cursor-pointer"
                   />
                   <span className="text-xs font-semibold text-zinc-500">Remember me</span>
