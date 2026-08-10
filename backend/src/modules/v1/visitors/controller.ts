@@ -12,6 +12,7 @@ import {
   resolveConfiguredErpUrl,
 } from "../settings/erp.service";
 import { extractVisitorFaceEmbedding } from "./face.service";
+import { logSubmission } from "../../../utils/logger";
 
 function getCompanyId(req: Request): string {
   return String((req as any).companyId ?? "").trim();
@@ -224,16 +225,32 @@ export async function createVisitorRecord(req: Request, res: Response) {
       }
     }
 
-    return res.status(201).json({
+    const result = {
       ok: true,
       visitor,
+    };
+
+    logSubmission("visitor", {
+      payload: req.body,
+      status: "SUCCESS",
+      response: result,
     });
+
+    return res.status(201).json(result);
   } catch (error: unknown) {
-    if (error instanceof ZodError) return respondValidationError(res, error);
-    return res.status(500).json({
+    const errorResponse = {
       error: "Failed to create visitor record",
       detail: error instanceof Error ? error.message : String(error),
+    };
+
+    logSubmission("visitor", {
+      payload: req.body,
+      status: "FAILED",
+      response: errorResponse,
     });
+
+    if (error instanceof ZodError) return respondValidationError(res, error);
+    return res.status(500).json(errorResponse);
   }
 }
 

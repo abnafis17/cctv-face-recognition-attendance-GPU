@@ -314,11 +314,14 @@ export async function listGatepassRecords(req: Request, res: Response) {
     if (query.leaveTypeId) {
       if (query.leaveTypeId === "Long Leave") {
         whereClauses.push(
-          Prisma.sql`(gp."leaveTypeId" = 'Long Leave' OR gp."leaveType" ILIKE 'long%' OR gp."leaveType" = 'Long Leave')`,
+          Prisma.sql`(gp."leaveTypeId" = 'Long Leave' OR gp."leaveType" ILIKE 'long%' OR gp."leaveType" = 'Long Leave' OR gp."passType" = 'Long Leave')`,
         );
       } else if (query.leaveTypeId === "short leave") {
         whereClauses.push(
-          Prisma.sql`(gp."leaveTypeId" IS NULL OR (gp."leaveTypeId" <> 'Long Leave' AND gp."leaveType" NOT ILIKE 'long%' AND gp."leaveType" <> 'Long Leave'))`,
+          Prisma.sql`(
+            (gp."leaveTypeId" IS NULL OR (gp."leaveTypeId" <> 'Long Leave' AND gp."leaveType" NOT ILIKE 'long%' AND gp."leaveType" <> 'Long Leave'))
+            AND (gp."passType" IS NULL OR gp."passType" <> 'Long Leave')
+          )`,
         );
       } else {
         whereClauses.push(Prisma.sql`gp."leaveTypeId" = ${query.leaveTypeId}`);
@@ -415,6 +418,7 @@ export async function createGatepassRecord(req: Request, res: Response) {
       destination: normalizedDestination,
       outTime: recognizedAt,
       remarks: trimmedPurpose,
+      passType: payload.passType,
     });
 
     if (!erpSubmit.gatePassId) {

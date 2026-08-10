@@ -1,4 +1,5 @@
-import { CheckCircle2, LoaderCircle, ClipboardList } from "lucide-react";
+import { useState } from "react";
+import { CheckCircle2, LoaderCircle, ClipboardList, ChevronDown } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +10,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 
 import type {
@@ -57,6 +63,7 @@ export default function GatepassSubmissionSection({
   onCancel,
 }: Props) {
   const hasQueue = recognizedRows.length > 0;
+  const [showPurposeDropdown, setShowPurposeDropdown] = useState(false);
 
   return (
     <div className="flex flex-col border border-zinc-100 bg-white rounded-md shadow-sm overflow-hidden border-t-4 border-t-violet-500">
@@ -155,47 +162,102 @@ export default function GatepassSubmissionSection({
             )}
           </div>
 
-          {/* Purpose Selector (Conditional for short leave) */}
-          {leaveTypeId === "short leave" && (
+          {/* Purpose Selector (Conditional for short leave and long leave) */}
+          {(leaveTypeId === "short leave" || leaveTypeId === "Long Leave") && (
             <div className="w-full space-y-1 animate-in fade-in-50 slide-in-from-top-1 duration-200">
               <label className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider block">
                 Purpose <span className="text-rose-500">*</span>
               </label>
-              <Select
-                value={purpose || undefined}
-                disabled={submitting || gatepassLeaveTypesLoading || gatepassLeaveTypes.length === 0 || !hasQueue}
-                onValueChange={(value) => {
-                  setPurpose(value);
-                  setFormErrors((current) => ({
-                    ...current,
-                    purpose: undefined,
-                  }));
-                }}
-              >
-                <SelectTrigger
-                  className={cn(
-                    "h-9 w-full rounded-md bg-white text-[11px] text-zinc-855 shadow-none hover:border-zinc-300 focus:outline-none focus:ring-1 focus:ring-zinc-400 transition-colors px-3",
-                    formErrors.purpose ? "border-rose-300 ring-rose-500" : "border-zinc-200",
-                  )}
+              <Popover open={showPurposeDropdown} onOpenChange={setShowPurposeDropdown}>
+                <PopoverTrigger asChild>
+                  <div
+                    className={cn(
+                      "h-9 w-full rounded-md bg-white text-[11px] text-zinc-855 border flex items-center justify-between transition-colors px-3 cursor-text",
+                      formErrors.purpose ? "border-rose-300 ring-1 ring-rose-500" : "border-zinc-200 hover:border-zinc-300"
+                    )}
+                  >
+                    <input
+                      type="text"
+                      value={purpose}
+                      disabled={submitting || !hasQueue}
+                      onChange={(event) => {
+                        setPurpose(event.target.value);
+                        setShowPurposeDropdown(true);
+                        setFormErrors((current) => ({
+                          ...current,
+                          purpose: undefined,
+                        }));
+                      }}
+                      onFocus={() => {
+                        setShowPurposeDropdown(true);
+                      }}
+                      onBlur={() => {
+                        // Delay closing the dropdown so item clicks can trigger onMouseDown
+                        setTimeout(() => setShowPurposeDropdown(false), 200);
+                      }}
+                      placeholder={
+                        gatepassLeaveTypesLoading
+                          ? "Loading..."
+                          : "Select or type purpose..."
+                      }
+                      className="w-full bg-transparent outline-none border-none p-0 text-[11px] text-zinc-855 placeholder:text-zinc-400 focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0 focus:outline-none"
+                      autoComplete="off"
+                    />
+                    <button
+                      type="button"
+                      disabled={submitting || !hasQueue}
+                      onClick={() => setShowPurposeDropdown((prev) => !prev)}
+                      className="flex-shrink-0 p-1 text-zinc-400 hover:text-zinc-600 cursor-pointer"
+                    >
+                      <ChevronDown className={cn("w-3.5 h-3.5 transition-transform duration-200", showPurposeDropdown && "rotate-180")} />
+                    </button>
+                  </div>
+                </PopoverTrigger>
+                <PopoverContent
+                  className="w-[var(--radix-popover-trigger-width)] p-1 bg-white border border-zinc-200 rounded-md shadow-lg max-h-40 overflow-y-auto z-50 py-1"
+                  align="start"
+                  onOpenAutoFocus={(e) => e.preventDefault()}
+                  onCloseAutoFocus={(e) => e.preventDefault()}
                 >
-                  <SelectValue
-                    placeholder={
-                      gatepassLeaveTypesLoading
-                        ? "Loading..."
-                        : gatepassLeaveTypes.length > 0
-                          ? "Select purpose"
-                          : "No purposes"
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent align="start">
-                  {gatepassLeaveTypes.map((leaveType) => (
-                    <SelectItem key={leaveType.id} value={leaveType.id} className="text-[11px]">
-                      {leaveType.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                  <div className="flex flex-col">
+                    {gatepassLeaveTypesLoading ? (
+                      <div className="px-3 py-2 text-[10px] text-zinc-400 italic">
+                        Loading purposes...
+                      </div>
+                    ) : (
+                      (() => {
+                        const filtered = gatepassLeaveTypes.filter((option) =>
+                          option.label.toLowerCase().includes(purpose.toLowerCase())
+                        );
+                        if (filtered.length > 0) {
+                          return filtered.map((option) => (
+                            <button
+                              key={option.id}
+                              type="button"
+                              onMouseDown={() => {
+                                setPurpose(option.label);
+                                setShowPurposeDropdown(false);
+                                setFormErrors((current) => ({
+                                  ...current,
+                                  purpose: undefined,
+                                }));
+                              }}
+                              className="w-full text-left px-3 py-1.5 text-[11px] text-zinc-700 hover:bg-zinc-100 hover:text-zinc-900 transition-colors"
+                            >
+                              {option.label}
+                            </button>
+                          ));
+                        }
+                        return (
+                          <div className="px-3 py-2 text-[10px] text-zinc-400 italic">
+                            Press Enter or click away to use custom purpose
+                          </div>
+                        );
+                      })()
+                    )}
+                  </div>
+                </PopoverContent>
+              </Popover>
               {gatepassLeaveTypesError && (
                 <span className="text-[9px] font-semibold text-rose-655 block mt-0.5">
                   {gatepassLeaveTypesError}

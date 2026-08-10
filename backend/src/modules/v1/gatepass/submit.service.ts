@@ -1,5 +1,6 @@
 import axios from "axios";
 import { getCompanyErpSettings, resolveConfiguredErpUrl } from "../settings/erp.service";
+import { logSubmission } from "../../../utils/logger";
 
 const GATEPASS_SUBMIT_ERP_URL_TYPE = "addgatepass";
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -11,6 +12,7 @@ export type GatepassSubmitSyncInput = {
   destination?: string | null;
   outTime: Date;
   remarks: string;
+  passType?: string | null;
 };
 
 export type GatepassSubmitSyncResult = {
@@ -86,9 +88,12 @@ function addHours(date: Date, hours: number): Date {
 function buildRequestBody(
   input: GatepassSubmitSyncInput,
 ): ErpGatepassPayloadRow[] {
-  const isShortLeave =
-    input.passTitleId !== "Long Leave" &&
-    input.passTitle !== "Long Leave";
+  const passType = input.passType || (
+    (input.passTitleId !== "Long Leave" && input.passTitle !== "Long Leave")
+      ? "short leave"
+      : "Long Leave"
+  );
+  const isShortLeave = passType === "short leave";
   const timeStart = toDhakaTimeHHMMSS(input.outTime);
   const date = toDhakaDateDDMMYYYY(input.outTime);
 
@@ -109,6 +114,8 @@ function buildRequestBody(
     return [
       {
         empId: String(input.empId ?? "").trim(),
+        passTitle: String(input.passTitle ?? "").trim(),
+        passTitleId: String(input.passTitleId ?? "").trim(),
         destination: String(input.destination ?? "").trim(),
         timeStart,
         date,
@@ -148,10 +155,16 @@ export async function submitGatepassToErp(
   try {
     const empId = String(input.empId ?? "").trim();
     if (!empId) {
-      return buildFailureResult(
+      const result = buildFailureResult(
         requestBody,
         "Employee empId is missing. ERP gatepass submit skipped.",
       );
+      logSubmission("gatepass", {
+        payload: requestBody,
+        status: "FAILED (SKIPPED)",
+        response: result.payload,
+      });
+      return result;
     }
 
     const settings = await getCompanyErpSettings(
@@ -161,10 +174,16 @@ export async function submitGatepassToErp(
     const url = resolveConfiguredErpUrl(settings);
 
     if (!url) {
-      return buildFailureResult(
+      const result = buildFailureResult(
         requestBody,
         'ERP add gatepass settings are incomplete. Configure urlType "addgatepass" with base URL, prefix, and endpoint.',
       );
+      logSubmission("gatepass", {
+        payload: requestBody,
+        status: "FAILED (INCOMPLETE SETTINGS)",
+        response: result.payload,
+      });
+      return result;
     }
 
     console.log(`[ERP GATEPASS SYNC] Sending request to ${url} with body:`, JSON.stringify(requestBody, null, 2));
@@ -210,7 +229,7 @@ export async function submitGatepassToErp(
         if (respData.designation) approvedByDesignation = String(respData.designation);
       }
 
-      return {
+      const result = {
         attempted: true,
         acknowledged: true,
         ackAt,
@@ -227,11 +246,19 @@ export async function submitGatepassToErp(
           responseData: toJsonSafeValue(response.data),
         },
       };
+
+      logSubmission("gatepass", {
+        payload: requestBody,
+        status: "SUCCESS",
+        response: result.payload,
+      });
+
+      return result;
     }
 
     const detail = `ERP add gatepass request failed with status ${response.status}`;
 
-    return {
+    const result = {
       attempted: true,
       acknowledged: false,
       ackAt: null,
@@ -246,6 +273,14 @@ export async function submitGatepassToErp(
         responseData: toJsonSafeValue(response.data),
       },
     };
+
+    logSubmission("gatepass", {
+      payload: requestBody,
+      status: "FAILED",
+      response: result.payload,
+    });
+
+    return result;
   } catch (error: unknown) {
     console.error(`[ERP GATEPASS SYNC] Error occurred:`, error);
     const detail =
@@ -253,7 +288,7 @@ export async function submitGatepassToErp(
         ? error.message
         : "Unknown error while calling ERP add gatepass API";
 
-    return {
+    const result = {
       attempted: true,
       acknowledged: false,
       ackAt: null,
@@ -272,5 +307,13 @@ export async function submitGatepassToErp(
           : toJsonSafeValue(error),
       },
     };
+
+    logSubmission("gatepass", {
+      payload: requestBody,
+      status: "FAILED",
+      response: result.payload,
+    });
+
+    return result;
   }
 }

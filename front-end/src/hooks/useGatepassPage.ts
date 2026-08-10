@@ -1536,7 +1536,7 @@ export function useGatepassPage() {
       nextErrors.leaveType = "Select leave type";
     }
 
-    if (rowsNeedingOutSubmission.length > 0 && isShortLeave && !purpose) {
+    if (rowsNeedingOutSubmission.length > 0 && (isShortLeave || isLongLeave) && !purpose) {
       nextErrors.purpose = "Purpose is required";
     }
 
@@ -1566,8 +1566,12 @@ export function useGatepassPage() {
     const failedNames: string[] = [];
 
     const selectedPurpose =
-      isShortLeave && purpose
-        ? (gatepassLeaveTypes.find((lt) => lt.id === purpose) ?? null)
+      (isShortLeave || isLongLeave) && purpose
+        ? (gatepassLeaveTypes.find(
+            (lt) =>
+              lt.id === purpose ||
+              lt.label.trim().toLowerCase() === purpose.trim().toLowerCase()
+          ) ?? null)
         : null;
 
     try {
@@ -1612,15 +1616,15 @@ export function useGatepassPage() {
           const response = await axiosInstance.post(API.GATEPASS_TABLE, {
             employeeId,
             cameraId: selectedGatepassCamera.id,
-            leaveTypeId: isShortLeave
-              ? (selectedPurpose?.id ?? "")
+            leaveTypeId: (isShortLeave || isLongLeave)
+              ? (selectedPurpose?.id ?? purpose.trim())
               : "Long Leave",
-            leaveType: isShortLeave
-              ? (selectedPurpose?.label ?? "")
+            leaveType: (isShortLeave || isLongLeave)
+              ? (selectedPurpose?.label ?? purpose.trim())
               : "Long Leave",
             destination: destination.trim() || null,
-            purpose: isShortLeave
-              ? (selectedPurpose?.label ?? "")
+            purpose: (isShortLeave || isLongLeave)
+              ? (selectedPurpose?.label ?? purpose.trim())
               : "Long Leave",
             recognizedAt: row.recognizedAt.toISOString(),
             passType: isShortLeave ? "short leave" : "Long Leave",

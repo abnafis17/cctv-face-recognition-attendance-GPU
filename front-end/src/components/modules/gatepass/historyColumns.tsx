@@ -135,7 +135,11 @@ export function getHistoryColumns(
         const isShort = String(pType).toLowerCase() === "short leave";
         const purposeText = isShort
           ? (row.original.purpose || row.original.type || "N/A")
-          : "N/A";
+          : (row.original.purpose && row.original.purpose !== "Long Leave"
+            ? row.original.purpose
+            : row.original.type && row.original.type !== "Long Leave"
+              ? row.original.type
+              : "N/A");
         return (
           <div className="px-1 py-2 text-left text-zinc-700 truncate max-w-[200px]" title={purposeText}>
             {purposeText}

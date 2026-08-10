@@ -377,8 +377,8 @@ export default function GatepassReportModal({
                 <tr>
                   <td class="bg-label">Doc Name</td>
                   <td>${valOrDash(erpDetails?.docName || "Gate-Pass")}</td>
-                  <td class="bg-label">Title</td>
-                  <td>${valOrDash(erpDetails?.passTitleName || erpDetails?.title)}</td>
+                  <td class="bg-label">Leave Type</td>
+                  <td>${record?.passType === "short leave" ? "Short Leave" : record?.passType === "Long Leave" ? "Long Leave" : valOrDash(record?.passType)}</td>
                 </tr>
                 <tr>
                   <td class="bg-label">Time Start</td>
@@ -386,15 +386,11 @@ export default function GatepassReportModal({
                   <td class="bg-label">Time End</td>
                   <td>${valOrDash(erpDetails?.timeEnd)}</td>
                 </tr>
-              </tbody>
-            </table>
-
-            <!-- Remarks Table -->
-            <table class="remarks-table">
-              <tbody>
                 <tr>
-                  <td class="bg-label" style="width: 18%;">Remarks</td>
-                  <td style="width: 82%;">${valOrDash(erpDetails?.remarks)}</td>
+                  <td class="bg-label">Purpose</td>
+                  <td>${valOrDash(erpDetails?.passTitleName || erpDetails?.title)}</td>
+                  <td class="bg-label">Destination</td>
+                  <td>${valOrDash(erpDetails?.remarks)}</td>
                 </tr>
               </tbody>
             </table>
@@ -596,10 +592,10 @@ export default function GatepassReportModal({
                     {valOrDash(erpDetails?.docName || "Gate-Pass")}
                   </td>
                   <td className="bg-zinc-100/80 border-r border-zinc-400 px-3 py-2.5 font-semibold text-zinc-700">
-                    Title
+                    Leave Type
                   </td>
                   <td className="px-3 py-2.5 text-zinc-900 font-medium">
-                    {valOrDash(erpDetails?.passTitleName || erpDetails?.title)}
+                    {record?.passType === "short leave" ? "Short Leave" : record?.passType === "Long Leave" ? "Long Leave" : valOrDash(record?.passType)}
                   </td>
                 </tr>
                 <tr className="border-b border-zinc-400">
@@ -616,24 +612,22 @@ export default function GatepassReportModal({
                     {valOrDash(erpDetails?.timeEnd)}
                   </td>
                 </tr>
+                <tr className="border-b border-zinc-400">
+                  <td className="bg-zinc-100/80 border-r border-zinc-400 px-3 py-2.5 font-semibold text-zinc-700">
+                    Purpose
+                  </td>
+                  <td className="border-r border-zinc-400 px-3 py-2.5 text-zinc-900 font-medium">
+                    {valOrDash(erpDetails?.passTitleName || erpDetails?.title)}
+                  </td>
+                  <td className="bg-zinc-100/80 border-r border-zinc-400 px-3 py-2.5 font-semibold text-zinc-700">
+                    Destination
+                  </td>
+                  <td className="px-3 py-2.5 text-zinc-900 font-medium">
+                    {valOrDash(erpDetails?.remarks)}
+                  </td>
+                </tr>
               </tbody>
             </table>
-
-            {/* Remarks Section */}
-            <div className="mt-4">
-              <table className="w-full border-collapse border border-zinc-400 text-xs">
-                <tbody>
-                  <tr>
-                    <td className="w-[18%] bg-zinc-100/80 border-r border-zinc-400 px-3 py-3.5 font-semibold text-zinc-700">
-                      Destination
-                    </td>
-                    <td className="w-[82%] px-3 py-3.5 text-zinc-900 font-medium">
-                      {valOrDash(erpDetails?.remarks)}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
 
             {/* Approval Workflow Block */}
             {displaySlots.length > 0 && (
