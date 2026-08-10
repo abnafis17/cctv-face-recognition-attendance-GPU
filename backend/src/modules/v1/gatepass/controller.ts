@@ -643,9 +643,9 @@ export async function markGatepassReturn(req: Request, res: Response) {
       empId: employee.empId,
       outTime: openGatepass.outTime,
       inTime: recognizedAt,
-      outTimeClock: updatedClockRow?.outTimeClock ?? openGatepass.outTimeClock,
-      inTimeClock: updatedClockRow?.inTimeClock ?? null,
-      inDateDDMMYYYY: updatedClockRow?.inDateDDMMYYYY ?? null,
+      outTimeClock: null,
+      inTimeClock: null,
+      inDateDDMMYYYY: null,
     });
 
     try {

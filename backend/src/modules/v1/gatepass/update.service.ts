@@ -1,13 +1,14 @@
 import axios from "axios";
 import { getCompanyErpSettings, resolveConfiguredErpUrl } from "../settings/erp.service";
+import { logSubmission } from "../../../utils/logger";
 
 const GATEPASS_UPDATE_ERP_URL_TYPE = "updategatepass";
 const DEFAULT_TIMEOUT_MS = 10_000;
 
 export type GatepassUpdateSyncInput = {
   empId?: string | null;
-  outTime: Date;
-  inTime: Date;
+  outTime: Date | string;
+  inTime: Date | string;
   outTimeClock?: string | null;
   inTimeClock?: string | null;
   inDateDDMMYYYY?: string | null;
@@ -64,14 +65,15 @@ function normalizeDateDDMMYYYY(value: unknown): string | null {
   return text;
 }
 
-function toDhakaTimeHHMMSS(value: Date): string {
+function toDhakaTimeHHMMSS(value: Date | string): string {
+  const dateObj = typeof value === "string" ? new Date(value) : value;
   const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Asia/Dhaka",
     hour12: false,
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
-  }).formatToParts(value);
+  }).formatToParts(dateObj);
 
   const hh = parts.find((part) => part.type === "hour")?.value ?? "00";
   const mm = parts.find((part) => part.type === "minute")?.value ?? "00";
@@ -80,13 +82,14 @@ function toDhakaTimeHHMMSS(value: Date): string {
   return `${hh}:${mm}:${ss}`;
 }
 
-function toDhakaDateDDMMYYYY(value: Date): string {
+function toDhakaDateDDMMYYYY(value: Date | string): string {
+  const dateObj = typeof value === "string" ? new Date(value) : value;
   const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Asia/Dhaka",
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
-  }).formatToParts(value);
+  }).formatToParts(dateObj);
 
   const dd = parts.find((part) => part.type === "day")?.value ?? "01";
   const mm = parts.find((part) => part.type === "month")?.value ?? "01";
@@ -154,10 +157,16 @@ export async function updateGatepassReturnToErp(
   try {
     const empId = String(input.empId ?? "").trim();
     if (!empId) {
-      return buildFailureResult(
+      const result = buildFailureResult(
         requestBody,
         "Employee empId is missing. ERP gatepass return update skipped.",
       );
+      logSubmission("gatepass", {
+        payload: requestBody,
+        status: "FAILED (SKIPPED)",
+        response: result.payload,
+      });
+      return result;
     }
 
     const settings = await getCompanyErpSettings(
@@ -167,12 +176,19 @@ export async function updateGatepassReturnToErp(
     const url = resolveConfiguredErpUrl(settings);
 
     if (!url) {
-      return buildFailureResult(
+      const result = buildFailureResult(
         requestBody,
         'ERP update gatepass settings are incomplete. Configure urlType "updategatepass" with base URL, prefix, and endpoint.',
       );
+      logSubmission("gatepass", {
+        payload: requestBody,
+        status: "FAILED (INCOMPLETE SETTINGS)",
+        response: result.payload,
+      });
+      return result;
     }
 
+    console.log(`[ERP GATEPASS UPDATE SYNC] Sending request to ${url} with body:`, JSON.stringify(requestBody, null, 2));
     const response = await axios.post(url, requestBody, {
       headers: {
         Accept: "*/*",
@@ -182,11 +198,12 @@ export async function updateGatepassReturnToErp(
       timeout: DEFAULT_TIMEOUT_MS,
       validateStatus: () => true,
     });
+    console.log(`[ERP GATEPASS UPDATE SYNC] Received response: Status ${response.status}`, JSON.stringify(response.data, null, 2));
 
     if (response.status >= 200 && response.status < 300) {
       const ackAt = new Date();
 
-      return {
+      const result = {
         attempted: true,
         acknowledged: true,
         ackAt,
@@ -200,11 +217,19 @@ export async function updateGatepassReturnToErp(
           responseData: toJsonSafeValue(response.data),
         },
       };
+
+      logSubmission("gatepass", {
+        payload: requestBody,
+        status: "SUCCESS",
+        response: result.payload,
+      });
+
+      return result;
     }
 
     const detail = `ERP update gatepass request failed with status ${response.status}`;
 
-    return {
+    const result = {
       attempted: true,
       acknowledged: false,
       ackAt: null,
@@ -219,13 +244,22 @@ export async function updateGatepassReturnToErp(
         responseData: toJsonSafeValue(response.data),
       },
     };
+
+    logSubmission("gatepass", {
+      payload: requestBody,
+      status: "FAILED",
+      response: result.payload,
+    });
+
+    return result;
   } catch (error: unknown) {
+    console.error(`[ERP GATEPASS UPDATE SYNC] Error occurred:`, error);
     const detail =
       error instanceof Error
         ? error.message
         : "Unknown error while calling ERP update gatepass API";
 
-    return {
+    const result = {
       attempted: true,
       acknowledged: false,
       ackAt: null,
@@ -244,5 +278,13 @@ export async function updateGatepassReturnToErp(
           : toJsonSafeValue(error),
       },
     };
+
+    logSubmission("gatepass", {
+      payload: requestBody,
+      status: "FAILED",
+      response: result.payload,
+    });
+
+    return result;
   }
 }
