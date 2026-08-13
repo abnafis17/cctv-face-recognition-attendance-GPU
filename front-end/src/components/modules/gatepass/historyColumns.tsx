@@ -67,11 +67,21 @@ export function getHistoryColumns(
         <div className="w-full px-1 py-2 text-center font-bold">ID</div>
       ),
       cell: ({ row }) => (
-        <div className="px-1 py-2 text-center text-zinc-700">
-          {row.original.employee.employeeCode}
+        <div className="px-1 py-2 text-center">
+          <div className="font-semibold text-zinc-900">
+            {row.original.employee.employeeCode}
+          </div>
+          {row.original.employee.designation && (
+            <div
+              className="truncate text-[11px] text-zinc-500 font-normal mt-0.5 max-w-[130px] mx-auto"
+              title={row.original.employee.designation}
+            >
+              {row.original.employee.designation}
+            </div>
+          )}
         </div>
       ),
-      size: 120,
+      size: 140,
     },
     {
       id: "department",
