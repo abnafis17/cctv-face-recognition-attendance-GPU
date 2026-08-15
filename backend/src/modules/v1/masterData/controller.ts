@@ -341,3 +341,204 @@ export async function deletePurposeOfVisit(req: Request, res: Response) {
     });
   }
 }
+
+// ==========================================
+// User Role Controllers
+// ==========================================
+
+export async function listUserRoles(req: Request, res: Response) {
+  try {
+    const companyId = getCompanyId(req);
+    if (!companyId) return res.status(400).json({ error: "Missing company ID" });
+
+    const query = masterDataListQuerySchema.parse(req.query);
+    const { page, limit, q } = query;
+    const skip = (page - 1) * limit;
+
+    const where: any = { companyId };
+    if (q) {
+      where.name = { contains: q, mode: "insensitive" };
+    }
+
+    let totalCount = await prisma.userRole.count({ where });
+
+    // Seed defaults if company has 0 roles and no search is active
+    if (totalCount === 0 && !q) {
+      const defaults = ["ADMIN", "GENERAL_USER", "OPERATOR"];
+      await prisma.userRole.createMany({
+        data: defaults.map((name) => ({ companyId, name })),
+        skipDuplicates: true,
+      });
+      totalCount = await prisma.userRole.count({ where });
+    }
+
+    const items = await prisma.userRole.findMany({
+      where,
+      orderBy: { name: "asc" },
+      skip,
+      take: limit,
+    });
+
+    const totalPages = Math.ceil(totalCount / limit);
+
+    return res.json({
+      items,
+      totalCount,
+      totalPages,
+      currentPage: page,
+      limit,
+    });
+  } catch (error: unknown) {
+    if (error instanceof ZodError) return respondValidationError(res, error);
+    return res.status(500).json({
+      error: "Failed to list user roles",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+export async function createUserRole(req: Request, res: Response) {
+  try {
+    const companyId = getCompanyId(req);
+    if (!companyId) return res.status(400).json({ error: "Missing company ID" });
+
+    const payload = masterDataCreateSchema.parse(req.body);
+    const roleName = String(payload.name).trim().toUpperCase();
+
+    const newItem = await prisma.userRole.create({
+      data: {
+        companyId,
+        name: roleName,
+      },
+    });
+
+    return res.status(201).json(newItem);
+  } catch (error: unknown) {
+    if (error instanceof ZodError) return respondValidationError(res, error);
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      if (error.code === "P2002") {
+        return res.status(409).json({
+          error: "User role with this name already exists.",
+        });
+      }
+    }
+    return res.status(500).json({
+      error: "Failed to create user role",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+export async function updateUserRole(req: Request, res: Response) {
+  try {
+    const companyId = getCompanyId(req);
+    if (!companyId) return res.status(400).json({ error: "Missing company ID" });
+
+    const { id } = req.params;
+    if (!id || typeof id !== "string") return res.status(400).json({ error: "Missing ID" });
+
+    const payload = masterDataUpdateSchema.parse(req.body);
+    const newName = String(payload.name).trim().toUpperCase();
+
+    const oldRole = await prisma.userRole.findFirst({
+      where: { id, companyId },
+    });
+
+    if (!oldRole) {
+      return res.status(404).json({ error: "User role not found." });
+    }
+
+    const oldName = oldRole.name;
+
+    const updatedItem = await prisma.$transaction(async (tx) => {
+      const updated = await tx.userRole.update({
+        where: { id },
+        data: { name: newName },
+      });
+
+      await tx.user.updateMany({
+        where: { companyId, role: oldName },
+        data: { role: newName },
+      });
+
+      await tx.permission.updateMany({
+        where: { companyId, role: oldName },
+        data: { role: newName },
+      });
+
+      return updated;
+    });
+
+    return res.json(updatedItem);
+  } catch (error: unknown) {
+    if (error instanceof ZodError) return respondValidationError(res, error);
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      if (error.code === "P2002") {
+        return res.status(409).json({
+          error: "User role with this name already exists.",
+        });
+      }
+      if (error.code === "P2025") {
+        return res.status(404).json({
+          error: "User role not found.",
+        });
+      }
+    }
+    return res.status(500).json({
+      error: "Failed to update user role",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+export async function deleteUserRole(req: Request, res: Response) {
+  try {
+    const companyId = getCompanyId(req);
+    if (!companyId) return res.status(400).json({ error: "Missing company ID" });
+
+    const { id } = req.params;
+    if (!id || typeof id !== "string") return res.status(400).json({ error: "Missing ID" });
+
+    const role = await prisma.userRole.findFirst({
+      where: { id, companyId },
+    });
+
+    if (!role) {
+      return res.status(404).json({ error: "User role not found." });
+    }
+
+    const usersCount = await prisma.user.count({
+      where: { companyId, role: role.name },
+    });
+
+    if (usersCount > 0) {
+      return res.status(400).json({
+        error: `Cannot delete role '${role.name}' because it is assigned to ${usersCount} user(s).`,
+      });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.userRole.delete({
+        where: { id },
+      });
+
+      await tx.permission.deleteMany({
+        where: { companyId, role: role.name },
+      });
+    });
+
+    return res.json({ ok: true });
+  } catch (error: unknown) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      if (error.code === "P2025") {
+        return res.status(404).json({
+          error: "User role not found.",
+        });
+      }
+    }
+    return res.status(500).json({
+      error: "Failed to delete user role",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+}

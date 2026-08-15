@@ -55,6 +55,47 @@ export async function register(req: Request, res: Response) {
 
 export async function getRoles(req: Request, res: Response) {
   try {
+    const auth = String(req.headers.authorization ?? "").trim();
+    let companyId: string | null = null;
+
+    if (auth.startsWith("Bearer ")) {
+      const token = auth.slice("Bearer ".length).trim();
+      if (token) {
+        try {
+          const payload = verifyAccessToken(token);
+          if (payload.companyId) {
+            companyId = payload.companyId;
+          }
+        } catch (e) {
+          // ignore token decode errors and fall back to public/global
+        }
+      }
+    }
+
+    if (companyId) {
+      let dbRoles = await prisma.userRole.findMany({
+        where: { companyId },
+        orderBy: { name: "asc" },
+      });
+
+      if (dbRoles.length === 0) {
+        const defaults = ["ADMIN", "GENERAL_USER", "OPERATOR"];
+        await prisma.userRole.createMany({
+          data: defaults.map((name) => ({ companyId: companyId!, name })),
+          skipDuplicates: true,
+        });
+        dbRoles = await prisma.userRole.findMany({
+          where: { companyId },
+          orderBy: { name: "asc" },
+        });
+      }
+
+      return res.status(200).json({
+        ok: true,
+        results: dbRoles.map((r) => r.name),
+      });
+    }
+
     const roles = await prisma.user.findMany({
       select: { role: true },
       distinct: ["role"],

@@ -8,6 +8,10 @@ import {
   createPurposeOfVisit,
   updatePurposeOfVisit,
   deletePurposeOfVisit,
+  listUserRoles,
+  createUserRole,
+  updateUserRole,
+  deleteUserRole,
 } from "./controller";
 
 const router = Router();
@@ -23,5 +27,11 @@ router.get("/purposes-of-visit", listPurposesOfVisit);
 router.post("/purposes-of-visit", createPurposeOfVisit);
 router.put("/purposes-of-visit/:id", updatePurposeOfVisit);
 router.delete("/purposes-of-visit/:id", deletePurposeOfVisit);
+
+// User Role routes
+router.get("/user-roles", listUserRoles);
+router.post("/user-roles", createUserRole);
+router.put("/user-roles/:id", updateUserRole);
+router.delete("/user-roles/:id", deleteUserRole);
 
 export default router;

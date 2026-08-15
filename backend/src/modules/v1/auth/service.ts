@@ -78,6 +78,13 @@ export async function registerUser(input: {
       }));
   }
 
+  // Seed default roles for the company
+  const defaults = ["ADMIN", "GENERAL_USER", "OPERATOR"];
+  await prisma.userRole.createMany({
+    data: defaults.map((name) => ({ companyId: company.id, name })),
+    skipDuplicates: true,
+  });
+
   const laptopCamId = `laptop-${company.id}`;
   await prisma.camera.upsert({
     where: {

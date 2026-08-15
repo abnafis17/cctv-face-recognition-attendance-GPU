@@ -52,6 +52,13 @@ export async function createUser(req: Request, res: Response) {
       return res.status(400).json({ ok: false, message: "Email and password are required" });
     }
 
+    const roleExists = await prisma.userRole.findFirst({
+      where: { companyId, name: roleTrim },
+    });
+    if (!roleExists) {
+      return res.status(400).json({ ok: false, message: `Role ${roleTrim} does not exist.` });
+    }
+
     const existing = await prisma.user.findUnique({
       where: { email: emailTrim },
     });
@@ -130,7 +137,15 @@ export async function updateUser(req: Request, res: Response) {
     const updateData: any = {};
     if (nameTrim !== undefined) updateData.name = nameTrim || null;
     if (emailTrim !== undefined) updateData.email = emailTrim;
-    if (roleTrim !== undefined) updateData.role = roleTrim;
+    if (roleTrim !== undefined) {
+      const roleExists = await prisma.userRole.findFirst({
+        where: { companyId, name: roleTrim },
+      });
+      if (!roleExists) {
+        return res.status(400).json({ ok: false, message: `Role ${roleTrim} does not exist.` });
+      }
+      updateData.role = roleTrim;
+    }
     if (passTrim) {
       updateData.passwordHash = await bcrypt.hash(passTrim, 12);
       updateData.password = passTrim;

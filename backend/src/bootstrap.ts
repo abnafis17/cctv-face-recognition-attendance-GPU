@@ -368,6 +368,36 @@ export async function bootstrap() {
         }
       }
     }
+
+    // Seed default roles for all existing companies
+    try {
+      const companies = await prisma.company.findMany({ select: { id: true } });
+      const defaults = ["ADMIN", "GENERAL_USER", "OPERATOR"];
+      let seededCount = 0;
+      for (const c of companies) {
+        for (const name of defaults) {
+          await prisma.userRole.upsert({
+            where: {
+              companyId_name: {
+                companyId: c.id,
+                name,
+              },
+            },
+            update: {},
+            create: {
+              companyId: c.id,
+              name,
+            },
+          });
+          seededCount++;
+        }
+      }
+      if (seededCount > 0) {
+        console.log(`✅ Seeded/ensured default roles for ${companies.length} companies.`);
+      }
+    } catch (err) {
+      console.error("Failed to seed default user roles:", err);
+    }
   } catch (err) {
     console.error("Failed to seed system modules:", err);
   }

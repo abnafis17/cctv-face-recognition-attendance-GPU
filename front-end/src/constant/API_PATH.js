@@ -19,4 +19,5 @@ export const API = {
   SETTINGS_ERP: "/settings/erp",
   MASTER_DATA_VISITOR_TYPES: "/master-data/visitor-types",
   MASTER_DATA_PURPOSES_OF_VISIT: "/master-data/purposes-of-visit",
+  MASTER_DATA_USER_ROLES: "/master-data/user-roles",
 };

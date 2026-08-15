@@ -152,15 +152,13 @@ export default function MasterDataTabSection({
       </div>
 
       {/* Table Section */}
-      <div className="overflow-x-auto rounded-xl border bg-white shadow-sm">
-        <div className="min-w-350">
-          <TanstackDataTable
-            data={items}
-            columns={columns}
-            loading={loading}
-            headerCellClassName="whitespace-nowrap bg-zinc-50"
-          />
-        </div>
+      <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
+        <TanstackDataTable
+          data={items}
+          columns={columns}
+          loading={loading}
+          headerCellClassName="whitespace-nowrap bg-zinc-50"
+        />
       </div>
 
       {/* Pagination Section */}
