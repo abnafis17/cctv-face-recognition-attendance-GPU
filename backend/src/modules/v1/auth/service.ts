@@ -80,6 +80,11 @@ export async function registerUser(input: {
 
   // Seed default roles for the company
   const defaults = ["ADMIN", "GENERAL_USER", "OPERATOR"];
+  const registerRoleName = String(input.role ?? "ADMIN").trim().toUpperCase();
+  if (registerRoleName && !defaults.includes(registerRoleName)) {
+    defaults.push(registerRoleName);
+  }
+
   await prisma.userRole.createMany({
     data: defaults.map((name) => ({ companyId: company.id, name })),
     skipDuplicates: true,
