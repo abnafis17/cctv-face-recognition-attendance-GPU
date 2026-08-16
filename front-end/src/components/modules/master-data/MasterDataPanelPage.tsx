@@ -9,7 +9,7 @@ export default function MasterDataPanelPage() {
     <Tabs defaultValue="visitor">
       <TabsList className="bg-zinc-100/80 p-1">
         <TabsTrigger value="visitor">Visitor Module</TabsTrigger>
-        <TabsTrigger value="user">User</TabsTrigger>
+        <TabsTrigger value="user">User Module</TabsTrigger>
       </TabsList>
 
       <TabsContent value="visitor" className="space-y-4">
