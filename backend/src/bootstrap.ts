@@ -342,6 +342,32 @@ export async function bootstrap() {
       }
     }
 
+    // Ensure Visitor action submodules exist (Delete)
+    const visitorsModule = await prisma.module.findFirst({
+      where: { route: "/visitors" }
+    });
+    if (visitorsModule) {
+      const actions = [
+        { name: "Delete", route: "/visitors/delete", sortOrder: 921 }
+      ];
+      for (const act of actions) {
+        const existing = await prisma.module.findFirst({
+          where: { route: act.route }
+        });
+        if (!existing) {
+          await prisma.module.create({
+            data: {
+              name: act.name,
+              route: act.route,
+              parentId: visitorsModule.id,
+              sortOrder: act.sortOrder
+            }
+          });
+          console.log(`✅ Seeded missing visitor action module: ${act.name}`);
+        }
+      }
+    }
+
     // Ensure Settings submodules exist (URLs, Users)
     const settingsModule = await prisma.module.findFirst({
       where: { name: "Settings", parentId: null }

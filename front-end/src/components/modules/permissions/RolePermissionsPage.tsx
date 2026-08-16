@@ -42,6 +42,7 @@ function getIconForRoute(route: string | null | undefined, label: string) {
 
 export default function RolePermissionsPage() {
   const [isEmployeesExpanded, setIsEmployeesExpanded] = useState(false);
+  const [isVisitorsExpanded, setIsVisitorsExpanded] = useState(false);
   const {
     roles,
     selectedRole,
@@ -127,7 +128,7 @@ export default function RolePermissionsPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
           {permissions
-            .filter((p) => !p.module.startsWith("/employees/"))
+            .filter((p) => !p.module.startsWith("/employees/") && p.module !== "/visitors/delete")
             .map((p) => {
               const dbModule = systemModules.find((sm) => sm.route === p.module);
               const meta = dbModule
@@ -180,6 +181,22 @@ export default function RolePermissionsPage() {
                         </button>
                       )}
 
+                      {/* Chevron expand button for Visitor List */}
+                      {p.module === "/visitors" && (
+                        <button
+                          type="button"
+                          onClick={() => setIsVisitorsExpanded(!isVisitorsExpanded)}
+                          title="Toggle actions permission list"
+                          className="p-1.5 rounded-lg hover:bg-slate-100 text-zinc-500 hover:text-zinc-800 transition cursor-pointer"
+                        >
+                          {isVisitorsExpanded ? (
+                            <ChevronUp className="w-4 h-4" />
+                          ) : (
+                            <ChevronDown className="w-4 h-4" />
+                          )}
+                        </button>
+                      )}
+
                       {/* Switch Toggle */}
                       <label className="relative inline-flex items-center cursor-pointer select-none">
                         <input
@@ -210,6 +227,41 @@ export default function RolePermissionsPage() {
                               : sub.module === "/employees/delete"
                               ? "Delete"
                               : sub.module.replace("/employees/", "");
+                            return (
+                              <div
+                                key={sub.module}
+                                className="flex items-center justify-between p-2.5 bg-slate-50/50 hover:bg-slate-50 border border-zinc-100 rounded-lg transition-all duration-200"
+                              >
+                                <span className="text-xs font-semibold text-zinc-700">
+                                  {subName} Action
+                                </span>
+                                <label className="relative inline-flex items-center cursor-pointer select-none">
+                                  <input
+                                    type="checkbox"
+                                    checked={sub.allowed}
+                                    onChange={() => handleToggle(sub.module)}
+                                    className="sr-only peer"
+                                  />
+                                  <div className="w-8 h-5 bg-zinc-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#0c1b33]"></div>
+                                </label>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Collapsible Action Toggles under Visitor List */}
+                  {p.module === "/visitors" && isVisitorsExpanded && (
+                    <div className="mt-4 pt-4 border-t border-zinc-100 space-y-3">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block mb-1">
+                        Visitor Grid Action Permissions
+                      </span>
+                      <div className="grid grid-cols-1 gap-2">
+                        {permissions
+                          .filter((sub) => sub.module === "/visitors/delete")
+                          .map((sub) => {
+                            const subName = "Delete";
                             return (
                               <div
                                 key={sub.module}

@@ -103,7 +103,8 @@ export function getVisitorColumns(
   onCheckout: (id: string) => void,
   onDelete: (id: string) => void,
   checkingOutIds: Set<string>,
-  deletingIds?: Set<string>
+  deletingIds?: Set<string>,
+  permissions?: Record<string, boolean>
 ): ColumnDef<VisitorRecord>[] {
   return [
     {
@@ -373,6 +374,16 @@ export function getVisitorColumns(
       cell: ({ row }) => {
         const isCheckingOut = checkingOutIds.has(row.original.id) || (deletingIds && deletingIds.has(row.original.id));
         const isCheckedIn = row.original.status !== "checked_out";
+        const showDelete = permissions ? permissions["/visitors/delete"] !== false : true;
+
+        if (!isCheckedIn && !showDelete) {
+          return renderCell(
+            !!isCheckingOut,
+            <div className="px-1 py-2 text-center text-xs text-zinc-400 font-semibold">N/A</div>,
+            "w-28 h-8 mx-auto rounded-lg"
+          );
+        }
+
         return renderCell(
           !!isCheckingOut,
           <div className="flex items-center justify-center gap-1.5 px-1 py-1">
@@ -385,13 +396,15 @@ export function getVisitorColumns(
                 Checkout
               </button>
             )}
-            <button
-              onClick={() => onDelete(row.original.id)}
-              title="Delete visitor & face template"
-              className="flex items-center gap-1 rounded-lg border border-rose-200 bg-white px-2 py-1 text-xs font-medium text-rose-600 transition-all hover:bg-rose-50 hover:border-rose-300 active:scale-95 cursor-pointer shadow-sm"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
+            {showDelete && (
+              <button
+                onClick={() => onDelete(row.original.id)}
+                title="Delete visitor & face template"
+                className="flex items-center gap-1 rounded-lg border border-rose-200 bg-white px-2 py-1 text-xs font-medium text-rose-600 transition-all hover:bg-rose-50 hover:border-rose-300 active:scale-95 cursor-pointer shadow-sm"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>,
           "w-28 h-8 mx-auto rounded-lg"
         );

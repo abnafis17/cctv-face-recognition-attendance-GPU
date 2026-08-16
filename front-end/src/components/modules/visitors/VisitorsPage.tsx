@@ -29,6 +29,19 @@ export default function VisitorsPage() {
   const [loading, setLoading] = useState(false);
   const [checkingOutIds, setCheckingOutIds] = useState<Set<string>>(new Set());
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
+  const [permissions, setPermissions] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("userInfo");
+      const userInfo = raw ? JSON.parse(raw) : null;
+      if (userInfo?.permissions) {
+        setPermissions(userInfo.permissions);
+      }
+    } catch (err) {
+      console.error("Failed to load permissions in VisitorsPage:", err);
+    }
+  }, []);
 
   // Filters State
   const [searchQuery, setSearchQuery] = useState("");
@@ -175,9 +188,10 @@ export default function VisitorsPage() {
       handleCheckout,
       handleDeleteVisitor,
       checkingOutIds,
-      deletingIds
+      deletingIds,
+      permissions
     );
-  }, [currentPage, pageLimit, handleCheckout, handleDeleteVisitor, checkingOutIds, deletingIds]);
+  }, [currentPage, pageLimit, handleCheckout, handleDeleteVisitor, checkingOutIds, deletingIds, permissions]);
 
   return (
     <div className="w-full pb-10 space-y-6">
