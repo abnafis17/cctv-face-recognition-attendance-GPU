@@ -19,6 +19,7 @@ export async function getUsers(req: Request, res: Response) {
         role: true,
         isActive: true,
         companyId: true,
+        profilePicture: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -85,6 +86,7 @@ export async function createUser(req: Request, res: Response) {
         role: true,
         isActive: true,
         companyId: true,
+        profilePicture: true,
         createdAt: true,
       },
     });
@@ -115,7 +117,7 @@ export async function updateUser(req: Request, res: Response) {
       return res.status(404).json({ ok: false, message: "User not found under this company" });
     }
 
-    const { name, email, password, role } = req.body || {};
+    const { name, email, password, role, profilePicture } = req.body || {};
     const emailTrim = email !== undefined ? String(email ?? "").trim().toLowerCase() : undefined;
     const nameTrim = name !== undefined ? String(name ?? "").trim() : undefined;
     const passTrim = password !== undefined ? String(password ?? "").trim() : undefined;
@@ -137,6 +139,7 @@ export async function updateUser(req: Request, res: Response) {
     const updateData: any = {};
     if (nameTrim !== undefined) updateData.name = nameTrim || null;
     if (emailTrim !== undefined) updateData.email = emailTrim;
+    if (profilePicture !== undefined) updateData.profilePicture = profilePicture;
     if (roleTrim !== undefined) {
       const roleExists = await prisma.userRole.findFirst({
         where: { companyId, name: roleTrim },
@@ -162,6 +165,7 @@ export async function updateUser(req: Request, res: Response) {
         role: true,
         isActive: true,
         companyId: true,
+        profilePicture: true,
         updatedAt: true,
       },
     });

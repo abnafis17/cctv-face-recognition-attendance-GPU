@@ -298,6 +298,7 @@ export async function getMe(req: Request, res: Response) {
         companyName: user?.company?.companyName ?? null,
         organizationId: user?.company?.organization_id ?? null,
         oragnizationId: user?.company?.organization_id ?? null,
+        profilePicture: user.profilePicture ?? null,
         permissions: permissionsMap,
       },
     });

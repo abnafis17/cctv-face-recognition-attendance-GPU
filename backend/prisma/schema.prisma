@@ -43,13 +43,14 @@ model Company {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  name         String?
-  email        String   @unique
-  passwordHash String
-  password     String?
-  role         String   @default("ADMIN")
-  isActive     Boolean  @default(true)
+  id             String   @id @default(cuid())
+  name           String?
+  email          String   @unique
+  passwordHash   String
+  password       String?
+  role           String   @default("ADMIN")
+  isActive       Boolean  @default(true)
+  profilePicture String?
 
   companyId String?
   company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)

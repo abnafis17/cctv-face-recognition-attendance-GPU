@@ -500,6 +500,12 @@ export default function Sidebar() {
   }, [pathname]);
 
   useEffect(() => {
+    const handleToggle = () => setMobileOpen((prev) => !prev);
+    window.addEventListener("toggleSidebar", handleToggle);
+    return () => window.removeEventListener("toggleSidebar", handleToggle);
+  }, []);
+
+  useEffect(() => {
     if (!mobileOpen) return;
 
     const previousOverflow = document.body.style.overflow;
@@ -527,38 +533,6 @@ export default function Sidebar() {
 
   return (
     <>
-      <header className="fixed inset-x-0 top-0 z-40 border-b border-zinc-100 bg-white/90 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] backdrop-blur md:hidden">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-violet-600 to-indigo-500 text-white shadow-md shadow-violet-500/20">
-              <Video className="h-4 w-4" />
-            </div>
-            <div className="min-w-0">
-              <div className="truncate text-sm font-bold text-zinc-900 tracking-tight">
-                Cripton Vision
-              </div>
-              <div className="truncate text-[9.5px] font-bold uppercase tracking-wider text-violet-600 mt-0.5">
-                AI Attendance
-              </div>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            aria-label={mobileOpen ? "Close sidebar" : "Open sidebar"}
-            aria-expanded={mobileOpen}
-            aria-controls="mobile-sidebar"
-            onClick={() => setMobileOpen((prev) => !prev)}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-zinc-200 bg-white text-zinc-700 shadow-sm transition hover:bg-zinc-100 active:scale-[0.98]"
-          >
-            {mobileOpen ? (
-              <X className="h-5 w-5" />
-            ) : (
-              <Menu className="h-5 w-5" />
-            )}
-          </button>
-        </div>
-      </header>
 
       <div
         className={cn(
