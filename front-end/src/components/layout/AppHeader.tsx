@@ -264,8 +264,16 @@ export default function AppHeader() {
       >
         <form onSubmit={handleSubmit} className="space-y-5 pt-1">
           {/* Profile Picture Upload Section */}
-          <div className="flex flex-col sm:flex-row items-center gap-5 pb-2 border-b border-zinc-100">
-            <div className="relative h-20 w-20 rounded-full border-2 border-zinc-200 bg-zinc-50 flex items-center justify-center overflow-hidden shadow-sm group">
+          <div className="flex items-center gap-5 p-4 bg-slate-50/50 border border-zinc-200/60 rounded-2xl mb-2">
+            {/* Clickable/Hoverable Avatar Circle */}
+            <label className="relative h-20 w-20 shrink-0 rounded-full border border-zinc-200 bg-zinc-50 shadow-inner flex items-center justify-center overflow-hidden cursor-pointer group ring-4 ring-slate-100 transition duration-250 select-none">
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleFileChange}
+                className="hidden"
+              />
+              
               {formProfilePicture ? (
                 <img
                   src={formProfilePicture}
@@ -277,14 +285,29 @@ export default function AppHeader() {
                   {getInitials(formName || formEmail)}
                 </div>
               )}
-            </div>
 
-            <div className="flex flex-col gap-2 w-full sm:w-auto">
-              <span className="text-xs font-bold text-zinc-500 uppercase tracking-wider text-center sm:text-left">
-                Profile Photo
-              </span>
-              <div className="flex flex-wrap gap-2 items-center justify-center sm:justify-start">
-                <label className="h-9 px-4 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition shadow-xs">
+              {/* Hover Edit Overlay */}
+              <div className="absolute inset-0 bg-zinc-900/60 flex flex-col items-center justify-center gap-1 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                <Camera className="w-4 h-4 text-white/90" />
+                <span className="text-[8px] font-extrabold uppercase tracking-wider text-white/90">
+                  Change
+                </span>
+              </div>
+            </label>
+
+            {/* Info and Actions */}
+            <div className="flex flex-col gap-1.5 min-w-0">
+              <div>
+                <h3 className="text-sm font-bold text-zinc-800 truncate leading-tight">
+                  {formName || "User Account"}
+                </h3>
+                <p className="text-xs text-zinc-500 truncate leading-tight mt-0.5">
+                  {formEmail || "email@example.com"}
+                </p>
+              </div>
+
+              <div className="flex flex-wrap gap-2 items-center mt-1">
+                <label className="h-8 px-3 rounded-lg bg-zinc-900 hover:bg-zinc-850 text-white text-[11px] font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition shadow-xs">
                   <Camera className="w-3.5 h-3.5" />
                   Upload Photo
                   <input
@@ -294,18 +317,20 @@ export default function AppHeader() {
                     className="hidden"
                   />
                 </label>
+                
                 {formProfilePicture && (
                   <button
                     type="button"
                     onClick={handleRemovePicture}
-                    className="h-9 px-3 rounded-lg border border-zinc-200 hover:bg-zinc-50 text-zinc-600 hover:text-rose-600 text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition"
+                    className="h-8 px-3 rounded-lg bg-rose-50 hover:bg-rose-100 border border-rose-100/60 text-rose-600 text-[11px] font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                     Remove
                   </button>
                 )}
               </div>
-              <p className="text-[10px] text-zinc-400 text-center sm:text-left">
+              
+              <p className="text-[10px] text-zinc-400 leading-normal">
                 JPG or PNG. Max size 2MB.
               </p>
             </div>
