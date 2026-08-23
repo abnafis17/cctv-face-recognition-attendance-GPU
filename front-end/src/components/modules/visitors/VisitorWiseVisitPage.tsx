@@ -143,13 +143,13 @@ export default function VisitorWiseVisitPage() {
     setActiveSearch("");
   };
 
-  const toggleVisitor = (contactNumber: string) => {
+  const toggleVisitor = (key: string) => {
     setExpandedVisitors((prev) => {
       const next = new Set(prev);
-      if (next.has(contactNumber)) {
-        next.delete(contactNumber);
+      if (next.has(key)) {
+        next.delete(key);
       } else {
-        next.add(contactNumber);
+        next.add(key);
       }
       return next;
     });
@@ -164,7 +164,7 @@ export default function VisitorWiseVisitPage() {
 
     for (const item of reportData) {
       totalVisits += item.totalVisits;
-      uniqueVisitorSet.add(item.contactNumber);
+      uniqueVisitorSet.add(`${item.contactNumber}_${item.visitorName}`);
       if (item.totalVisits > topVisitorVisits) {
         topVisitorVisits = item.totalVisits;
         topVisitorName = item.visitorName;
@@ -339,7 +339,8 @@ export default function VisitorWiseVisitPage() {
           </div>
         ) : (
           reportData.map((visitor, index) => {
-            const isExpanded = expandedVisitors.has(visitor.contactNumber);
+            const visitorKey = `${visitor.contactNumber}_${visitor.visitorName}`;
+            const isExpanded = expandedVisitors.has(visitorKey);
             
             // Extract unique purposes for badges
             const purposeBadges = Array.from(
@@ -348,12 +349,12 @@ export default function VisitorWiseVisitPage() {
 
             return (
               <div
-                key={visitor.contactNumber}
+                key={visitorKey}
                 className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm transition-all duration-200"
               >
                 {/* Row Header */}
                 <div
-                  onClick={() => toggleVisitor(visitor.contactNumber)}
+                  onClick={() => toggleVisitor(visitorKey)}
                   className={`flex flex-col sm:flex-row sm:items-center sm:justify-between p-4 cursor-pointer select-none transition-colors ${
                     isExpanded
                       ? "bg-[#0c1b33] text-white hover:bg-[#0c1b33]/95"
