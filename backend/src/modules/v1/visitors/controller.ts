@@ -184,21 +184,27 @@ export async function createVisitorRecord(req: Request, res: Response) {
     }
 
     if (finalEmbedding && finalEmbedding.length > 0) {
-      // Check if a face template already exists for a visitor with this contact number
+      // Check if a face template already exists for a visitor with this contact number and name
       const existingTemplate = await prisma.visitorFaceTemplate.findFirst({
         where: {
           companyId,
           visitor: {
             contactNumber: payload.contactNumber,
+            visitorName: {
+              equals: payload.visitorName,
+              mode: "insensitive",
+            },
           },
         },
       });
 
       if (existingTemplate) {
         // Update existing face template with the new high-quality photo & embedding
+        // and link it to the latest visitor record ID
         await prisma.visitorFaceTemplate.update({
           where: { id: existingTemplate.id },
           data: {
+            visitorId: visitor.id,
             embedding: finalEmbedding,
             photoUrl: visitorPhoto ?? existingTemplate.photoUrl,
             updatedAt: new Date(),
@@ -216,10 +222,17 @@ export async function createVisitorRecord(req: Request, res: Response) {
         });
       }
 
-      // Update all past visitor records for this phone number with the latest high-quality photo
+      // Update all past visitor records for this phone number and name with the latest high-quality photo
       if (visitorPhoto) {
         await prisma.visitor.updateMany({
-          where: { companyId, contactNumber: payload.contactNumber },
+          where: {
+            companyId,
+            contactNumber: payload.contactNumber,
+            visitorName: {
+              equals: payload.visitorName,
+              mode: "insensitive",
+            },
+          },
           data: { visitorPhoto },
         });
       }
