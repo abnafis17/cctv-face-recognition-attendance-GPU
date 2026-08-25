@@ -48,19 +48,10 @@ class AttendanceDebouncer:
         now: Optional[float] = None,
     ) -> None:
         """
-        Extend an active cooldown while the same person is still visible.
-        This ensures re-marking only happens after they have been out of camera long enough.
+        No-op. Cooldown is anchored strictly to enqueued mark timestamp
+        so continuous visibility does not extend the debounce endlessly.
         """
-        now = time.time() if now is None else float(now)
-        key = self._key(company_id=company_id, employee_id=employee_id)
-        last = float(self._last_marked.get(key, 0.0))
-        if last <= 0.0:
-            return
-        cooldown = float(self.cfg.attendance_debounce_seconds)
-        if cooldown <= 0.0:
-            return
-        if (now - last) < cooldown:
-            self._last_marked[key] = now
+        pass
 
     def consider(
         self,
@@ -115,10 +106,7 @@ class AttendanceDebouncer:
         key = self._key(company_id=company_id, employee_id=str(track.person_id))
         last = float(self._last_marked.get(key, 0.0))
         if (now - last) < float(self.cfg.attendance_debounce_seconds):
-            # Sliding debounce window: if we keep recognizing the same employee, keep extending the
-            # next allowed mark time. This prevents repeated marks while they remain in view.
-            self._last_marked[key] = now
-            return DebounceResult(None, "debounce_extend")
+            return DebounceResult(None, "debounce_cooldown")
 
         # Fast path: if we already have enough stable recognitions, mark immediately.
         # This removes extra waiting after the person is clearly recognized, while

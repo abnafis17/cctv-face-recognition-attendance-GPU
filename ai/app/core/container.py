@@ -144,10 +144,10 @@ def build_container() -> ServiceContainer:
     camera_rt = CameraRuntime()
 
     attendance_rt = AttendanceRuntime(
-        use_gpu=False,
+        use_gpu=True,
         similarity_threshold=0.35,
-        cooldown_s=60,
-        stable_hits_required=3,
+        cooldown_s=10,
+        stable_hits_required=2,
     )
 
     rec_worker = RecognitionWorker(camera_rt=camera_rt, attendance_rt=attendance_rt)

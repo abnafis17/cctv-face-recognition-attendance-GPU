@@ -192,6 +192,21 @@ class Config:
             0, _env_int("TRACK_MAX_DET_MISSES_KNOWN", cfg.track_max_det_misses_known)
         )
 
+        # Identity hold hysteresis
+        cfg.identity_hold_seconds = _env_float(
+            "IDENTITY_HOLD_SECONDS", cfg.identity_hold_seconds
+        )
+        cfg.identity_hold_min_iou = _env_float(
+            "IDENTITY_HOLD_MIN_IOU", cfg.identity_hold_min_iou
+        )
+        cfg.identity_hold_max_det_misses = max(
+            0, _env_int("IDENTITY_HOLD_MAX_DET_MISSES", cfg.identity_hold_max_det_misses)
+        )
+        cfg.identity_hold_max_center_shift_ratio = _env_float(
+            "IDENTITY_HOLD_MAX_CENTER_SHIFT_RATIO",
+            cfg.identity_hold_max_center_shift_ratio,
+        )
+
         # Logging / verification
         cfg.log_interval_seconds = _env_float("PIPELINE_LOG_INTERVAL_S", cfg.log_interval_seconds)
         cfg.verification_samples = max(1, _env_int("VERIFICATION_SAMPLES", cfg.verification_samples))
