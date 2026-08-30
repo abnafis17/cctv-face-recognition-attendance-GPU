@@ -111,7 +111,7 @@ class AttendanceRuntime:
         min_face_size: int = 20,
         similarity_threshold: float = 0.35,
         gallery_refresh_s: float = 5.0,
-        cooldown_s: int = 10,
+        cooldown_s: int = 30,
         stable_hits_required: int = 3,
     ):
         self._default_company_id = os.getenv("BACKEND_COMPANY_ID", "").strip() or None
@@ -140,12 +140,10 @@ class AttendanceRuntime:
         self._detector = FaceDetector(
             model_name=model_name,
             use_gpu=use_gpu,
-            # Slightly larger detector input improves small/far-face recall.
-            # If AI_DET_SIZE is set, FaceDetector will still honor the env override.
-            det_size=(768, 768),
-            min_face_size=min_face_size,
-            # Slightly lower score gate helps keep weak/far detections.
-            min_det_score=0.30,
+            # High-resolution GPU detector input for maximum small/far-face recall.
+            det_size=(1024, 1024),
+            min_face_size=14,
+            min_det_score=0.20,
         )
         self._embedder = FaceEmbedder(model_name=model_name, use_gpu=use_gpu)
 

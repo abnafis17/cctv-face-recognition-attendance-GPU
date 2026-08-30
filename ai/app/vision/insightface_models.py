@@ -94,7 +94,7 @@ class FaceDetector:
         det_n = _env_int("AI_DET_SIZE", det_size[0])
         det_size = (det_n, det_n)
 
-        self.min_face_size = int(min_face_size)
+        self.min_face_size = _env_int("RECOGNITION_MIN_FACE_PX", _env_int("MIN_FACE_SIZE", min_face_size))
         self.min_det_score = _clamp(_env_float("MIN_FACE_DET_SCORE", min_det_score), 0.0, 1.0)
 
         normalize_model_pack_layout(model_name)
@@ -105,7 +105,7 @@ class FaceDetector:
         self.app.prepare(ctx_id=ctx_id, det_size=det_size)
 
         print(
-            f"[FaceDetector] USE_GPU={int(use_gpu)} ORT_PROVIDER={_env_str('ORT_PROVIDER','auto')} providers={providers} ctx_id={ctx_id} det_size={det_size}"
+            f"[FaceDetector] USE_GPU={int(use_gpu)} ORT_PROVIDER={_env_str('ORT_PROVIDER','auto')} providers={providers} ctx_id={ctx_id} det_size={det_size} min_face_size={self.min_face_size}"
         )
 
     def detect(self, frame_bgr: np.ndarray) -> List[FaceDetection]:
@@ -162,6 +162,35 @@ class FaceEmbedder:
         )
 
     @staticmethod
+    def enhance_low_light_shadow(crop: np.ndarray) -> np.ndarray:
+        """
+        Adaptive CLAHE + LAB contrast normalization for low light and overhead shadows.
+        Enhances eye sockets, nose contours, and facial features under harsh ceiling lights or dark areas.
+        """
+        if crop is None or crop.size == 0:
+            return crop
+
+        try:
+            lab = cv2.cvtColor(crop, cv2.COLOR_BGR2LAB)
+            l_channel, a_channel, b_channel = cv2.split(lab)
+
+            mean_luma = float(np.mean(l_channel))
+            std_luma = float(np.std(l_channel))
+
+            # Apply CLAHE if face crop is dark (< 125 mean luma) or has harsh shadow contrast (std > 28)
+            if mean_luma < 125.0 or std_luma > 28.0:
+                clip = _env_float("LOW_LIGHT_CLAHE_CLIP_LIMIT", 2.5)
+                grid_n = _env_int("LOW_LIGHT_CLAHE_TILE_GRID", 4)
+                clahe = cv2.createCLAHE(clipLimit=clip, tileGridSize=(grid_n, grid_n))
+                cl = clahe.apply(l_channel)
+                enhanced_lab = cv2.merge((cl, a_channel, b_channel))
+                return cv2.cvtColor(enhanced_lab, cv2.COLOR_LAB2BGR)
+        except Exception:
+            pass
+
+        return crop
+
+    @staticmethod
     def _crop_bbox(frame_bgr: np.ndarray, bbox: Tuple[int, int, int, int]) -> Optional[np.ndarray]:
         h, w = frame_bgr.shape[:2]
         x1, y1, x2, y2 = bbox
@@ -180,11 +209,14 @@ class FaceEmbedder:
         bbox: Tuple[int, int, int, int],
         kps: Optional[np.ndarray] = None,
     ) -> Optional[np.ndarray]:
+        enhance_enabled = _env_bool("LOW_LIGHT_ENHANCE_ENABLED", True)
         try:
             if kps is not None:
                 kps = np.asarray(kps, dtype=np.float32)
                 if kps.ndim == 2 and kps.shape[1] == 2 and kps.shape[0] >= 3:
                     aimg = face_align.norm_crop(frame_bgr, landmark=kps, image_size=112)
+                    if enhance_enabled:
+                        aimg = self.enhance_low_light_shadow(aimg)
                     with self._lock:
                         emb = self.model.get_feat(aimg).flatten().astype(np.float32)
                     return l2_normalize(emb)
@@ -196,6 +228,8 @@ class FaceEmbedder:
         if crop is None:
             return None
         crop = cv2.resize(crop, (112, 112), interpolation=cv2.INTER_LINEAR)
+        if enhance_enabled:
+            crop = self.enhance_low_light_shadow(crop)
         with self._lock:
             emb = self.model.get_feat(crop).flatten().astype(np.float32)
         return l2_normalize(emb)

@@ -146,7 +146,7 @@ def build_container() -> ServiceContainer:
     attendance_rt = AttendanceRuntime(
         use_gpu=True,
         similarity_threshold=0.35,
-        cooldown_s=10,
+        cooldown_s=30,
         stable_hits_required=2,
     )
 

@@ -113,14 +113,21 @@ def check_erp_success(response: Any) -> tuple[bool, str]:
         return False, "No response"
 
     if isinstance(response, dict):
-        # 1. Check for status string
+        # 1. Check for status string or int
         for key in ["status", "Status", "STATUS"]:
             if key in response:
-                val = str(response[key]).strip()
-                if val.lower() == "success":
-                    return True, "SUCCESS"
-                else:
-                    return False, val
+                val = response[key]
+                if isinstance(val, (int, float)):
+                    if int(val) in (200, 201, 0):
+                        return True, "SUCCESS"
+                    else:
+                        return False, str(val)
+                elif isinstance(val, str):
+                    s_val = val.strip().lower()
+                    if s_val in ("success", "200", "201", "0", "ok", "true"):
+                        return True, "SUCCESS"
+                    else:
+                        return False, val
 
         # 2. Check for boolean success fields
         for key in ["success", "isSuccess", "ok", "Ok", "Success", "is_success"]:
@@ -133,7 +140,7 @@ def check_erp_success(response: Any) -> tuple[bool, str]:
                         msg = response.get("message") or response.get("msg") or response.get("error") or "False"
                         return False, str(msg)
                 elif isinstance(val, str):
-                    if val.lower() in ("true", "1", "success", "ok"):
+                    if val.lower() in ("true", "1", "success", "ok", "200", "201"):
                         return True, "SUCCESS"
                     else:
                         msg = response.get("message") or response.get("msg") or response.get("error") or val
@@ -143,7 +150,7 @@ def check_erp_success(response: Any) -> tuple[bool, str]:
 
     elif isinstance(response, str):
         val = response.strip()
-        if val.lower() == "success":
+        if val.lower() in ("success", "200", "201", "ok", "true"):
             return True, "SUCCESS"
         return False, val
 

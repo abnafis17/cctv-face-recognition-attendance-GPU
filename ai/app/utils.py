@@ -46,9 +46,10 @@ def quality_score(face_bbox, frame_bgr) -> float:
 
     gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
     fm = cv2.Laplacian(gray, cv2.CV_64F).var()
-    blur_score = min(1.0, fm / 300.0)  # rough scaling
+    blur_score = min(1.0, fm / 120.0)  # relaxed scaling for small crops
 
-    score = 100.0 * (0.65 * blur_score + 0.35 * size_ratio)
+    # Focus primarily on sharpness so small far-away faces pass quality checks
+    score = 100.0 * (0.85 * blur_score + 0.15 * size_ratio)
     return float(max(0.0, min(100.0, score)))
 
 

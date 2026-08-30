@@ -4,7 +4,6 @@ import React from "react";
 import { Printer, FileText } from "lucide-react";
 import ReusableModal from "@/components/reusable/ReusableModal";
 import type { GatepassRecord } from "@/types/gatepass-types";
-import PakizaLogo from "@/assets/images/Pakiza_Apparels.png";
 import axiosInstance from "@/config/axiosInstance";
 
 interface GatepassReportModalProps {
@@ -142,7 +141,7 @@ export default function GatepassReportModal({
 
   if (!record) return null;
 
-  const logoSrc = erpDetails?.logoPath || PakizaLogo.src;
+  const logoSrc = erpDetails?.logoPath || "";
 
   const handlePrint = () => {
     const printContent = document.getElementById("gatepass-report-print-area");
@@ -476,7 +475,7 @@ export default function GatepassReportModal({
               <div className="w-44 flex items-center justify-start select-none">
                 <img
                   src={logoSrc}
-                  alt="Pakiza Logo"
+                  alt="Logo"
                   className="h-12 w-auto object-contain"
                 />
               </div>

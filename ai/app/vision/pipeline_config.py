@@ -55,10 +55,10 @@ class Config:
     similarity_threshold: float = 0.35
     borderline_margin: float = 0.05
     # Require top1 to be meaningfully higher than the best different-person match.
-    distinct_sim_margin: float = 0.05
+    distinct_sim_margin: float = 0.02
 
     # --- Attendance gating ---
-    attendance_debounce_seconds: float = 10.0
+    attendance_debounce_seconds: float = 30.0
     stable_id_confirmations: int = 3
     attendance_fast_mode: bool = False
 
@@ -84,6 +84,7 @@ class Config:
     identity_hold_min_iou: float = 0.05
     identity_hold_max_det_misses: int = 1
     identity_hold_max_center_shift_ratio: float = 0.35
+    known_identity_latch_min_hits: int = 2
 
     # --- Attendance safety ---
     attendance_max_embed_age_seconds: float = 0.9
@@ -205,6 +206,9 @@ class Config:
         cfg.identity_hold_max_center_shift_ratio = _env_float(
             "IDENTITY_HOLD_MAX_CENTER_SHIFT_RATIO",
             cfg.identity_hold_max_center_shift_ratio,
+        )
+        cfg.known_identity_latch_min_hits = max(
+            1, _env_int("KNOWN_IDENTITY_LATCH_MIN_HITS", cfg.known_identity_latch_min_hits)
         )
 
         # Logging / verification

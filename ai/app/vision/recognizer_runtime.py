@@ -184,8 +184,6 @@ class Recognizer:
                 borderlines += 1
 
             if new_id is None or score < accept_thr:
-                # If we had a confident identity very recently, keep it briefly even if the
-                # current embedding is low-confidence (motion blur / partial face).
                 if tr.person_id is not None and hold_ok:
                     tr.similarity = score
                     tr.force_recognition_until_ts = max(tr.force_recognition_until_ts, now + 0.45)

@@ -60,7 +60,7 @@ class Enroll2AutoConfig:
     # ---------- pose behavior ----------
     # FRONT acceptance window (comfortable "quite front")
     front_accept_yaw_deg: float = 24.0
-    front_accept_pitch_deg: float = 20.0
+    front_accept_pitch_deg: float = 24.0
 
     # After the first front capture, treat "front" as a smaller dead-zone around baseline
     # so moderate turns are recognized and captured quickly.
@@ -73,7 +73,7 @@ class Enroll2AutoConfig:
     delta_yaw_right_deg: float = 15.0
     # Up/down is intentionally looser to require less tilt.
     delta_pitch_up_deg: float = 11.0
-    delta_pitch_down_deg: float = 11.0
+    delta_pitch_down_deg: float = 9.0
 
     # tolerance around target delta
     delta_tolerance_deg: float = 13.0

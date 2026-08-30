@@ -30,7 +30,7 @@ enrollment:
   min_quality_score: 5
   allow_manual_override: true
 attendance:
-  cooldown_seconds: 60
+  cooldown_seconds: 30
   stable_hits_required: 3
   save_snapshots: true
   snapshot_dir: data/snapshots
