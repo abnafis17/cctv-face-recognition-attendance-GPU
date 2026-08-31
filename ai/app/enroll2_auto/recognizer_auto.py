@@ -167,7 +167,11 @@ class FaceRecognizerAuto:
         providers = _pick_providers(use_gpu)
         ctx_id = 0 if use_gpu else -1
 
-        self.app = FaceAnalysis(name=model_name, providers=providers)
+        self.app = FaceAnalysis(
+            name=model_name,
+            providers=providers,
+            allowed_modules=["detection", "recognition"],
+        )
         self.app.prepare(ctx_id=ctx_id, det_size=det_size)
 
         print(

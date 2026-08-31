@@ -141,7 +141,7 @@ class AttendanceRuntime:
             model_name=model_name,
             use_gpu=use_gpu,
             # High-resolution GPU detector input for maximum small/far-face recall.
-            det_size=(1024, 1024),
+            det_size=(640, 640),
             min_face_size=14,
             min_det_score=0.20,
         )

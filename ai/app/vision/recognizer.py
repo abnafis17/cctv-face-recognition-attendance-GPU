@@ -94,7 +94,11 @@ class FaceRecognizer:
         # ctx_id is used by InsightFace; keep consistent
         ctx_id = 0 if use_gpu else -1
 
-        self.app = FaceAnalysis(name=model_name, providers=providers)
+        self.app = FaceAnalysis(
+            name=model_name,
+            providers=providers,
+            allowed_modules=["detection", "recognition"],
+        )
         self.app.prepare(ctx_id=ctx_id, det_size=det_size)
 
         print(f"[FaceRecognizer] USE_GPU={int(use_gpu)} ORT_PROVIDER={_env_str('ORT_PROVIDER','auto')} providers={providers} ctx_id={ctx_id} det_size={det_size}")
