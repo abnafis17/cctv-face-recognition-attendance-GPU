@@ -1,0 +1,19 @@
+[Unit]
+Description=CCTV Auto Attendance AI Full-Stack Production Service
+After=network.target
+
+[Service]
+Type=simple
+User=psl
+WorkingDirectory=/home/psl/PSL_Projects/camera-auto-attendance-ai
+ExecStart=/home/psl/PSL_Projects/camera-auto-attendance-ai/ai/venv/bin/python /home/psl/PSL_Projects/camera-auto-attendance-ai/start_all.py
+Restart=always
+RestartSec=5
+KillMode=mixed
+TimeoutStopSec=10
+
+# Memory limits for NVIDIA Jetson Orin Nano (optional safeguard)
+MemoryMax=6G
+
+[Install]
+WantedBy=multi-user.target

@@ -37,6 +37,9 @@ const aiUrl = parseUrl(process.env.NEXT_PUBLIC_AI_URL);
 const backendUrl = parseUrl(process.env.NEXT_PUBLIC_BACKEND_URL);
 
 const nextConfig: NextConfig = {
+  compress: true,
+  poweredByHeader: false,
+  reactStrictMode: true,
   // hostnames only (no http://, no ports)
   // Needed when you open the dev UI from another device (LAN).
   allowedDevOrigins: uniqueStrings([

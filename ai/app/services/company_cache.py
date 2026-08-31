@@ -69,13 +69,14 @@ class CompanyEmbeddingCache:
         return v
 
     def ensure_gallery(self, company_id: Optional[str]) -> None:
-        key = self.gallery_key(company_id)
+        cid = str(company_id or self.default_company_id or "").strip() or None
+        key = self.gallery_key(cid)
         now = time.time()
         last_load = self._gallery_last_load_by_company.get(key, 0.0)
         if now - last_load < self.refresh_interval_s:
             return
 
-        if not company_id:
+        if not cid:
             self._gallery_matrix_by_company[key] = np.zeros((0, 512), dtype=np.float32)
             self._gallery_meta_by_company[key] = []
             self._gallery_emp_ids_by_company[key] = np.zeros((0,), dtype=np.int32)
@@ -83,14 +84,15 @@ class CompanyEmbeddingCache:
             self._gallery_last_load_by_company[key] = now
             return
 
-        client = self.client_for_company(company_id)
+        client = self.client_for_company(cid)
         try:
             templates = client.list_templates()
         except Exception as e:
-            print(f"[GALLERY] load failed company={company_id or 'default'}: {e}")
-            self._gallery_matrix_by_company[key] = np.zeros((0, 512), dtype=np.float32)
-            self._gallery_meta_by_company[key] = []
-            self._gallery_emp_ids_by_company[key] = np.zeros((0,), dtype=np.int32)
+            print(f"[GALLERY] load failed company={cid or 'default'}: {e}")
+            if key not in self._gallery_matrix_by_company:
+                self._gallery_matrix_by_company[key] = np.zeros((0, 512), dtype=np.float32)
+                self._gallery_meta_by_company[key] = []
+                self._gallery_emp_ids_by_company[key] = np.zeros((0,), dtype=np.int32)
             self._gallery_last_load_by_company[key] = now
             return
 
@@ -179,8 +181,9 @@ class CompanyEmbeddingCache:
     def get_gallery(
         self, company_id: Optional[str]
     ) -> Tuple[np.ndarray, List[Tuple[int, str, str]], np.ndarray]:
-        self.ensure_gallery(company_id)
-        key = self.gallery_key(company_id)
+        cid = str(company_id or self.default_company_id or "").strip() or None
+        self.ensure_gallery(cid)
+        key = self.gallery_key(cid)
         matrix = self._gallery_matrix_by_company.get(
             key, np.zeros((0, 512), dtype=np.float32)
         )

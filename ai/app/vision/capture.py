@@ -358,7 +358,7 @@ class _FFmpegGrabber:
         self.ffmpeg_exe = _resolve_ffmpeg_exe()
 
         self.frame_stale_sec = max(0.5, _env_float("FRAME_STALE_SEC", 5.0))
-        self.frame_reopen_wait_sec = max(0.05, _env_float("FRAME_REOPEN_WAIT_SEC", 0.5))
+        self.frame_reopen_wait_sec = max(1.0, _env_float("FRAME_REOPEN_WAIT_SEC", 1.5))
         self.startup_frame_timeout_s = max(
             3.0, _env_float("FFMPEG_CAPTURE_STARTUP_FRAME_TIMEOUT_S", 15.0)
         )
@@ -485,7 +485,10 @@ class _FFmpegGrabber:
         if self.ffmpeg_timeout_us > 0:
             args.extend(["-timeout", str(self.ffmpeg_timeout_us)])
         if self.ffmpeg_rw_timeout_us > 0:
-            args.extend(["-rw_timeout", str(self.ffmpeg_rw_timeout_us)])
+            if is_rtsp:
+                args.extend(["-stimeout", str(self.ffmpeg_rw_timeout_us)])
+            else:
+                args.extend(["-rw_timeout", str(self.ffmpeg_rw_timeout_us)])
         if self.ffmpeg_max_delay_us > 0:
             args.extend(["-max_delay", str(self.ffmpeg_max_delay_us)])
         if self.ffmpeg_fflags:

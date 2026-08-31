@@ -5,7 +5,11 @@
   "main": "index.ts",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "ts-node-dev --respawn --transpile-only index.ts"
+    "dev": "ts-node-dev --respawn --transpile-only index.ts",
+    "build": "tsc -p .",
+    "start": "node --max-old-space-size=256 dist/index.js",
+    "start:prod": "node --max-old-space-size=256 dist/index.js",
+    "prisma:generate": "prisma generate"
   },
   "author": "nafis",
   "license": "ISC",

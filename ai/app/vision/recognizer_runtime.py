@@ -31,11 +31,15 @@ class Recognizer:
         cfg: Config,
         *,
         embedder: FaceEmbedder,
-        match_embedding: Callable[[np.ndarray], MatchResult],
+        match_embedding: Optional[Callable[[np.ndarray], MatchResult]] = None,
+        match_fn: Optional[Callable[[np.ndarray], MatchResult]] = None,
     ):
         self.cfg = cfg
         self._embedder = embedder
-        self._match_embedding = match_embedding
+        matcher = match_embedding or match_fn
+        if matcher is None:
+            raise ValueError("match_embedding or match_fn is required for Recognizer")
+        self._match_embedding = matcher
 
     def update_tracks(
         self,

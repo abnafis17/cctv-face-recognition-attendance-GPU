@@ -374,7 +374,9 @@ class AttendanceRuntime:
         def _match(emb: np.ndarray, *, _cid: str = cid) -> MatchResult:
             return self._match_embedding(_cid, emb)
 
-        recognizer = Recognizer(self.cfg, embedder=self._embedder, match_fn=_match)
+        recognizer = Recognizer(
+            self.cfg, embedder=self._embedder, match_embedding=_match
+        )
         st = CameraScanState(
             tracker=tracker,
             motion=motion,

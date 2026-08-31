@@ -124,9 +124,9 @@ class RecognitionWorker:
                     frame_bgr=frame, camera_id=camera_id, name=camera_name
                 )
             except Exception as e:
-                # print(
-                #     f"[RECOGNITION] process_frame failed cam={camera_id}: {e}"
-                # )
+                print(
+                    f"[RECOGNITION] process_frame failed cam={camera_id}: {e}"
+                )
                 continue
 
             # Pre-encode JPEG once (huge CPU win when multiple clients watch)

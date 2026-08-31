@@ -28,16 +28,25 @@ class MotionGate:
 
     def __init__(
         self,
+        cfg: Optional[Any] = None,
         *,
-        threshold: float = 0.02,
+        threshold: Optional[float] = None,
         hysteresis_ratio: float = 0.7,
-        cooldown_seconds: float = 0.4,
+        cooldown_seconds: Optional[float] = None,
         resize: Tuple[int, int] = (320, 180),
         diff_threshold: int = 25,
     ):
-        self.threshold = float(threshold)
+        if cfg is not None:
+            if threshold is None:
+                threshold = getattr(cfg, "motion_threshold", 0.02)
+            if cooldown_seconds is None:
+                cooldown_seconds = getattr(cfg, "motion_cooldown_seconds", 0.4)
+
+        self.threshold = float(threshold if threshold is not None else 0.02)
         self.hysteresis_ratio = float(max(0.1, min(0.99, hysteresis_ratio)))
-        self.cooldown_seconds = float(max(0.0, cooldown_seconds))
+        self.cooldown_seconds = float(
+            max(0.0, cooldown_seconds if cooldown_seconds is not None else 0.4)
+        )
         self.resize = (int(resize[0]), int(resize[1]))
         self.diff_threshold = int(max(1, diff_threshold))
 
