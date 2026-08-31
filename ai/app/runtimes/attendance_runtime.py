@@ -100,16 +100,18 @@ class AttendanceRuntime:
         self.door_service = DoorRelayService(company_cache=self.company_cache)
         self.box_tracker_service = BoundingBoxTrackerService(company_cache=self.company_cache)
 
-        # Shared models from ModelRegistry (or custom instantiated)
+        # Shared models from ModelRegistry (singletons to prevent RAM duplication)
         registry = ModelRegistry.get_instance()
-        self._detector = FaceDetector(
-            model_name=model_name,
+        self._detector = registry.get_face_detector(
+            name=model_name,
             use_gpu=use_gpu,
             det_size=(640, 640),
-            min_face_size=14,
-            min_det_score=0.20,
+            det_thresh=0.20,
         )
-        self._embedder = FaceEmbedder(model_name=model_name, use_gpu=use_gpu)
+        self._embedder = registry.get_face_embedder(
+            name=model_name,
+            use_gpu=use_gpu,
+        )
 
         self._gpu = GPUArbiter(
             detect_fn=self._detect_faces, queue_size=int(self.cfg.queue_size)
@@ -448,7 +450,8 @@ class AttendanceRuntime:
                     f"cam={camera_id} camera={camera_name} err={e}"
                 )
 
-        threading.Thread(target=_do, daemon=True).start()
+        from ..core.runtime_opt import submit_async_io
+        submit_async_io(_do)
 
     def _erp_settings_for_company(
         self, company_id: Optional[str], url_type: str = "attendance"

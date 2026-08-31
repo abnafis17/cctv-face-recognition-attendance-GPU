@@ -89,6 +89,14 @@ class StreamClientManager:
             self._update_stream_type(camera_id)
             return cur
 
+    def viewer_count(self, camera_id: str) -> int:
+        with self._lock:
+            return self._rec_stream_clients.get(camera_id, 0)
+
+    def has_viewers(self, camera_id: str) -> bool:
+        with self._lock:
+            return self._rec_stream_clients.get(camera_id, 0) > 0
+
 
 @dataclass
 class ServiceContainer:
@@ -150,12 +158,15 @@ def build_container() -> ServiceContainer:
         stable_hits_required=2,
     )
 
-    rec_worker = RecognitionWorker(camera_rt=camera_rt, attendance_rt=attendance_rt)
+    stream_clients = StreamClientManager(attendance_rt=attendance_rt)
+    rec_worker = RecognitionWorker(
+        camera_rt=camera_rt,
+        attendance_rt=attendance_rt,
+        stream_clients=stream_clients,
+    )
     enroller2_auto = EnrollmentAutoService2(camera_rt=camera_rt)
 
     hls_rt = HLSRuntime()
-
-    stream_clients = StreamClientManager(attendance_rt=attendance_rt)
 
     presence_rt = PresenceRuntime()
     presence_worker = PresenceWorker(camera_rt=camera_rt, presence_rt=presence_rt)

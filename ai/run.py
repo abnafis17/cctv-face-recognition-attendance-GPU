@@ -39,6 +39,11 @@ except ImportError:
 if load_dotenv is not None:
     load_dotenv(PROJECT_ROOT / ".env")
 
+# Apply Jetson Orin Nano thread & memory optimizations
+from app.core import runtime_opt
+runtime_opt.configure_process_environment()
+runtime_opt.configure_library_threads()
+
 
 def str_to_bool(value: str | None, default: bool = False) -> bool:
     if value is None:

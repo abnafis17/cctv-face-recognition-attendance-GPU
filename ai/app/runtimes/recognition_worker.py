@@ -18,11 +18,18 @@ class RecognitionWorker:
     - reads latest raw frame from CameraRuntime
     - runs attendance/recognition at capped ai_fps (CPU-friendly)
     - stores latest annotated frame (and pre-encoded JPEG) for streaming
+    - skips JPEG encoding when no client is watching to save Jetson CPU cycles
     """
 
-    def __init__(self, camera_rt: CameraRuntime, attendance_rt: AttendanceRuntime):
+    def __init__(
+        self,
+        camera_rt: CameraRuntime,
+        attendance_rt: AttendanceRuntime,
+        stream_clients: Optional[Any] = None,
+    ):
         self.camera_rt = camera_rt
         self.attendance_rt = attendance_rt
+        self.stream_clients = stream_clients
 
         self._threads: Dict[str, threading.Thread] = {}
         self._running: Dict[str, bool] = {}
@@ -36,6 +43,7 @@ class RecognitionWorker:
 
         # Per-camera config
         self._ai_fps: Dict[str, float] = {}
+        self._jpeg_quality = max(30, min(95, int(os.getenv("MJPEG_RECOGNITION_FALLBACK_JPEG_QUALITY", "60"))))
 
     def start(self, camera_id: str, camera_name: str, ai_fps: float = 10.0):
         """
@@ -90,16 +98,40 @@ class RecognitionWorker:
             return None if f is None else f.copy()
 
     def get_latest_jpeg(self, camera_id: str) -> Optional[bytes]:
-        lock = self._locks.setdefault(camera_id, threading.Lock())
-        with lock:
-            item = self._latest_jpg.get(camera_id)
-            return None if item is None else item[0]
+        item = self.get_latest_jpeg_item(camera_id)
+        return None if item is None else item[0]
 
     def get_latest_jpeg_item(self, camera_id: str) -> Optional[Tuple[bytes, float]]:
         lock = self._locks.setdefault(camera_id, threading.Lock())
         with lock:
             item = self._latest_jpg.get(camera_id)
-            return None if item is None else (item[0], float(item[1]))
+            if item is not None:
+                return (item[0], float(item[1]))
+
+            # If no cached JPEG exists yet, encode latest annotated frame on demand
+            frame = self._latest_frame.get(camera_id)
+            if frame is None:
+                return None
+            try:
+                ok, jpg = cv2.imencode(
+                    ".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), self._jpeg_quality]
+                )
+                if not ok:
+                    return None
+                jpg_bytes = jpg.tobytes()
+                now = time.time()
+                self._latest_jpg[camera_id] = (jpg_bytes, now)
+                return (jpg_bytes, now)
+            except Exception:
+                return None
+
+    def _has_viewers(self, camera_id: str) -> bool:
+        if self.stream_clients is None:
+            return True
+        try:
+            return bool(self.stream_clients.has_viewers(camera_id))
+        except Exception:
+            return True
 
     def _loop(self, camera_id: str, camera_name: str):
         last_t = 0.0
@@ -118,7 +150,7 @@ class RecognitionWorker:
             if frame is None:
                 continue
 
-            # Heavy work (capped)
+            # Heavy vision inference (capped cadence)
             try:
                 annotated = self.attendance_rt.process_frame(
                     frame_bgr=frame, camera_id=camera_id, name=camera_name
@@ -129,15 +161,23 @@ class RecognitionWorker:
                 )
                 continue
 
-            # Pre-encode JPEG once (huge CPU win when multiple clients watch)
-            ok, jpg = cv2.imencode(
-                ".jpg", annotated, [int(cv2.IMWRITE_JPEG_QUALITY), 65]
-            )
-            if not ok:
-                continue
-            jpg_bytes = jpg.tobytes()
-
             lock = self._locks.setdefault(camera_id, threading.Lock())
+            has_viewers = self._has_viewers(camera_id)
+
+            if has_viewers:
+                # Pre-encode JPEG once only when viewers are watching (saves CPU when idle)
+                try:
+                    ok, jpg = cv2.imencode(
+                        ".jpg", annotated, [int(cv2.IMWRITE_JPEG_QUALITY), self._jpeg_quality]
+                    )
+                    if ok:
+                        jpg_bytes = jpg.tobytes()
+                        with lock:
+                            self._latest_frame[camera_id] = annotated
+                            self._latest_jpg[camera_id] = (jpg_bytes, time.time())
+                        continue
+                except Exception:
+                    pass
+
             with lock:
                 self._latest_frame[camera_id] = annotated
-                self._latest_jpg[camera_id] = (jpg_bytes, time.time())

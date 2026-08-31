@@ -191,7 +191,8 @@ class BoundingBoxTrackerService:
                     f"box={box_id} emp={employee_id} event={event_type} err={e}"
                 )
 
-        threading.Thread(target=_do, daemon=True).start()
+        from ..core.runtime_opt import submit_async_io
+        submit_async_io(_do)
 
     def _prune_tracking_state(self, now: float) -> None:
         if len(self._tracking_state) <= self.max_states:

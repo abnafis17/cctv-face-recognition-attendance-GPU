@@ -147,7 +147,8 @@ class DoorRelayService:
             except Exception as e:
                 print(f"[RELAY] failed cid={cid} url={url} err={e}")
 
-        threading.Thread(target=_do, daemon=True).start()
+        from ..core.runtime_opt import submit_async_io
+        submit_async_io(_do)
 
     def trigger_door_unlock(
         self,
@@ -195,4 +196,5 @@ class DoorRelayService:
             except Exception as e:
                 print(f"[DOOR] failed cid={camera_id} emp={emp_id} url={url} err={e}")
 
-        threading.Thread(target=_do, daemon=True).start()
+        from ..core.runtime_opt import submit_async_io
+        submit_async_io(_do)

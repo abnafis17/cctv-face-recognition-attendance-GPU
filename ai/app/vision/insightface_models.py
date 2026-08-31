@@ -101,7 +101,23 @@ class FaceDetector:
         providers = _pick_providers(use_gpu)
         ctx_id = 0 if use_gpu else -1
 
-        self.app = FaceAnalysis(name=model_name, providers=providers, allowed_modules=["detection"])
+        from ..core.runtime_opt import create_ort_session_options
+        ort_opts = create_ort_session_options()
+
+        try:
+            self.app = FaceAnalysis(
+                name=model_name,
+                providers=providers,
+                allowed_modules=["detection"],
+                session_options=ort_opts,
+            )
+        except Exception:
+            self.app = FaceAnalysis(
+                name=model_name,
+                providers=providers,
+                allowed_modules=["detection"],
+            )
+
         self.app.prepare(ctx_id=ctx_id, det_size=det_size)
 
         print(
@@ -151,7 +167,15 @@ class FaceEmbedder:
         providers = _pick_providers(use_gpu=use_gpu) if embed_use_gpu else ["CPUExecutionProvider"]
         ctx_id = 0 if (embed_use_gpu and "CUDAExecutionProvider" in providers) else -1
         normalize_model_pack_layout(model_name)
-        self.model = model_zoo.get_model(model_name, providers=providers)
+
+        from ..core.runtime_opt import create_ort_session_options
+        ort_opts = create_ort_session_options()
+
+        try:
+            self.model = model_zoo.get_model(model_name, providers=providers, session_options=ort_opts)
+        except Exception:
+            self.model = model_zoo.get_model(model_name, providers=providers)
+
         if self.model is None:
             raise RuntimeError(f"Failed to load insightface model: {model_name}")
         self.model.prepare(ctx_id=ctx_id)

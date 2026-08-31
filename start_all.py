@@ -66,6 +66,17 @@ def wait_for_port(port: int, host: str = "127.0.0.1", timeout: float = 25.0) -> 
     return False
 
 
+def get_local_ip() -> str:
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
+
+
 def get_python_executable() -> str:
     venv_py = AI_DIR / "venv" / "bin" / "python"
     if venv_py.is_file() and os.access(venv_py, os.X_OK):
@@ -245,11 +256,14 @@ class ProcessSupervisor:
         self.start_ai()
         self.start_frontend()
 
+        local_ip = get_local_ip()
         print("\n========================================================")
         print(" All Services are Running in Production Mode!")
-        print(f"  - Backend (API) : http://localhost:{self.backend_port}/api/v1")
-        print(f"  - AI Server     : http://localhost:{self.ai_port}/docs")
-        print(f"  - Frontend (UI) : http://localhost:{self.frontend_port}")
+        print(f"  - Backend (API) : http://localhost:{self.backend_port}/api/v1 (or http://{local_ip}:{self.backend_port}/api/v1)")
+        print(f"  - AI Server     : http://localhost:{self.ai_port}/docs (or http://{local_ip}:{self.ai_port}/docs)")
+        print(f"  - Frontend (UI) : http://localhost:{self.frontend_port} (or http://{local_ip}:{self.frontend_port})")
+        print(f"\n [TIP] For smoothest multi-camera viewing without Jetson browser overhead,")
+        print(f"       open http://{local_ip}:{self.frontend_port} from your laptop / client PC browser.")
         print(" Press Ctrl+C to terminate all services gracefully.")
         print("========================================================\n")
 

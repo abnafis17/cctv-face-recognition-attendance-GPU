@@ -34,18 +34,19 @@ class ModelRegistry:
 
     def get_face_detector(
         self,
-        name: str = "buffalo_l",
+        name: Optional[str] = None,
         use_gpu: bool = True,
         det_size: Tuple[int, int] = (640, 640),
         det_thresh: float = 0.5,
     ):
+        model_name = name or env_str("INSIGHTFACE_MODEL", "buffalo_m")
         if self._face_detector is None:
             with self._lock:
                 if self._face_detector is None:
                     from ..vision.insightface_models import FaceDetector
 
                     self._face_detector = FaceDetector(
-                        model_name=name,
+                        model_name=model_name,
                         use_gpu=use_gpu,
                         det_size=det_size,
                         min_face_size=14,
@@ -55,16 +56,17 @@ class ModelRegistry:
 
     def get_face_embedder(
         self,
-        name: str = "buffalo_l",
+        name: Optional[str] = None,
         use_gpu: bool = True,
     ):
+        model_name = name or env_str("INSIGHTFACE_MODEL", "buffalo_m")
         if self._face_embedder is None:
             with self._lock:
                 if self._face_embedder is None:
                     from ..vision.insightface_models import FaceEmbedder
 
                     self._face_embedder = FaceEmbedder(
-                        model_name=name,
+                        model_name=model_name,
                         use_gpu=use_gpu,
                     )
         return self._face_embedder
@@ -98,22 +100,28 @@ class ModelRegistry:
 
     def get_yolo_detector(
         self,
-        model_path: str = "yolov8s-seg.pt",
-        conf: float = 0.35,
-        iou: float = 0.45,
-        imgsz: int = 640,
-        device: str = "cpu",
+        model_path: Optional[str] = None,
+        conf: Optional[float] = None,
+        iou: Optional[float] = None,
+        imgsz: Optional[int] = None,
+        device: Optional[str] = None,
     ):
         if self._yolo_detector is None:
             with self._lock:
                 if self._yolo_detector is None:
                     from ..presence.detector import YoloPersonDetector
 
+                    mp = model_path or env_str("PRESENCE_YOLO_MODEL", "yolov8s-seg.pt")
+                    c = conf if conf is not None else env_float("PRESENCE_CONF", 0.35)
+                    i = iou if iou is not None else env_float("PRESENCE_IOU", 0.45)
+                    s = imgsz if imgsz is not None else env_int("PRESENCE_IMG_SIZE", 640)
+                    dev = device or env_str("PRESENCE_DEVICE", "cuda:0")
+
                     self._yolo_detector = YoloPersonDetector(
-                        model_path=model_path,
-                        conf=conf,
-                        iou=iou,
-                        imgsz=imgsz,
-                        device=device,
+                        model_path=mp,
+                        conf=c,
+                        iou=i,
+                        imgsz=s,
+                        device=dev,
                     )
         return self._yolo_detector

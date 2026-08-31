@@ -390,16 +390,18 @@ class _FFmpegGrabber:
         self.ffmpeg_rw_timeout_us = max(
             0, _env_int("FFMPEG_CAPTURE_RW_TIMEOUT_US", 15000000)
         )
-        # Safer defaults for camera streams; very tiny probe values often cause early EOF.
-        self.ffmpeg_probesize = max(0, _env_int("FFMPEG_CAPTURE_PROBESIZE", 5000000))
+        # Optimized low-latency probe defaults for CCTV RTSP camera streams.
+        self.ffmpeg_probesize = max(0, _env_int("FFMPEG_CAPTURE_PROBESIZE", 500000))
         self.ffmpeg_analyzeduration = max(
-            0, _env_int("FFMPEG_CAPTURE_ANALYZEDURATION", 5000000)
+            0, _env_int("FFMPEG_CAPTURE_ANALYZEDURATION", 500000)
         )
-        self.ffmpeg_max_delay_us = max(0, _env_int("FFMPEG_CAPTURE_MAX_DELAY_US", 0))
+        self.ffmpeg_max_delay_us = max(0, _env_int("FFMPEG_CAPTURE_MAX_DELAY_US", 100000))
         self.ffmpeg_reorder_queue_size = max(
             0, _env_int("FFMPEG_CAPTURE_REORDER_QUEUE_SIZE", 0)
         )
         self.ffmpeg_use_wallclock = _env_bool("FFMPEG_CAPTURE_USE_WALLCLOCK", False)
+        self.ffmpeg_threads = max(1, _env_int("FFMPEG_CAPTURE_THREADS", 2))
+        self.ffmpeg_decoder = str(os.getenv("FFMPEG_CAPTURE_DECODER", "")).strip().lower()
 
         self.ffmpeg_hwaccel = str(os.getenv("FFMPEG_HWACCEL", "none")).strip().lower()
         self.ffmpeg_hwaccel_device = str(
@@ -504,10 +506,16 @@ class _FFmpegGrabber:
         if self.ffmpeg_use_wallclock:
             args.extend(["-use_wallclock_as_timestamps", "1"])
 
+        if self.ffmpeg_threads > 0:
+            args.extend(["-threads", str(self.ffmpeg_threads)])
+
         if self.ffmpeg_hwaccel and self.ffmpeg_hwaccel not in {"", "none", "off"}:
             args.extend(["-hwaccel", self.ffmpeg_hwaccel])
             if self.ffmpeg_hwaccel_device:
                 args.extend(["-hwaccel_device", self.ffmpeg_hwaccel_device])
+
+        if self.ffmpeg_decoder and self.ffmpeg_decoder not in {"", "none", "auto"}:
+            args.extend(["-c:v", self.ffmpeg_decoder])
 
         args.extend(["-i", self.rtsp_url])
 
