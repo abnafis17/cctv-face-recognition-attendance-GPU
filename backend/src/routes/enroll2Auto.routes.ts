@@ -85,7 +85,7 @@ r.post("/session/start", async (req, res) => {
         });
 
         const hasTemplate = await prisma.faceTemplate.findFirst({
-          where: { employeeId: employee.id, companyId },
+          where: { employeeId: employee.id },
           select: { id: true },
         });
         if (hasTemplate) {

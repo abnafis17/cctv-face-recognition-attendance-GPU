@@ -118,10 +118,12 @@ class EnrollmentAutoService2:
     def __init__(
         self,
         camera_rt: CameraRuntime,
+        attendance_rt: Optional[Any] = None,
         model_name: str = "buffalo_sc",
         min_face_size: int = 40,
     ):
         self.camera_rt = camera_rt
+        self.attendance_rt = attendance_rt
         self.cfg = Enroll2AutoConfig()
 
         self.rec = FaceRecognizer(
@@ -659,7 +661,13 @@ class EnrollmentAutoService2:
                 embeddings[step] = mean.astype(np.float32)
 
         try:
-            self.client.save_employee_embeddings(employee_id, embeddings)
+            self.client.save_employee_embeddings(employee_id, embeddings, replace=True)
+            if self.attendance_rt:
+                try:
+                    self.attendance_rt.reload_gallery(self.client._company_id)
+                except Exception as exc:
+                    print(f"[Enroll2Auto] reload gallery failed: {exc}")
+
             with self._lock:
                 if self._session:
                     self._session.status = "saved"

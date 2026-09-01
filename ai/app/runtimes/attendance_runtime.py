@@ -170,6 +170,14 @@ class AttendanceRuntime:
     def default_company_id(self) -> Optional[str]:
         return self._default_company_id
 
+    def reload_gallery(self, company_id: Optional[str] = None) -> None:
+        """Immediately reloads the face template gallery cache for a company."""
+        try:
+            self.company_cache.invalidate_gallery(company_id)
+            self.company_cache.ensure_gallery(company_id)
+        except Exception as e:
+            print(f"[AttendanceRuntime] reload_gallery failed: {e}")
+
     def shutdown(self) -> None:
         try:
             self._gpu.stop()

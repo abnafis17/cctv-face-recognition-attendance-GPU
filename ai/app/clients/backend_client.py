@@ -184,12 +184,28 @@ class BackendClient:
             model_name=model_name,
         )
 
+    def replace_templates(
+        self,
+        employee_id: str,
+        templates: Dict[str, List[float]],
+        model_name: str = "insightface",
+    ) -> Dict[str, Any]:
+        return self.http.post(
+            "/gallery/templates/replace",
+            {
+                "employeeId": employee_id,
+                "templates": templates,
+                "modelName": model_name,
+            },
+        )
+
     # ---- Enrollment helpers (AI service compatibility)
     def save_employee_embeddings(
         self,
         employee_id: str,
         embeddings: Dict[str, Any],
         model_name: str = "insightface",
+        replace: bool = True,
     ) -> Dict[str, Any]:
         """
         Compatibility helper used by auto-enrollment services.
@@ -198,9 +214,10 @@ class BackendClient:
           - list[float]
           - numpy array (has .tolist())
 
-        Persists to the same backend endpoint as manual enrollment (/gallery/templates).
+        When replace=True (default), atomically wipes all previous templates
+        for this employee and saves only the new template set.
         """
-        saved_angles: List[str] = []
+        payload_templates: Dict[str, List[float]] = {}
         for angle, emb in (embeddings or {}).items():
             if emb is None:
                 continue
@@ -208,12 +225,38 @@ class BackendClient:
                 emb_list = emb.tolist()
             else:
                 emb_list = list(emb)
-            self.upsert_template_enroll2_auto(
-                employee_id=employee_id,
-                angle=str(angle),
-                embedding=[float(x) for x in emb_list],
-                model_name=model_name,
+            payload_templates[str(angle)] = [float(x) for x in emb_list]
+
+        if not payload_templates:
+            return {"ok": False, "error": "No valid embeddings to save"}
+
+        if replace:
+            try:
+                res = self.replace_templates(
+                    employee_id=employee_id,
+                    templates=payload_templates,
+                    model_name=model_name,
+                )
+                if isinstance(res, dict) and res.get("ok"):
+                    return res
+            except Exception as e:
+                print(f"[BackendClient] replace_templates endpoint error: {e}")
+
+        # Fallback to individual upserts with replace flag on first angle
+        saved_angles: List[str] = []
+        first = True
+        for angle, emb_list in payload_templates.items():
+            self.http.post(
+                "/gallery/templates",
+                {
+                    "employeeId": employee_id,
+                    "angle": str(angle),
+                    "embedding": emb_list,
+                    "modelName": model_name,
+                    "replace": bool(replace and first),
+                },
             )
+            first = False
             saved_angles.append(str(angle))
         return {"ok": True, "saved_angles": saved_angles}
 

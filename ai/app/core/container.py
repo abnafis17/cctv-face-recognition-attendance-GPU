@@ -164,7 +164,9 @@ def build_container() -> ServiceContainer:
         attendance_rt=attendance_rt,
         stream_clients=stream_clients,
     )
-    enroller2_auto = EnrollmentAutoService2(camera_rt=camera_rt)
+    enroller2_auto = EnrollmentAutoService2(
+        camera_rt=camera_rt, attendance_rt=attendance_rt
+    )
 
     hls_rt = HLSRuntime()
 

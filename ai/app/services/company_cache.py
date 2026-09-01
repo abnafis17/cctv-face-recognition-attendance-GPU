@@ -68,6 +68,14 @@ class CompanyEmbeddingCache:
         emp_id_to_int[emp_id_str] = v
         return v
 
+    def invalidate_gallery(self, company_id: Optional[str] = None) -> None:
+        """Forces the next ensure_gallery call to reload templates from backend immediately."""
+        if company_id:
+            key = self.gallery_key(company_id)
+            self._gallery_last_load_by_company.pop(key, None)
+        else:
+            self._gallery_last_load_by_company.clear()
+
     def ensure_gallery(self, company_id: Optional[str]) -> None:
         cid = str(company_id or self.default_company_id or "").strip() or None
         key = self.gallery_key(cid)
