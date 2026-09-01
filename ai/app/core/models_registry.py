@@ -39,7 +39,8 @@ class ModelRegistry:
         det_size: Tuple[int, int] = (640, 640),
         det_thresh: float = 0.5,
     ):
-        model_name = name or env_str("INSIGHTFACE_MODEL", "buffalo_sc")
+        env_model = env_str("INSIGHTFACE_MODEL", "")
+        model_name = env_model or (name if name and name != "buffalo_sc" else "buffalo_m")
         if self._face_detector is None:
             with self._lock:
                 if self._face_detector is None:
@@ -59,7 +60,8 @@ class ModelRegistry:
         name: Optional[str] = None,
         use_gpu: bool = True,
     ):
-        model_name = name or env_str("INSIGHTFACE_MODEL", "buffalo_sc")
+        env_model = env_str("INSIGHTFACE_MODEL", "")
+        model_name = env_model or (name if name and name != "buffalo_sc" else "buffalo_m")
         if self._face_embedder is None:
             with self._lock:
                 if self._face_embedder is None:

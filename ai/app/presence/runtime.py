@@ -67,7 +67,7 @@ class PresenceRuntime:
         device = _env_str("PRESENCE_DEVICE", "cpu")
         max_det = _env_int("PRESENCE_MAX_DET", 100)
 
-        face_model = _env_str("PRESENCE_FACE_MODEL", "buffalo_sc")
+        face_model = _env_str("PRESENCE_FACE_MODEL", "buffalo_m")
         face_det_size = _env_int("PRESENCE_FACE_DET_SIZE", 640)
         face_min_size = _env_int("PRESENCE_FACE_MIN_SIZE", 30)
         face_min_score = _env_float("PRESENCE_FACE_MIN_SCORE", 0.35)

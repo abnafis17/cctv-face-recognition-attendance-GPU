@@ -66,7 +66,7 @@ class AttendanceRuntime:
     def __init__(
         self,
         use_gpu: bool = False,
-        model_name: str = "buffalo_sc",
+        model_name: str = "buffalo_m",
         min_face_size: int = 20,
         similarity_threshold: float = 0.35,
         gallery_refresh_s: float = 5.0,
@@ -76,8 +76,8 @@ class AttendanceRuntime:
         self._default_company_id = os.getenv("BACKEND_COMPANY_ID", "").strip() or None
 
         self.similarity_threshold = float(similarity_threshold)
-        self.strict_similarity = float(os.getenv("STRICT_SIM_THRESHOLD", "0.5"))
-        self.min_att_quality = float(os.getenv("MIN_ATT_QUALITY", "18.0"))
+        self.strict_similarity = float(os.getenv("STRICT_SIM_THRESHOLD", "0.36"))
+        self.min_att_quality = float(os.getenv("MIN_ATT_QUALITY", "6.0"))
         self.gallery_refresh_s = float(gallery_refresh_s)
         self.cooldown_s = int(cooldown_s)
         self.stable_hits_required = int(stable_hits_required)
