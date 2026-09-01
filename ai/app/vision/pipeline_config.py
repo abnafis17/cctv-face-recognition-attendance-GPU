@@ -33,33 +33,33 @@ class Config:
     """
 
     # --- Motion gate (CPU) ---
-    motion_threshold: float = 0.020  # fraction of pixels "changed" (0..1)
+    motion_threshold: float = 0.015  # fraction of pixels "changed" (0..1)
     motion_hysteresis_ratio: float = 0.70
     motion_cooldown_seconds: float = 0.40
     motion_resize_w: int = 320
     motion_resize_h: int = 180
 
     # --- Scheduler ---
-    idle_seconds: float = 2.0
-    detection_fps_idle: float = 2.0
-    detection_fps_normal: float = 12.0
-    detection_fps_burst: float = 24.0
+    idle_seconds: float = 1.0
+    detection_fps_idle: float = 4.0
+    detection_fps_normal: float = 15.0
+    detection_fps_burst: float = 25.0
     burst_seconds: float = 3.5
 
     # --- Recognition cadence ---
-    embed_refresh_seconds: float = 0.25
-    embed_refresh_seconds_unknown: float = 0.15
-    unknown_burst_after_seconds: float = 0.6
+    embed_refresh_seconds: float = 0.08
+    embed_refresh_seconds_unknown: float = 0.05
+    unknown_burst_after_seconds: float = 0.2
 
     # --- Matching thresholds ---
     similarity_threshold: float = 0.35
-    borderline_margin: float = 0.05
+    borderline_margin: float = 0.04
     # Require top1 to be meaningfully higher than the best different-person match.
     distinct_sim_margin: float = 0.02
 
     # --- Attendance gating ---
     attendance_debounce_seconds: float = 30.0
-    stable_id_confirmations: int = 3
+    stable_id_confirmations: int = 2
     attendance_fast_mode: bool = False
 
     # --- Multi-camera GPU fairness ---
@@ -77,13 +77,13 @@ class Config:
     # 0 => drop immediately on first miss.
     track_max_det_misses_unknown: int = 0
     # Keep known tracks alive longer so identity holds during fast movement.
-    track_max_det_misses_known: int = 12
+    track_max_det_misses_known: int = 15
 
     # --- Identity hysteresis (reduce flicker during motion blur) ---
-    identity_hold_seconds: float = 1.5
-    identity_hold_min_iou: float = 0.05
-    identity_hold_max_det_misses: int = 1
-    identity_hold_max_center_shift_ratio: float = 0.35
+    identity_hold_seconds: float = 2.0
+    identity_hold_min_iou: float = 0.02
+    identity_hold_max_det_misses: int = 3
+    identity_hold_max_center_shift_ratio: float = 0.45
     known_identity_latch_min_hits: int = 2
 
     # --- Attendance safety ---
@@ -94,8 +94,8 @@ class Config:
     kps_max_age_seconds: float = 0.45
 
     # --- Attendance quality gates (kept compatible with existing behavior) ---
-    strict_similarity_threshold: float = 0.50
-    min_att_quality: float = 18.0
+    strict_similarity_threshold: float = 0.36
+    min_att_quality: float = 6.0
 
     # --- Logging ---
     log_interval_seconds: float = 5.0

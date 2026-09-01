@@ -212,6 +212,12 @@ class Recognizer:
 
             # Known
             if tr.person_id is not None and tr.person_id != new_id:
+                # During movement / posture changes, maintain existing known identity if hold_ok is active.
+                if hold_ok:
+                    tr.similarity = max(tr.similarity, score)
+                    tr.force_recognition_until_ts = max(tr.force_recognition_until_ts, now + 0.45)
+                    continue
+
                 # Avoid rapid flips during movement. Only accept a new id if it is clearly
                 # above threshold+margin; otherwise show Unknown (never keep the old name).
                 if score < float(self.cfg.similarity_threshold + self.cfg.borderline_margin):
