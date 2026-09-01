@@ -134,10 +134,12 @@ class BoundingBoxTrackerService:
             self._boxes_last_fetch_by_camera[cid] = now
             return list(boxes)
         except Exception as e:
+            self._boxes_by_camera[cid] = []
             self._boxes_last_fetch_by_camera[cid] = now
             if cached is not None:
                 return list(cached)
-            print(f"[BOX-TRACK] boxes load failed company={comp} cam={cid} err={e}")
+            if "404" not in str(e) and "400" not in str(e):
+                print(f"[BOX-TRACK] boxes load failed company={comp} cam={cid} err={e}")
             return []
 
     @staticmethod
