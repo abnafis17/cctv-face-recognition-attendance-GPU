@@ -10,8 +10,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "CCTV Panel",
-  description: "Face Recognition Attendance",
+  title: "Cripton Vision",
+  description: "AI Surveillance & Attendance Face Recognition",
 };
 
 export default function RootLayout({

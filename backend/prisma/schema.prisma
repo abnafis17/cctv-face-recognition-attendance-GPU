@@ -16,37 +16,40 @@ model Company {
   attendances             Attendance[]
   cameras                 Camera[]
   boundingBoxTrackingRows CameraBoundingBoxTracking[]
-  erpSettings             CompanyErpSetting[]
+  refreshTokens           RefreshToken[]
+  relayAgents             RelayAgent[]
+  pairCodes               PairCode[]
   relaySettings           CompanyRelaySetting[]
+  erpSettings             CompanyErpSetting[]
   employees               Employee[]
   faceTemplates           FaceTemplate[]
   gatepassRows            GatepassTable[]
   headcounts              Headcount[]
   otRequisitions          OtRequisition[]
-  pairCodes               PairCode[]
   purposeOfVisits         PurposeOfVisit[]
-  refreshTokens           RefreshToken[]
-  relayAgents             RelayAgent[]
   unknownRecognitions     UnknownRecognition[]
   users                   User[]
   permissions             Permission[]
   visitors                Visitor[]
+  visitorFaceTemplates    VisitorFaceTemplate[]
   visitorTypes            VisitorType[]
+  userRoles               UserRole[]
 }
 
 model User {
-  id            String         @id @default(cuid())
-  name          String?
-  email         String         @unique
-  passwordHash  String
-  password      String?
-  role          String         @default("ADMIN")
-  isActive      Boolean        @default(true)
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  companyId     String?
-  refreshTokens RefreshToken[]
-  company       Company?       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  id             String         @id @default(cuid())
+  name           String?
+  email          String         @unique
+  passwordHash   String
+  password       String?
+  role           String         @default("ADMIN")
+  isActive       Boolean        @default(true)
+  profilePicture String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  companyId      String?
+  refreshTokens  RefreshToken[]
+  company        Company?       @relation(fields: [companyId], references: [id], onDelete: Cascade)
 }
 
 model Permission {
@@ -94,6 +97,12 @@ model Employee {
   line                    String?
   section                 String?
   unit                    String?
+  deptId                  String?
+  sectionId               String?
+  designationId           String?
+  designation             String?
+  unitId                  String?
+  lineId                  String?
   empPicUrl               String?
   attendance              Attendance[]
   cameraAuthorizations    CameraAuthorizedEmployee[]
@@ -413,8 +422,11 @@ model GatepassTable {
   leaveTypeId           String?
   passType              String?
   remarks               String?
+  returnTime            Int?
   erpStatus             String?   @default("pending")
   externalGatepassId    String?
+  approvedByName        String?
+  approvedByDesignation String?
   company               Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
   employee              Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   requestCamera         Camera?   @relation("GatepassRequestCamera", fields: [requestCameraId], references: [id])
@@ -431,34 +443,59 @@ model GatepassTable {
 }
 
 model Visitor {
-  id                String   @id @default(cuid())
-  companyId         String
-  visitorName       String
-  contactNumber     String
-  emailAddress      String?
-  companyAddress    String
-  visitorType       String
-  purposeOfVisit    String
-  department        String
-  hostEmployeeId    String
-  idProofType       String
-  idProofNumber     String?
-  vehicleNumber     String?
-  extraGuest        String?
-  visitorPassNo     String
-  dateOfVisit       String
-  timeIn            String
-  entryAuthorizedBy String?
-  remarks           String?
-  visitorPhoto      String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  status            String   @default("checked_in")
-  timeOut           String?
-  company           Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  id                    String   @id @default(cuid())
+  companyId             String
+  visitorName           String
+  contactNumber         String
+  emailAddress          String?
+  companyAddress        String
+  visitorType           String
+  purposeOfVisit        String
+  department            String
+  hostEmployeeId        String
+  hostEmployeeName      String   @default("")
+  hostPicUrl            String?
+  host_designation_id   String?
+  host_designation_name String?
+  idProofType           String
+  idProofNumber         String?
+  vehicleNumber         String?
+  extraGuest            String?
+  visitorPassNo         String
+  dateOfVisit           String
+  timeIn                String
+  entryAuthorizedBy     String?
+  remarks               String?
+  visitorPhoto          String?  @db.Text
+  status                String   @default("checked_in")
+  timeOut               String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  company               Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  templates             VisitorFaceTemplate[]
 
   @@index([companyId])
   @@index([contactNumber])
+}
+
+model VisitorFaceTemplate {
+  id          String   @id @default(cuid())
+  visitorId   String
+  visitor     Visitor  @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+
+  companyId   String?
+  company     Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  modelName   String   @default("face-api")
+  embedding   Float[]
+  photoUrl    String?  @db.Text
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([visitorId])
+  @@index([companyId])
 }
 
 model VisitorType {
@@ -485,8 +522,15 @@ model PurposeOfVisit {
   @@index([companyId])
 }
 
-enum UserRole {
-  SUPER_ADMIN
-  ADMIN
-  OPERATOR
+model UserRole {
+  id        String   @id @default(cuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name      String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, name])
+  @@index([companyId])
 }

@@ -10,8 +10,8 @@ This project includes:
 ## 1) Setup (Windows 10/11, Python 3.10.11)
 ```powershell
 cd cctv-attendance-pro
-py -3.10 -m venv .venv
-.\.venv\Scripts\activate
+py -3.10 -m venv .venv  ||| python3 -m venv .venv
+.\.venv\Scripts\activate. ||| source .venv/bin/activate
 python -m pip install -U pip
 pip install -r requirements.txt
 ```
@@ -36,7 +36,7 @@ Attendance is recorded via the recognition stream used by the web UI (Cameras/He
 
 ## 5) Run AI API
 ```powershell
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+python -m uvicorn app.api_server:app --host 0.0.0.0 --port 8000
 ```
 Open:
 - API docs: http://127.0.0.1:8000/docs
@@ -90,13 +90,23 @@ This repo now uses a **CPU-steady / GPU-burst** attendance pipeline to keep GPU 
 - Tracking/box lifetime: `TRACK_MAX_DET_MISSES_UNKNOWN`, `TRACK_MAX_DET_MISSES_KNOWN`, `TRACK_MAX_AGE_FRAMES`
 - Tracking association: `TRACK_CENTER_MATCH_PX`, `TRACK_IOU_MATCH_THRESHOLD`
 - `ATTENDANCE_DEBOUNCE_SECONDS`, `STABLE_ID_CONFIRMATIONS`, `VERIFICATION_SAMPLES`, `ATTENDANCE_FAST_MODE`, `GPU_QUEUE_SIZE`
-- Recognition stability: `IDENTITY_HOLD_SECONDS`, `IDENTITY_HOLD_MIN_IOU`, `IDENTITY_HOLD_MAX_DET_MISSES`, `ATTENDANCE_MAX_EMBED_AGE_S`
+- Recognition stability: `IDENTITY_HOLD_SECONDS`, `IDENTITY_HOLD_MIN_IOU`, `IDENTITY_HOLD_MAX_DET_MISSES`, `IDENTITY_HOLD_ZONE_ENABLED`, `IDENTITY_HOLD_ZONE_SCALE`, `IDENTITY_HOLD_ZONE_RECHECK_SECONDS`, `ATTENDANCE_MAX_EMBED_AGE_S`
+- Recognition quality/fusion: `RECOGNITION_QUALITY_GATE_ENABLED`, `RECOGNITION_MIN_FACE_PX`, `RECOGNITION_MIN_BRIGHTNESS`, `RECOGNITION_MIN_SHARPNESS`, `RECOGNITION_MAX_ABS_YAW`, `RECOGNITION_MAX_ABS_PITCH`, `EMBEDDING_FUSION_WINDOW`
+- Body persistence (recognized name sticks to person body): `BODY_PERSISTENCE_ENABLED`, `BODY_PERSIST_DET_FPS`, `BODY_PERSIST_MAX_LOST_S`, `BODY_PERSIST_VISIBLE_HOLD_S`, `BODY_PERSIST_IDENTITY_TTL_S`, `BODY_PERSIST_FACE_MATCH_MIN_SCORE`, `BODY_PERSIST_BODY_EXPAND_X_RATIO`, `BODY_PERSIST_BODY_EXPAND_Y_RATIO`, `BODY_PERSIST_BODY_EXPAND_TOP_RATIO`, `BODY_PERSIST_FACE_REL_ALPHA`, `BODY_PERSIST_FACE_DRAW_SMOOTH_ALPHA`, `BODY_PERSIST_REBIND_IOU_MIN`, `BODY_PERSIST_REBIND_CENTER_RATIO`, `BODY_PERSIST_FACE_FALLBACK_MAX_AGE_S`, `FACE_KNOWN_DRAW_SCALE`
+- Body tracker backend: `BODY_PERSIST_TRACKER_BACKEND=classic|botsort`, `BODY_PERSIST_TRACK_FPS`, `BODY_PERSIST_BOTSORT_MODEL`, `BODY_PERSIST_BOTSORT_TRACKER_YAML`
+- Global identity consistency + lock window: `BODY_PERSIST_IDENTITY_LOCK_SECONDS`, `BODY_PERSIST_SWITCH_MIN_SIM_GAIN`
+- Identity confidence/occlusion states: `IDENTITY_CONF_DECAY_VISIBLE_PER_S`, `IDENTITY_CONF_DECAY_MISSING_PER_S`, `IDENTITY_CONF_BOOST_FACE`, `IDENTITY_CONF_BOOST_BODY`, `IDENTITY_CONF_MIN_SHOW`, `IDENTITY_CONF_DROP`, `IDENTITY_PARTIAL_OCCLUSION_AFTER_S`, `IDENTITY_FULL_OCCLUSION_AFTER_S`, `BODY_EMBEDDING_BANK_SIZE`
+- Low light inference enhancement: `LOW_LIGHT_ENHANCE_ENABLED`, `LOW_LIGHT_LUMA_THRESHOLD`, `LOW_LIGHT_TARGET_LUMA`, `LOW_LIGHT_MIN_CONTRAST`, `LOW_LIGHT_CLAHE_CLIP_LIMIT`, `LOW_LIGHT_CLAHE_TILE_GRID`, `LOW_LIGHT_GAMMA_MIN`, `LOW_LIGHT_GAMMA_MAX`, `LOW_LIGHT_DENOISE_ENABLED`
 - Attendance cooldown behavior: debounce is per employee (company+employee id) and extends while they remain recognized.
 
 **Speed tips (very fast recognition):**
 - Raise stream processing rate: set `AI_FPS=25` to `AI_FPS=30` (or pass `ai_fps` in the recognition stream URL).
 - If you have a GPU: embeddings follow `USE_GPU` by default; set `EMBED_USE_GPU=0` only if you want GPU-light behavior.
+- `USE_GPU=1` now also drives body-presence defaults (`PRESENCE_DEVICE` defaults to `cuda:0` unless overridden).
+- For production body persistence under occlusion/crossing: use `BODY_PERSIST_TRACKER_BACKEND=botsort` and keep `BODY_PERSIST_TRACK_FPS>=8`.
 - If boxes feel “sticky”: set `TRACK_MAX_DET_MISSES_UNKNOWN=0` (drop unknown boxes immediately when detector misses them).
+- For wider identity hold around a recognized face: increase `IDENTITY_HOLD_ZONE_SCALE` (for example `1.8`).
+- For stronger whole-body name persistence while walking/turning: increase `BODY_PERSIST_MAX_LOST_S` (for example `3.0`) and keep `BODY_PERSIST_DET_FPS` around `6` to `10`.
 - If attendance is missed for fast-moving people: set `ATTENDANCE_FAST_MODE=1` (and optionally `FAS_ALLOW_NO_POSE_FOR_ATTENDANCE=1`).
 
 **Note:** For CSRT/KCF trackers install `opencv-contrib-python` (this repo’s `requirements*.txt` now uses it). If unavailable, the code falls back to another OpenCV tracker.

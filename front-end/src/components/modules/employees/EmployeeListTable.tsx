@@ -12,6 +12,7 @@ import { RefreshCw, Search, SquarePen, Trash } from "lucide-react";
 import ConfirmationModal from "../../reusable/ConfirmationModal";
 import EmployeeEditForm from "./EmployeeEditForm";
 import { useRouter } from "next/navigation";
+import Pagination from "../../reusable/Pagination";
 import {
   deriveEmployeeHierarchy,
   normalizeHierarchyValue,
@@ -41,6 +42,13 @@ type EmployeeUpdatePayload = {
   section?: string | null;
   department?: string | null;
   line?: string | null;
+  deptId?: string | null;
+  sectionId?: string | null;
+  designationId?: string | null;
+  designation?: string | null;
+  unitId?: string | null;
+  lineId?: string | null;
+  empPicUrl?: string | null;
 };
 
 function normalizeApiError(error: unknown, fallback: string): string {
@@ -117,6 +125,22 @@ const EmployeeListTable = () => {
   const [selectedUser, setSelectedUser] = useState<Employee | null>(null);
   const [selectedPerson, setSelectedPerson] = useState<Employee | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const limits = 20;
+
+  const [permissions, setPermissions] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("userInfo");
+      const userInfo = raw ? JSON.parse(raw) : null;
+      if (userInfo?.permissions) {
+        setPermissions(userInfo.permissions);
+      }
+    } catch (err) {
+      console.error("Failed to load permissions in EmployeeListTable:", err);
+    }
+  }, []);
 
   const fetchEmployees = useCallback(async () => {
     try {
@@ -167,6 +191,12 @@ const EmployeeListTable = () => {
       ),
     [hierarchy.filteredRows, search],
   );
+
+  const paginatedEmployees = useMemo(() => {
+    const startIndex = (currentPage - 1) * limits;
+    const endIndex = startIndex + limits;
+    return filteredEmployees.slice(startIndex, endIndex);
+  }, [filteredEmployees, currentPage]);
 
   const hasActiveFilter = Boolean(
     search.trim() ||
@@ -266,7 +296,9 @@ const EmployeeListTable = () => {
           <div className="w-full px-1 py-2 text-center font-bold">SL</div>
         ),
         cell: (info) => (
-          <div className="px-1 py-2 text-center">{info.row.index + 1}</div>
+          <div className="px-1 py-2 text-center">
+            {(currentPage - 1) * limits + info.row.index + 1}
+          </div>
         ),
         size: 48,
       },
@@ -375,38 +407,54 @@ const EmployeeListTable = () => {
         header: () => (
           <div className="w-full px-1 py-2 text-center font-bold">Actions</div>
         ),
-        cell: ({ row }) => (
-          <div className="flex items-center justify-center gap-1 px-1 py-2">
-            <button
-              title="Edit"
-              className="cursor-pointer rounded p-1 hover:bg-gray-200"
-              onClick={() => handleEdit(row.original)}
-            >
-              <SquarePen className="h-4 w-4 text-blue-700" />
-            </button>
-            <button
-              title="Re-enroll Face"
-              className="cursor-pointer rounded p-1 hover:bg-gray-200"
-              onClick={() => handleReEnroll(row.original)}
-            >
-              <RefreshCw className="h-4 w-4 text-emerald-600" />
-            </button>
-            <button
-              title="Delete"
-              className="cursor-pointer rounded p-1 hover:bg-gray-200"
-              onClick={() => {
-                setSelectedPerson(row.original);
-                setShowDeleteModal(true);
-              }}
-            >
-              <Trash className="h-4 w-4 text-red-600" />
-            </button>
-          </div>
-        ),
+        cell: ({ row }) => {
+          const showEdit = permissions["/employees/edit"] !== false;
+          const showReEnroll = permissions["/employees/re-enroll"] !== false;
+          const showDelete = permissions["/employees/delete"] !== false;
+
+          if (!showEdit && !showReEnroll && !showDelete) {
+            return <div className="px-1 py-2 text-center text-xs text-zinc-400 font-semibold">N/A</div>;
+          }
+
+          return (
+            <div className="flex items-center justify-center gap-1 px-1 py-2">
+              {showEdit && (
+                <button
+                  title="Edit"
+                  className="cursor-pointer rounded p-1 hover:bg-gray-200"
+                  onClick={() => handleEdit(row.original)}
+                >
+                  <SquarePen className="h-4 w-4 text-blue-700" />
+                </button>
+              )}
+              {showReEnroll && (
+                <button
+                  title="Re-enroll Face"
+                  className="cursor-pointer rounded p-1 hover:bg-gray-200"
+                  onClick={() => handleReEnroll(row.original)}
+                >
+                  <RefreshCw className="h-4 w-4 text-emerald-600" />
+                </button>
+              )}
+              {showDelete && (
+                <button
+                  title="Delete"
+                  className="cursor-pointer rounded p-1 hover:bg-gray-200"
+                  onClick={() => {
+                    setSelectedPerson(row.original);
+                    setShowDeleteModal(true);
+                  }}
+                >
+                  <Trash className="h-4 w-4 text-red-600" />
+                </button>
+              )}
+            </div>
+          );
+        },
         size: 100,
       },
     ],
-    [handleEdit, handleReEnroll],
+    [handleEdit, handleReEnroll, currentPage, limits, permissions],
   );
 
   return (
@@ -568,15 +616,28 @@ const EmployeeListTable = () => {
           </div>
         </div>
 
-        <div className="overflow-x-auto rounded-xl border bg-white shadow-sm">
-          <div className="min-w-[1700px]">
-            <TanstackDataTable
-              data={filteredEmployees}
-              columns={employeeColumns}
-              loading={loading}
-              headerCellClassName="whitespace-nowrap bg-zinc-50"
-            />
+        <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm">
+          <div className="overflow-x-auto">
+            <div className="min-w-[1700px]">
+              <TanstackDataTable
+                data={paginatedEmployees}
+                columns={employeeColumns}
+                loading={loading}
+                headerCellClassName="whitespace-nowrap bg-zinc-50"
+              />
+            </div>
           </div>
+          {filteredEmployees.length > 0 && (
+            <div className="shrink-0 border-t border-zinc-100 bg-white px-4 py-3">
+              <Pagination
+                numberOfData={filteredEmployees.length}
+                limits={limits}
+                getCurrentPage={setCurrentPage}
+                searchText={search}
+                activeTab={`${hierarchyFilters.unit}-${hierarchyFilters.department}-${hierarchyFilters.section}-${hierarchyFilters.line}`}
+              />
+            </div>
+          )}
         </div>
       </div>
 

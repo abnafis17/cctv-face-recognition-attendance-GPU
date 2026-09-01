@@ -7,11 +7,8 @@ import { Badge } from "@/components/ui/badge";
 
 import { AI_HOST } from "@/config/axiosInstance";
 import { getCompanyIdFromToken } from "@/lib/authStorage";
-import { useErpEmployees } from "@/hooks/useErpEmployees";
-import { useErpDepartments } from "@/hooks/useErpDepartments";
-import {
-  deriveEmployeeHierarchy,
-} from "@/lib/employeeHierarchy";
+import { useErpEmployees, type ErpEmployee } from "@/hooks/useErpEmployees";
+import { useErpDepartments, type ErpDepartment } from "@/hooks/useErpDepartments";
 
 import type { Camera, Step } from "./types";
 import { DEFAULT_LAPTOP_CAMERA_ID, SCAN_1, SCAN_2, STEPS } from "./constants";
@@ -19,7 +16,6 @@ import { stepLabel } from "./utils";
 
 import { useTTS } from "./hooks/useTTS";
 import { useMjpegStream } from "./hooks/useMjpegStream";
-import { useCameraDevices } from "@/hooks/useCameraDevices";
 import { useLaptopCameraWebRTC } from "./hooks/useLaptopCameraWebRTC";
 import { useCameraControls } from "./hooks/useCameraControls";
 import { useAutoEnrollSession } from "./hooks/useAutoEnrollSession";
@@ -51,12 +47,13 @@ export default function AutoEnrollment({
   const [department, setDepartment] = useState("");
   const [section, setSection] = useState("");
   const [line, setLine] = useState("");
-
-  const {
-    devices: cameraDevices,
-    selectedDeviceId,
-    setSelectedDeviceId,
-  } = useCameraDevices();
+  const [deptId, setDeptId] = useState("");
+  const [sectionId, setSectionId] = useState("");
+  const [designationId, setDesignationId] = useState("");
+  const [designation, setDesignation] = useState("");
+  const [unitId, setUnitId] = useState("");
+  const [lineId, setLineId] = useState("");
+  const [empPicUrl, setEmpPicUrl] = useState("");
 
   // ---- Laptop camera WebRTC publisher (to AI server) ----
   const {
@@ -69,7 +66,6 @@ export default function AutoEnrollment({
     laptopCameraId,
     companyId,
     aiHost: AI_HOST,
-    selectedDeviceId,
   });
 
   // ---- Cameras list + controls ----
@@ -119,9 +115,9 @@ export default function AutoEnrollment({
   const speak = useTTS(tts);
 
   // ---- Session state (start/stop/poll) ----
-  const resetStreamRef = useRef<() => void>(() => {});
   const onStopCleanup = useCallback(() => {
-    resetStreamRef.current();
+    // clear MJPEG (done by resetStream effect below)
+    // stop any speaking
     window.speechSynthesis.cancel();
   }, []);
 
@@ -142,6 +138,13 @@ export default function AutoEnrollment({
     department,
     section,
     line,
+    deptId,
+    sectionId,
+    designationId,
+    designation,
+    unitId,
+    lineId,
+    empPicUrl,
     reEnroll,
     ensureCameraOn,
     stopCamera,
@@ -161,10 +164,6 @@ export default function AutoEnrollment({
     streamUrl,
     enabled: screen === "enrolling",
   });
-
-  useEffect(() => {
-    resetStreamRef.current = resetStream;
-  }, [resetStream]);
 
   // When enrolling (or camera changes), force a fresh MJPEG connection
   useEffect(() => {
@@ -230,32 +229,43 @@ export default function AutoEnrollment({
 
   const multiWarn = !!session?.overlay_multi_in_roi;
 
-  // ---- ERP department & employee search ----
+  // ---- ERP employee search & picker ----
   const {
-    departments: erpDepartments,
-    loading: deptsLoading,
-  } = useErpDepartments();
-
-  const {
+    search: erpSearch,
+    setSearch: setErpSearch,
     employees,
     loading: erpLoading,
     error: erpError,
-    setSearch: setEmployeeSearch,
-  } = useErpEmployees({ debounceMs: 350, initialSearch: "" });
+  } = useErpEmployees({
+    debounceMs: 350,
+    initialSearch: "",
+    pageSize: 20,
+    pageNumber: 1,
+  });
 
   const [selectedErpEmployeeId, setSelectedErpEmployeeId] = useState("");
-  const [erpSearch, setErpSearch] = useState("");
+  const [selectedEmployee, setSelectedEmployee] = useState<ErpEmployee | null>(null);
+  const [departmentFilter, setDepartmentFilter] = useState("");
+  const [employeeSearch, setEmployeeSearch] = useState("");
+  const { departments: erpDepartments } = useErpDepartments();
   const lockEmployeeIdentity = reEnroll && !!initialEmployeeId;
   const clearedAfterSuccessRef = useRef(false);
 
-  // Sync selected department or typed search query with useErpEmployees search payload
-  const activeSearchQuery = useMemo(() => {
-    return erpSearch.trim() || department.trim();
-  }, [erpSearch, department]);
+  const selectedDeptName = useMemo(() => {
+    if (!departmentFilter) return "";
+    return erpDepartments.find((d) => d.id === departmentFilter)?.name || "";
+  }, [departmentFilter, erpDepartments]);
 
+  // Trigger ERP search based on department filter selection or employeeSearch
   useEffect(() => {
-    setEmployeeSearch((prev) => (prev !== activeSearchQuery ? activeSearchQuery : prev));
-  }, [activeSearchQuery, setEmployeeSearch]);
+    if (selectedDeptName) {
+      // If a department is selected, search the ERP API by department name
+      setErpSearch(selectedDeptName);
+    } else {
+      // If no department is selected, search by the typed query (or empty string for full list)
+      setErpSearch(employeeSearch.trim());
+    }
+  }, [employeeSearch, selectedDeptName, setErpSearch]);
 
   useEffect(() => {
     if (sessionStatus !== "saved") {
@@ -267,41 +277,24 @@ export default function AutoEnrollment({
 
     setEmployeeId("");
     setName("");
+    setUnit("");
+    setDepartment("");
+    setSection("");
+    setLine("");
+    setDeptId("");
+    setSectionId("");
+    setDesignationId("");
+    setDesignation("");
+    setUnitId("");
+    setLineId("");
+    setEmpPicUrl("");
     setSelectedErpEmployeeId("");
+    setSelectedEmployee(null);
+    setEmployeeSearch("");
     setErpSearch("");
+    setDepartmentFilter("");
     clearedAfterSuccessRef.current = true;
-  }, [lockEmployeeIdentity, sessionStatus]);
-
-  const hierarchy = useMemo(
-    () =>
-      deriveEmployeeHierarchy(employees, {
-        unit,
-        department,
-        section,
-        line,
-      }),
-    [department, employees, line, section, unit]
-  );
-
-  // Combine ERP departments API list with any departments found in hierarchy
-  const departmentOptions = useMemo(() => {
-    const combined = new Set([...erpDepartments, ...hierarchy.options.departments]);
-    return Array.from(combined).sort((a, b) =>
-      a.localeCompare(b, undefined, { sensitivity: "base" })
-    );
-  }, [erpDepartments, hierarchy.options.departments]);
-
-  useEffect(() => {
-    const next = hierarchy.normalizedSelection;
-    if (next.unit !== unit) setUnit(next.unit);
-    if (next.section !== section) setSection(next.section);
-    if (next.line !== line) setLine(next.line);
-  }, [
-    hierarchy.normalizedSelection,
-    line,
-    section,
-    unit,
-  ]);
+  }, [lockEmployeeIdentity, sessionStatus, setErpSearch]);
 
   useEffect(() => {
     if (!initialEmployeeId) return;
@@ -312,73 +305,114 @@ export default function AutoEnrollment({
     if (!initialEmployeeId) return;
     const picked = employees.find((e) => e.employeeId === initialEmployeeId);
     if (!picked) return;
+    setSelectedEmployee(picked);
     if (!initialName) setName(picked.employeeName);
     setUnit(picked.unit || "");
     setDepartment(picked.department || "");
     setSection(picked.section || "");
     setLine(picked.line || "");
+    setDeptId(picked.deptId || "");
+    setSectionId(picked.sectionId || "");
+    setDesignationId(picked.designationId || "");
+    setDesignation(picked.designation || "");
+    setUnitId(picked.unitId || "");
+    setLineId(picked.lineId || "");
+    setEmpPicUrl(picked.picUrl || "");
   }, [employees, initialEmployeeId, initialName, setName]);
 
   const filteredEmployees = useMemo(() => {
-    const q = erpSearch.trim().toLowerCase();
-    if (!q) return employees;
-
-    return employees.filter((e) => {
-      const hay = `${e.employeeName} ${e.employeeId} ${e.unit} ${e.department} ${e.section} ${e.line}`.toLowerCase();
-      return hay.includes(q);
-    });
-  }, [erpSearch, employees]);
-
-  useEffect(() => {
-    if (!selectedErpEmployeeId) return;
-    const stillVisible = filteredEmployees.some(
-      (e) => e.employeeId === selectedErpEmployeeId
-    );
-    if (!stillVisible) setSelectedErpEmployeeId("");
-  }, [filteredEmployees, selectedErpEmployeeId]);
+    let list = employees;
+    if (departmentFilter) {
+      // When a department is selected, we filter the employees locally by the typed search query
+      const q = employeeSearch.trim().toLowerCase();
+      if (q) {
+        list = list.filter(
+          (e) =>
+            e.employeeName.toLowerCase().includes(q) ||
+            e.employeeId.toLowerCase().includes(q)
+        );
+      }
+    }
+    return list;
+  }, [employees, departmentFilter, employeeSearch]);
 
   const erpItems = useMemo(() => {
-    return filteredEmployees.map((e) => ({
+    const options = filteredEmployees.map((e) => ({
       value: e.employeeId,
       label: `${e.employeeName} (${e.employeeId})`,
       keywords: `${e.employeeName} ${e.employeeId} ${e.unit} ${e.department} ${e.section} ${e.line}`,
     }));
-  }, [filteredEmployees]);
+
+    if (selectedEmployee && !options.some((o) => o.value === selectedEmployee.employeeId)) {
+      options.unshift({
+        value: selectedEmployee.employeeId,
+        label: `${selectedEmployee.employeeName} (${selectedEmployee.employeeId})`,
+        keywords: `${selectedEmployee.employeeName} ${selectedEmployee.employeeId} ${selectedEmployee.unit} ${selectedEmployee.department} ${selectedEmployee.section} ${selectedEmployee.line}`,
+      });
+    }
+
+    return options;
+  }, [filteredEmployees, selectedEmployee]);
 
   const onPickEmployee = useCallback(
     (empId: string) => {
-      const picked = employees.find((e) => e.employeeId === empId);
+      const picked = employees.find((e) => e.employeeId === empId) ||
+                     (selectedEmployee?.employeeId === empId ? selectedEmployee : null);
       if (!picked) return;
+      setSelectedEmployee(picked);
       setEmployeeId(picked.employeeId);
       setName(picked.employeeName);
       setUnit(picked.unit || "");
       setDepartment(picked.department || "");
       setSection(picked.section || "");
       setLine(picked.line || "");
+      setDeptId(picked.deptId || "");
+      setSectionId(picked.sectionId || "");
+      setDesignationId(picked.designationId || "");
+      setDesignation(picked.designation || "");
+      setUnitId(picked.unitId || "");
+      setLineId(picked.lineId || "");
+      setEmpPicUrl(picked.picUrl || "");
     },
-    [employees]
+    [employees, selectedEmployee]
   );
 
+  const handleReset = useCallback(() => {
+    setSelectedErpEmployeeId("");
+    setSelectedEmployee(null);
+    setEmployeeSearch("");
+    setErpSearch("");
+    setEmployeeId("");
+    setName("");
+    setUnit("");
+    setDepartment("");
+    setSection("");
+    setLine("");
+    setDeptId("");
+    setSectionId("");
+    setDesignationId("");
+    setDesignation("");
+    setUnitId("");
+    setLineId("");
+    setEmpPicUrl("");
+    setDepartmentFilter("");
+  }, [setErpSearch]);
+
   return (
-    <div className="w-full">
+    <div className="flex flex-col gap-4 w-full">
       {screen === "setup" && (
         <SetupPanel
           cameraId={cameraId}
           setCameraId={setCameraId}
           camerasWithLaptop={camerasWithLaptop}
-          cameraDevices={cameraDevices}
-          selectedDeviceId={selectedDeviceId}
-          onSelectDeviceId={setSelectedDeviceId}
           selectedCamIsActive={selectedCamIsActive}
           busy={busy}
           selectedErpEmployeeId={selectedErpEmployeeId}
           setSelectedErpEmployeeId={setSelectedErpEmployeeId}
-          hierarchyAvailability={hierarchy.availability}
-          hierarchyOptions={{
-            ...hierarchy.options,
-            departments: departmentOptions,
-          }}
-          deptsLoading={deptsLoading}
+          departmentFilter={departmentFilter}
+          setDepartmentFilter={setDepartmentFilter}
+          departmentsList={erpDepartments}
+          erpLoading={erpLoading}
           unit={unit}
           setUnit={setUnit}
           department={department}
@@ -388,10 +422,9 @@ export default function AutoEnrollment({
           line={line}
           setLine={setLine}
           erpItems={erpItems}
-          erpLoading={erpLoading}
           erpError={erpError}
-          erpSearch={erpSearch}
-          setErpSearch={setErpSearch}
+          erpSearch={employeeSearch}
+          setErpSearch={setEmployeeSearch}
           onPickEmployee={onPickEmployee}
           employeeId={employeeId}
           setEmployeeId={setEmployeeId}
@@ -403,6 +436,7 @@ export default function AutoEnrollment({
           startDisabled={startDisabled}
           tts={tts}
           setTts={setTts}
+          handleReset={handleReset}
         />
       )}
 

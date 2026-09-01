@@ -1,11 +1,21 @@
 from __future__ import annotations
 import os
+import sys
+
+# Pre-import numpy to prevent system package directory import from loading older system numpy version
+import numpy as np
+
+# Temporarily inject system package path to load GStreamer-supported system OpenCV
+sys.path.insert(0, '/usr/lib/python3/dist-packages')
+try:
+    import cv2
+finally:
+    if '/usr/lib/python3/dist-packages' in sys.path:
+        sys.path.remove('/usr/lib/python3/dist-packages')
+
 import time
 from datetime import datetime
 from typing import Optional, Tuple
-
-import numpy as np
-import cv2
 
 
 def now_iso() -> str:
@@ -162,3 +172,103 @@ def pose_matches(required: str, yaw: float, pitch: float, cfg_pose: dict) -> boo
 
     # front
     return (yl + tol) < yaw < (yr - tol) and (pu + tol) < pitch < (pd - tol)
+
+
+# Cache to store the working pipeline/backend format for each RTSP URL.
+# This prevents the slow 15-second sequential timeout cascade when reconnecting to offline cameras.
+_WORKING_PIPELINE_CACHE: dict[str, str] = {}
+
+
+def open_capture_with_fallback(rtsp_url: str) -> cv2.VideoCapture:
+    """
+    Tries to open video stream capture with hardware-accelerated GStreamer decoders on Jetson,
+    falling back to optimized low-latency software OpenCV FFmpeg.
+    """
+    # 1. Ensure low-latency FFmpeg parameters are set in the environment globally
+    os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay"
+    
+    # Check if RTSP url is local file path (for testing with video files)
+    if not rtsp_url.startswith("rtsp://") and not rtsp_url.startswith("rtmps://") and not rtsp_url.startswith("http://") and not rtsp_url.startswith("https://"):
+        print(f"[Capture] Local file path detected: {rtsp_url}. Opening standard capture...")
+        return cv2.VideoCapture(rtsp_url)
+
+    # Load target resolution and fps from environment variables
+    width = int(os.getenv("CAMERA_DEFAULT_WIDTH", "1280"))
+    height = int(os.getenv("CAMERA_DEFAULT_HEIGHT", "720"))
+    fps = int(os.getenv("CAMERA_DEFAULT_INGEST_FPS", "15"))
+
+    # Check if we have a cached working pipeline for this URL
+    cached_pipeline = _WORKING_PIPELINE_CACHE.get(rtsp_url)
+    if cached_pipeline:
+        backend = cv2.CAP_FFMPEG if cached_pipeline == "ffmpeg" else cv2.CAP_GSTREAMER
+        src_str = rtsp_url if cached_pipeline == "ffmpeg" else cached_pipeline
+        
+        print(f"[Capture] Trying cached working pipeline/backend for {rtsp_url}...")
+        cap = cv2.VideoCapture(src_str, backend)
+        if cached_pipeline == "ffmpeg":
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            
+        if cap.isOpened():
+            ret, frame = cap.read()
+            if ret and frame is not None:
+                print(f"[Capture] Successfully opened stream using cached backend.")
+                return cap
+            cap.release()
+        print(f"[Capture] Cached backend failed. Clearing cache and doing full fallback sequence...")
+        _WORKING_PIPELINE_CACHE.pop(rtsp_url, None)
+
+    # 1. Try DeepStream nvurisrcbin pipeline (hardware decode, scale, rate control, auto-reconnection)
+    gstreamer_ds = (
+        f"nvurisrcbin uri={rtsp_url} rtsp-reconnect-interval=4 rtsp-reconnect-attempts=-1 "
+        f"select-rtp-protocol=4 latency=50 low-latency-mode=true ! "
+        f"nvvidconv ! video/x-raw, width={width}, height={height}, format=BGRx ! "
+        f"videorate ! video/x-raw, framerate={fps}/1 ! "
+        f"videoconvert ! video/x-raw, format=BGR ! "
+        f"appsink drop=true max-buffers=1 sync=false"
+    )
+
+    # 2. Try standard GStreamer H.264
+    gstreamer_h264 = (
+        f"rtspsrc location={rtsp_url} latency=50 protocols=tcp drop-on-latency=true ! "
+        f"rtph264depay ! h264parse ! nvv4l2decoder enable-max-performance=1 ! "
+        f"nvvidconv ! video/x-raw, width={width}, height={height}, format=BGRx ! "
+        f"videorate ! video/x-raw, framerate={fps}/1 ! "
+        f"videoconvert ! video/x-raw, format=BGR ! "
+        f"appsink drop=true max-buffers=1 sync=false"
+    )
+    
+    # 3. Try standard GStreamer H.265
+    gstreamer_h265 = (
+        f"rtspsrc location={rtsp_url} latency=50 protocols=tcp drop-on-latency=true ! "
+        f"rtph265depay ! h265parse ! nvv4l2decoder enable-max-performance=1 ! "
+        f"nvvidconv ! video/x-raw, width={width}, height={height}, format=BGRx ! "
+        f"videorate ! video/x-raw, framerate={fps}/1 ! "
+        f"videoconvert ! video/x-raw, format=BGR ! "
+        f"appsink drop=true max-buffers=1 sync=false"
+    )
+
+    pipelines_to_try = [
+        ("DeepStream nvurisrcbin", gstreamer_ds, cv2.CAP_GSTREAMER),
+        ("GStreamer H.264", gstreamer_h264, cv2.CAP_GSTREAMER),
+        ("GStreamer H.265", gstreamer_h265, cv2.CAP_GSTREAMER),
+        ("FFmpeg low-latency", rtsp_url, cv2.CAP_FFMPEG)
+    ]
+
+    for name, pipeline, backend in pipelines_to_try:
+        print(f"[Capture] Attempting {name} pipeline...")
+        cap = cv2.VideoCapture(pipeline, backend)
+        if backend == cv2.CAP_FFMPEG:
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        if cap.isOpened():
+            ret, frame = cap.read()
+            if ret and frame is not None:
+                print(f"[Capture] {name} pipeline initialized successfully.")
+                # Cache the pipeline string or "ffmpeg"
+                _WORKING_PIPELINE_CACHE[rtsp_url] = "ffmpeg" if backend == cv2.CAP_FFMPEG else pipeline
+                return cap
+            else:
+                cap.release()
+                print(f"[Capture] {name} pipeline opened but failed to read frames.")
+
+    print("[Capture] All pipelines failed. Returning closed capture object.")
+    return cap

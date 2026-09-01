@@ -6,9 +6,14 @@ import toast from "react-hot-toast";
 import axiosInstance, { AI_HOST, API } from "@/config/axiosInstance";
 import { useAttendanceEvents } from "@/hooks/useAttendanceEvents";
 import { getCompanyIdFromToken } from "@/lib/authStorage";
+import {
+  DEFAULT_LOCAL_CAMERA_ID,
+  dispatchLocalCameraStop,
+  isLocalCameraId,
+} from "@/lib/localCameraEvents";
 import type { Camera as CameraOption, Employee } from "@/types";
 
-import { recognizedColumns } from "@/components/modules/gatepass/recognizedColumns";
+import { getRecognizedColumns } from "@/components/modules/gatepass/recognizedColumns";
 import { getHistoryColumns } from "@/components/modules/gatepass/historyColumns";
 import type {
   AttendanceEventPayload,
@@ -119,32 +124,50 @@ function extractGatepassTimestampParts(value: unknown) {
   const normalized = String(value ?? "").trim();
   if (!normalized) return null;
 
-  const directMatch = normalized.match(
-    /^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{2}):(\d{2}):(\d{2}))/,
-  );
-
-  if (directMatch) {
-    return {
-      year: Number(directMatch[1]),
-      month: Number(directMatch[2]),
-      day: Number(directMatch[3]),
-      hour: Number(directMatch[4]),
-      minute: Number(directMatch[5]),
-      second: Number(directMatch[6]),
-    };
+  let parsed: Date;
+  if (/^\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}:\d{2}(\.\d+)?$/.test(normalized)) {
+    parsed = new Date(normalized + "Z");
+  } else {
+    parsed = new Date(normalized);
   }
 
-  const parsed = new Date(normalized);
   if (Number.isNaN(parsed.getTime())) return null;
 
-  return {
-    year: parsed.getUTCFullYear(),
-    month: parsed.getUTCMonth() + 1,
-    day: parsed.getUTCDate(),
-    hour: parsed.getUTCHours(),
-    minute: parsed.getUTCMinutes(),
-    second: parsed.getUTCSeconds(),
-  };
+  try {
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Dhaka",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    });
+    const parts = formatter.formatToParts(parsed);
+    const getPart = (type: string) => parts.find((p) => p.type === type)?.value;
+
+    const year = Number(getPart("year"));
+    const month = Number(getPart("month"));
+    const day = Number(getPart("day"));
+    let hour = Number(getPart("hour"));
+    const minute = Number(getPart("minute"));
+    const second = Number(getPart("second"));
+
+    if (hour === 24) hour = 0;
+
+    return { year, month, day, hour, minute, second };
+  } catch {
+    const dhakaTime = new Date(parsed.getTime() + 6 * 60 * 60 * 1000);
+    return {
+      year: dhakaTime.getUTCFullYear(),
+      month: dhakaTime.getUTCMonth() + 1,
+      day: dhakaTime.getUTCDate(),
+      hour: dhakaTime.getUTCHours(),
+      minute: dhakaTime.getUTCMinutes(),
+      second: dhakaTime.getUTCSeconds(),
+    };
+  }
 }
 
 function dhakaTodayYYYYMMDD() {
@@ -221,6 +244,7 @@ function mapGatepassApiRecordToViewRecord(
       unit: String(row.unit ?? "").trim() || "Unassigned Unit",
       shift: "General Shift",
       headcountNote: "Loaded from gatepass request table",
+      designation: row.designation ? String(row.designation).trim() : null,
     },
     type: leaveTypeLabel,
     typeId: toNullableTrimmed(row.leaveTypeId),
@@ -230,6 +254,18 @@ function mapGatepassApiRecordToViewRecord(
     status: row.status === "returned" ? "returned" : "out",
     note: toRecordNote(row.purpose, row.destination),
     requestedAt: formatGatepassDateTime(row.requestedAt ?? row.outTime),
+    passType: row.passType,
+    remarks: row.remarks,
+    purpose: row.purpose,
+    destination: row.destination,
+    externalGatepassId: row.externalGatepassId,
+    erpStatus: row.erpStatus,
+    returnTime: row.returnTime ? Number(row.returnTime) : null,
+    rawOutTime: row.rawOutTime || row.outTime,
+    rawInTime: row.rawInTime || row.inTime,
+    approvedByName: row.approvedByName,
+    approvedByDesignation: row.approvedByDesignation,
+    updatedAt: row.updatedAt,
   };
 }
 
@@ -267,6 +303,15 @@ function getRecognizedRowKey(employee: GatepassEmployee, fallbackKey = "") {
 
 export function useGatepassPage() {
   const [companyId, setCompanyId] = useState("");
+  const [selectedReportRecord, setSelectedReportRecord] =
+    useState<GatepassRecord | null>(null);
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+
+  const handleViewReport = useCallback((record: GatepassRecord) => {
+    setSelectedReportRecord(record);
+    setIsReportModalOpen(true);
+  }, []);
+
   const [gatepassCameras, setGatepassCameras] = useState<CameraOption[]>([]);
   const [gatepassLeaveTypes, setGatepassLeaveTypes] = useState<
     GatepassLeaveTypeOption[]
@@ -295,13 +340,17 @@ export function useGatepassPage() {
   const [historyToDate, setHistoryToDate] = useState(() =>
     dhakaTodayYYYYMMDD(),
   );
-  const [historyLeaveTypeId, setHistoryLeaveTypeId] = useState("");
+  const [historyLeaveTypeCategory, setHistoryLeaveTypeCategory] = useState<
+    "all" | "short" | "long"
+  >("all");
+  const [historyPurposeId, setHistoryPurposeId] = useState("all");
   const [recognizedPeople, setRecognizedPeople] = useState<RecognizedPerson[]>(
     [],
   );
   const [leaveTypeId, setLeaveTypeId] = useState("");
   const [destination, setDestination] = useState("");
   const [purpose, setPurpose] = useState("");
+  const [approxReturnTime, setApproxReturnTime] = useState("");
   const [formErrors, setFormErrors] = useState<FormErrors>({});
   const [recognitionActive, setRecognitionActive] = useState(false);
   const [recognitionStartSeq, setRecognitionStartSeq] = useState(0);
@@ -335,12 +384,30 @@ export function useGatepassPage() {
     };
   }, [historySearch]);
 
+  const laptopCameraId = useMemo(() => {
+    return companyId ? `laptop-${companyId}` : DEFAULT_LOCAL_CAMERA_ID;
+  }, [companyId]);
+
+  const allCameras = useMemo(() => {
+    const laptopCameraOption: CameraOption = {
+      id: laptopCameraId,
+      name: "Laptop Camera",
+      isActive: recognitionActive && activeCameraId === laptopCameraId,
+      attendance: recognitionActive && activeCameraId === laptopCameraId,
+      task: "gate_pass",
+    };
+
+    const filteredFetched = gatepassCameras.filter(
+      (c) => c.id !== laptopCameraId,
+    );
+    return [laptopCameraOption, ...filteredFetched];
+  }, [gatepassCameras, laptopCameraId, recognitionActive, activeCameraId]);
+
   const selectedGatepassCamera = useMemo(
     () =>
-      gatepassCameras.find(
-        (camera) => camera.id === selectedGatepassCameraId,
-      ) ?? null,
-    [gatepassCameras, selectedGatepassCameraId],
+      allCameras.find((camera) => camera.id === selectedGatepassCameraId) ??
+      null,
+    [allCameras, selectedGatepassCameraId],
   );
 
   const previewCamera = useMemo(() => {
@@ -398,14 +465,25 @@ export function useGatepassPage() {
 
   const recognizedRows = useMemo<RecognizedGatepassRow[]>(
     () =>
-      recognizedPeople.map((person) => ({
-        ...person,
-        latestRecord:
-          latestRecordByEmployeeKey.get(person.employee.employeeCode) ??
-          latestRecordByEmployeeKey.get(person.employee.id) ??
-          null,
-      })),
+      recognizedPeople
+        .map((person) => ({
+          ...person,
+          latestRecord:
+            latestRecordByEmployeeKey.get(person.employee.employeeCode) ??
+            latestRecordByEmployeeKey.get(person.employee.id) ??
+            null,
+        }))
+        .filter((row) => !hasOpenOutRecord(row.latestRecord)),
     [latestRecordByEmployeeKey, recognizedPeople],
+  );
+
+  const removeRecognizedPerson = useCallback((key: string) => {
+    setRecognizedPeople((current) => current.filter((row) => row.key !== key));
+  }, []);
+
+  const recognizedColumns = useMemo(
+    () => getRecognizedColumns(removeRecognizedPerson),
+    [removeRecognizedPerson],
   );
 
   const historyRows = useMemo(
@@ -425,11 +503,12 @@ export function useGatepassPage() {
   );
 
   const historyPaginationResetKey = useMemo(() => {
-    return `${historyFromDate}|${historyToDate}|${historyLeaveTypeId}|${debouncedHistorySearch}|${historyRows.length}`;
+    return `${historyFromDate}|${historyToDate}|${historyLeaveTypeCategory}|${historyPurposeId}|${debouncedHistorySearch}|${historyRows.length}`;
   }, [
     debouncedHistorySearch,
     historyFromDate,
-    historyLeaveTypeId,
+    historyLeaveTypeCategory,
+    historyPurposeId,
     historyRows.length,
     historyToDate,
   ]);
@@ -439,13 +518,14 @@ export function useGatepassPage() {
   }, [
     debouncedHistorySearch,
     historyFromDate,
-    historyLeaveTypeId,
+    historyLeaveTypeCategory,
+    historyPurposeId,
     historyToDate,
   ]);
 
   const historyColumns = useMemo(
-    () => getHistoryColumns(historySkip),
-    [historySkip],
+    () => getHistoryColumns(historySkip, handleViewReport),
+    [historySkip, handleViewReport],
   );
 
   const streamQuery = useMemo(() => {
@@ -540,13 +620,13 @@ export function useGatepassPage() {
 
   useEffect(() => {
     setSelectedGatepassCameraId((current) => {
-      if (!gatepassCameras.length) return "";
-      if (current && gatepassCameras.some((camera) => camera.id === current)) {
+      if (!allCameras.length) return "";
+      if (current && allCameras.some((camera) => camera.id === current)) {
         return current;
       }
-      return gatepassCameras[0].id;
+      return allCameras[0].id;
     });
-  }, [gatepassCameras]);
+  }, [allCameras]);
 
   const fetchEmployeeDirectory = useCallback(async (silent = false) => {
     try {
@@ -592,9 +672,7 @@ export function useGatepassPage() {
       const rows = Array.isArray(response.data)
         ? response.data
             .map(normalizeGatepassLeaveTypeOption)
-            .filter(
-              (row): row is GatepassLeaveTypeOption => Boolean(row),
-            )
+            .filter((row): row is GatepassLeaveTypeOption => Boolean(row))
         : [];
 
       setGatepassLeaveTypes(rows);
@@ -616,16 +694,9 @@ export function useGatepassPage() {
   }, [fetchGatepassLeaveTypes]);
 
   useEffect(() => {
-    setLeaveTypeId((current) => {
-      if (!current) return "";
-      return gatepassLeaveTypeById.has(current) ? current : "";
-    });
-  }, [gatepassLeaveTypeById]);
-
-  useEffect(() => {
-    setHistoryLeaveTypeId((current) => {
-      if (!current) return "";
-      return gatepassLeaveTypeById.has(current) ? current : "";
+    setHistoryPurposeId((current) => {
+      if (current === "all") return "all";
+      return gatepassLeaveTypeById.has(current) ? current : "all";
     });
   }, [gatepassLeaveTypeById]);
 
@@ -670,14 +741,24 @@ export function useGatepassPage() {
         if (!silent) setHistoryLoading(true);
         setHistoryError("");
 
+        const resolvedLeaveTypeId =
+          historyLeaveTypeCategory === "all"
+            ? undefined
+            : historyLeaveTypeCategory === "long"
+              ? "Long Leave"
+              : historyPurposeId === "all"
+                ? "short leave"
+                : historyPurposeId;
+
         const response = await axiosInstance.get<GatepassApiRecord[]>(
           API.GATEPASS_TABLE,
           {
             params: {
               fromDate: historyFromDate,
               toDate: historyToDate,
-              leaveTypeId: historyLeaveTypeId || undefined,
+              leaveTypeId: resolvedLeaveTypeId,
               q: debouncedHistorySearch || undefined,
+              status: "out",
               limit: 500,
             },
           },
@@ -696,7 +777,13 @@ export function useGatepassPage() {
         if (!silent) setHistoryLoading(false);
       }
     },
-    [debouncedHistorySearch, historyFromDate, historyLeaveTypeId, historyToDate],
+    [
+      debouncedHistorySearch,
+      historyFromDate,
+      historyLeaveTypeCategory,
+      historyPurposeId,
+      historyToDate,
+    ],
   );
 
   useEffect(() => {
@@ -732,7 +819,7 @@ export function useGatepassPage() {
     if (!normalized) return;
 
     try {
-      await axiosInstance.post(API.ATTENDANCE_CONTROL_DISABLE, {
+      await axiosInstance.post("/attendance-control/disable", {
         cameraId: normalized,
       });
     } catch {
@@ -740,11 +827,28 @@ export function useGatepassPage() {
     }
 
     try {
-      await axiosInstance.post(`${API.CAMERAS}/stop/${normalized}`);
+      await axiosInstance.post(`/cameras/stop/${normalized}`);
     } catch {
       // best effort
     }
   }, []);
+
+  const stopLocalGatepassCamera = useCallback(
+    (cameraId?: string | null) => {
+      const candidates = new Set(
+        [cameraId, laptopCameraId, DEFAULT_LOCAL_CAMERA_ID]
+          .map((value) => String(value ?? "").trim())
+          .filter(Boolean),
+      );
+
+      for (const candidate of candidates) {
+        dispatchLocalCameraStop(candidate);
+      }
+
+      dispatchLocalCameraStop();
+    },
+    [laptopCameraId],
+  );
 
   const stopCurrentCamera = useCallback(
     async (cameraId?: string, refresh = true) => {
@@ -756,7 +860,11 @@ export function useGatepassPage() {
 
       if (!targetId) return;
 
-      await stopRecognitionCameraApi(targetId);
+      if (isLocalCameraId(targetId)) {
+        stopLocalGatepassCamera(targetId);
+      } else {
+        await stopRecognitionCameraApi(targetId);
+      }
 
       if (activeCameraIdRef.current === targetId) {
         activeCameraIdRef.current = "";
@@ -782,6 +890,7 @@ export function useGatepassPage() {
       fetchGatepassCameras,
       patchGatepassCameraState,
       selectedGatepassCamera,
+      stopLocalGatepassCamera,
       stopRecognitionCameraApi,
     ],
   );
@@ -793,7 +902,11 @@ export function useGatepassPage() {
     let cancelled = false;
 
     void (async () => {
-      await stopRecognitionCameraApi(storedCameraId);
+      if (isLocalCameraId(storedCameraId)) {
+        stopLocalGatepassCamera(storedCameraId);
+      } else {
+        await stopRecognitionCameraApi(storedCameraId);
+      }
       writeStoredGatepassCameraId("");
 
       if (!cancelled) {
@@ -811,6 +924,7 @@ export function useGatepassPage() {
   }, [
     fetchGatepassCameras,
     patchGatepassCameraState,
+    stopLocalGatepassCamera,
     stopRecognitionCameraApi,
   ]);
 
@@ -822,13 +936,17 @@ export function useGatepassPage() {
 
       if (!cameraId) return;
 
-      void stopRecognitionCameraApi(cameraId);
+      if (isLocalCameraId(cameraId)) {
+        stopLocalGatepassCamera(cameraId);
+      } else {
+        void stopRecognitionCameraApi(cameraId);
+      }
       writeStoredGatepassCameraId("");
     };
-  }, [stopRecognitionCameraApi]);
+  }, [stopLocalGatepassCamera, stopRecognitionCameraApi]);
 
   const fetchAttendanceLatestSeq = useCallback(async () => {
-    const response = await axiosInstance.get(API.ATTENDANCE_EVENTS, {
+    const response = await axiosInstance.get(`${API.ATTENDANCE_LIST}/events`, {
       params: { afterSeq: 0, limit: 1, waitMs: 0 },
     });
 
@@ -850,20 +968,57 @@ export function useGatepassPage() {
         .trim()
         .toLowerCase();
 
-      if (eventCameraKey === selectedCameraDbId) return true;
-      if (selectedCameraPublicId && eventCameraKey === selectedCameraPublicId) {
-        return true;
+      // Find any cameras in allCameras that match the selected camera ID or public ID
+      const selectedMatches = allCameras.filter(
+        (c) =>
+          c.id === selectedCameraDbId ||
+          (c.camId && c.camId === selectedCameraDbId) ||
+          c.id === selectedCameraPublicId ||
+          (c.camId && c.camId === selectedCameraPublicId),
+      );
+
+      // Collect all allowable identifier aliases for the selected camera
+      const allowedIds = new Set<string>();
+      allowedIds.add(selectedCameraDbId.toLowerCase());
+      if (selectedCameraPublicId)
+        allowedIds.add(selectedCameraPublicId.toLowerCase());
+      if (selectedCameraName) allowedIds.add(selectedCameraName.toLowerCase());
+
+      for (const c of selectedMatches) {
+        if (c.id) allowedIds.add(c.id.toLowerCase());
+        if (c.camId) allowedIds.add(c.camId.toLowerCase());
+        if (c.name) allowedIds.add(c.name.toLowerCase());
       }
+
+      // Collect all possible aliases for the event camera
+      const eventKeys = new Set<string>();
+      eventKeys.add(eventCameraKey.toLowerCase());
+      const eventMatches = allCameras.filter(
+        (c) =>
+          c.id === eventCameraKey || (c.camId && c.camId === eventCameraKey),
+      );
+      for (const c of eventMatches) {
+        if (c.id) eventKeys.add(c.id.toLowerCase());
+        if (c.camId) eventKeys.add(c.camId.toLowerCase());
+        if (c.name) eventKeys.add(c.name.toLowerCase());
+      }
+
+      // Check if there is any intersection between event keys and allowed IDs
+      for (const key of eventKeys) {
+        if (allowedIds.has(key)) return true;
+      }
+
+      // Local camera fallback check
       if (
-        selectedCameraName &&
-        eventCameraKey.toLowerCase() === selectedCameraName
+        isLocalCameraId(eventCameraKey) &&
+        isLocalCameraId(selectedCameraDbId)
       ) {
         return true;
       }
 
       return false;
     },
-    [selectedGatepassCamera],
+    [selectedGatepassCamera, allCameras],
   );
 
   const queueRecognizedPerson = useCallback(
@@ -957,8 +1112,6 @@ export function useGatepassPage() {
       if (!selectedGatepassCamera || !recognitionActive) return false;
 
       const candidateSeq = Number(candidate.seq ?? 0) || 0;
-      if (candidateSeq <= recognitionStartSeq) return false;
-
       const eventEmployeeId = String(candidate.employeeId ?? "").trim();
       if (!eventEmployeeId) return false;
 
@@ -970,6 +1123,12 @@ export function useGatepassPage() {
 
       const eventTime = new Date(eventTimeRaw);
       if (Number.isNaN(eventTime.getTime())) return false;
+
+      if (candidateSeq <= recognitionStartSeq) {
+        // Accept events that occurred within the last 5 minutes (to handle startup/cooldown race conditions and clock skews)
+        const isRecent = Math.abs(Date.now() - eventTime.getTime()) < 300000;
+        if (!isRecent) return false;
+      }
 
       const candidateAttendanceId = String(candidate.attendanceId ?? "").trim();
       const signature = [
@@ -984,15 +1143,15 @@ export function useGatepassPage() {
       lastRecognitionSignatureRef.current = signature;
 
       const directoryEmployee = employeeDirectoryByKey.get(eventEmployeeId);
-      const matchedEmployee = directoryEmployee
-        ? mapEmployeeToGatepassEmployee(
-            directoryEmployee,
-            selectedGatepassCamera.name,
-          )
-        : fallbackGatepassEmployee(
-            eventEmployeeId,
-            selectedGatepassCamera.name,
-          );
+      if (!directoryEmployee) {
+        // Skip unknown employees
+        return false;
+      }
+
+      const matchedEmployee = mapEmployeeToGatepassEmployee(
+        directoryEmployee,
+        selectedGatepassCamera.name,
+      );
 
       const latestRecord =
         latestRecordByEmployeeKey.get(matchedEmployee.employeeCode) ??
@@ -1028,27 +1187,22 @@ export function useGatepassPage() {
     (events: AttendanceEventPayload[]) => {
       if (!selectedGatepassCamera || !recognitionActive) return;
 
-      const reversed = [...events].reverse();
-      const latestScopedMatch = reversed.find((event) =>
-        matchesSelectedCamera(event.cameraId),
-      );
-
       const allEventsUnscoped =
-        reversed.length > 0 &&
-        reversed.every(
+        events.length > 0 &&
+        events.every(
           (event) => String(event.cameraId ?? "").trim().length === 0,
         );
 
-      const latestUnscopedMatch = allEventsUnscoped
-        ? reversed.find(
-            (event) => String(event.employeeId ?? "").trim().length > 0,
-          )
-        : undefined;
+      const matchingEvents = events.filter((event) => {
+        if (allEventsUnscoped) {
+          return String(event.employeeId ?? "").trim().length > 0;
+        }
+        return matchesSelectedCamera(event.cameraId);
+      });
 
-      const latestMatch = latestScopedMatch ?? latestUnscopedMatch;
-      if (!latestMatch) return;
-
-      applyRecognitionCandidate(latestMatch);
+      for (const event of matchingEvents) {
+        applyRecognitionCandidate(event);
+      }
     },
     [
       applyRecognitionCandidate,
@@ -1061,6 +1215,7 @@ export function useGatepassPage() {
   useAttendanceEvents({
     enabled: Boolean(selectedGatepassCamera) && recognitionActive,
     syncLatestOnStart: false,
+    startSeq: recognitionStartSeq,
     onEvents: handleAttendanceEvents,
   });
 
@@ -1074,6 +1229,7 @@ export function useGatepassPage() {
     setLeaveTypeId("");
     setDestination("");
     setPurpose("");
+    setApproxReturnTime("");
     setFormErrors({});
   }, []);
 
@@ -1083,7 +1239,8 @@ export function useGatepassPage() {
     setDebouncedHistorySearch("");
     setHistoryFromDate(today);
     setHistoryToDate(today);
-    setHistoryLeaveTypeId("");
+    setHistoryLeaveTypeCategory("all");
+    setHistoryPurposeId("all");
     setHistoryPage(1);
   }, []);
 
@@ -1122,7 +1279,6 @@ export function useGatepassPage() {
         // best effort
       }
 
-      clearRecognizedList();
       resetGatepassForm();
 
       try {
@@ -1131,11 +1287,15 @@ export function useGatepassPage() {
         latestSeqBaseline = 0;
       }
 
-      await stopRecognitionCameraApi(targetId);
-      await axiosInstance.post(`${API.CAMERAS}/start/${targetId}`);
-      await axiosInstance.post(API.ATTENDANCE_CONTROL_ENABLE, {
-        cameraId: targetId,
-      });
+      if (isLocalCameraId(targetId)) {
+        stopLocalGatepassCamera(targetId);
+      } else {
+        await stopRecognitionCameraApi(targetId);
+        await axiosInstance.post(`/cameras/start/${targetId}`);
+        await axiosInstance.post("/attendance-control/enable", {
+          cameraId: targetId,
+        });
+      }
 
       patchGatepassCameraState(targetId, {
         isActive: true,
@@ -1176,7 +1336,11 @@ export function useGatepassPage() {
       writeStoredGatepassCameraId("");
 
       try {
-        await stopRecognitionCameraApi(targetId);
+        if (isLocalCameraId(targetId)) {
+          stopLocalGatepassCamera(targetId);
+        } else {
+          await stopRecognitionCameraApi(targetId);
+        }
         await fetchGatepassCameras(true);
       } catch {
         // best effort
@@ -1198,6 +1362,7 @@ export function useGatepassPage() {
     resetGatepassForm,
     selectedGatepassCamera,
     stopCurrentCamera,
+    stopLocalGatepassCamera,
     stopRecognitionCameraApi,
     submitting,
   ]);
@@ -1215,8 +1380,6 @@ export function useGatepassPage() {
     try {
       await stopCurrentCamera(targetId, true);
       setRecognitionActive(false);
-      clearRecognizedList();
-      resetGatepassForm();
       toast.success("Gate pass camera stopped");
     } catch (error: unknown) {
       const message = normalizeApiError(error, "Failed to stop camera");
@@ -1225,13 +1388,50 @@ export function useGatepassPage() {
     } finally {
       setCameraAction(null);
     }
+  }, [cameraAction, selectedGatepassCamera, stopCurrentCamera, submitting]);
+
+  const cancelGatepassFlow = useCallback(async () => {
+    const targetId =
+      String(activeCameraIdRef.current ?? "").trim() ||
+      String(selectedGatepassCamera?.id ?? "").trim();
+
+    setPanelError("");
+    clearRecognizedList();
+    resetGatepassForm();
+
+    if (!targetId) {
+      toast.success("Gate pass cleared");
+      return;
+    }
+
+    if (!activeCameraIdRef.current && !recognitionActive) {
+      if (isLocalCameraId(targetId)) {
+        stopLocalGatepassCamera(targetId);
+      }
+      toast.success("Gate pass cleared");
+      return;
+    }
+
+    setCameraAction("stop");
+
+    try {
+      await stopCurrentCamera(targetId, true);
+      setRecognitionActive(false);
+      toast.success("Gate pass cancelled and camera stopped");
+    } catch (error: unknown) {
+      const message = normalizeApiError(error, "Failed to stop camera");
+      setPanelError(message);
+      toast.error(message);
+    } finally {
+      setCameraAction(null);
+    }
   }, [
-    cameraAction,
     clearRecognizedList,
+    recognitionActive,
     resetGatepassForm,
     selectedGatepassCamera,
     stopCurrentCamera,
-    submitting,
+    stopLocalGatepassCamera,
   ]);
 
   const stopAndResetGatepassFlow = useCallback(
@@ -1249,7 +1449,14 @@ export function useGatepassPage() {
         String(activeCameraIdRef.current ?? "").trim() ||
         String(selectedGatepassCamera?.id ?? "").trim();
 
-      if (!targetId || (!activeCameraIdRef.current && !recognitionActive)) {
+      if (!targetId) {
+        return;
+      }
+
+      if (!activeCameraIdRef.current && !recognitionActive) {
+        if (isLocalCameraId(targetId)) {
+          stopLocalGatepassCamera(targetId);
+        }
         return;
       }
 
@@ -1272,6 +1479,7 @@ export function useGatepassPage() {
       resetGatepassForm,
       selectedGatepassCamera,
       stopCurrentCamera,
+      stopLocalGatepassCamera,
     ],
   );
 
@@ -1286,13 +1494,23 @@ export function useGatepassPage() {
         } finally {
           setCameraAction(null);
         }
+      } else if (
+        selectedGatepassCameraId !== cameraId &&
+        isLocalCameraId(selectedGatepassCameraId)
+      ) {
+        stopLocalGatepassCamera(selectedGatepassCameraId);
       }
 
       clearRecognizedList();
       setPanelError("");
       setSelectedGatepassCameraId(cameraId);
     },
-    [clearRecognizedList, selectedGatepassCameraId, stopCurrentCamera],
+    [
+      clearRecognizedList,
+      selectedGatepassCameraId,
+      stopCurrentCamera,
+      stopLocalGatepassCamera,
+    ],
   );
 
   const submitRequest = useCallback(async () => {
@@ -1301,10 +1519,6 @@ export function useGatepassPage() {
       return;
     }
 
-    const trimmedPurpose = purpose.trim();
-    const selectedLeaveType = leaveTypeId
-      ? gatepassLeaveTypeById.get(leaveTypeId) ?? null
-      : null;
     const nextErrors: FormErrors = {};
     const rowsNeedingOutSubmission = recognizedRows.filter(
       (row) => !hasOpenOutRecord(row.latestRecord),
@@ -1315,17 +1529,30 @@ export function useGatepassPage() {
       return;
     }
 
-    if (rowsNeedingOutSubmission.length > 0 && !selectedLeaveType) {
-      nextErrors.leaveType = gatepassLeaveTypes.length
-        ? "Select leave type"
-        : "No gatepass leave type available";
+    const isShortLeave = leaveTypeId === "short leave";
+    const isLongLeave = leaveTypeId === "Long Leave";
+
+    if (rowsNeedingOutSubmission.length > 0 && !leaveTypeId) {
+      nextErrors.leaveType = "Select leave type";
     }
 
-    if (rowsNeedingOutSubmission.length > 0 && !trimmedPurpose) {
+    if (rowsNeedingOutSubmission.length > 0 && (isShortLeave || isLongLeave) && !purpose) {
       nextErrors.purpose = "Purpose is required";
     }
 
-    if (nextErrors.leaveType || nextErrors.purpose) {
+    if (
+      rowsNeedingOutSubmission.length > 0 &&
+      isShortLeave &&
+      !approxReturnTime.trim()
+    ) {
+      nextErrors.approxReturnTime = "Approx. return time is required";
+    }
+
+    if (
+      nextErrors.leaveType ||
+      nextErrors.purpose ||
+      nextErrors.approxReturnTime
+    ) {
       setFormErrors(nextErrors);
       return;
     }
@@ -1337,6 +1564,15 @@ export function useGatepassPage() {
     let firstSuccessfulName = "";
     const successfulKeys = new Set<string>();
     const failedNames: string[] = [];
+
+    const selectedPurpose =
+      (isShortLeave || isLongLeave) && purpose
+        ? (gatepassLeaveTypes.find(
+            (lt) =>
+              lt.id === purpose ||
+              lt.label.trim().toLowerCase() === purpose.trim().toLowerCase()
+          ) ?? null)
+        : null;
 
     try {
       for (const row of recognizedRows) {
@@ -1377,15 +1613,43 @@ export function useGatepassPage() {
             continue;
           }
 
-          await axiosInstance.post(API.GATEPASS_TABLE, {
+          const response = await axiosInstance.post(API.GATEPASS_TABLE, {
             employeeId,
             cameraId: selectedGatepassCamera.id,
-            leaveTypeId: selectedLeaveType?.id,
-            leaveType: selectedLeaveType?.label,
+            leaveTypeId: (isShortLeave || isLongLeave)
+              ? (selectedPurpose?.id ?? purpose.trim())
+              : "Long Leave",
+            leaveType: (isShortLeave || isLongLeave)
+              ? (selectedPurpose?.label ?? purpose.trim())
+              : "Long Leave",
             destination: destination.trim() || null,
-            purpose: trimmedPurpose,
+            purpose: (isShortLeave || isLongLeave)
+              ? (selectedPurpose?.label ?? purpose.trim())
+              : "Long Leave",
             recognizedAt: row.recognizedAt.toISOString(),
+            passType: isShortLeave ? "short leave" : "Long Leave",
+            remarks: isShortLeave ? "okay" : "ok",
+            returnTime: approxReturnTime
+              ? parseInt(approxReturnTime, 10)
+              : null,
           });
+
+          const createdGatepass = response?.data?.gatepass;
+          const gatePassId =
+            createdGatepass?.externalGatepassId ||
+            response?.data?.externalApi?.responseData?.data?.[0]?.gatePassId;
+
+          if (!gatePassId) {
+            const responseMessage =
+              response?.data?.externalApi?.responseData?.message;
+            const errMsg = responseMessage
+              ? `Submission unsuccessful. Please try again. ERP Error: (${responseMessage})`
+              : "Submission unsuccessful. Please try again. ERP Error: (".concat(
+                  responseMessage,
+                  ")",
+                );
+            throw new Error(errMsg);
+          }
 
           successCount += 1;
           if (!firstSuccessfulName) {
@@ -1397,7 +1661,10 @@ export function useGatepassPage() {
 
           if (failedNames.length === 1) {
             toast.error(
-              normalizeApiError(error, `Failed to submit ${row.employee.name}`),
+              normalizeApiError(
+                error,
+                `Failed to submit gatepass for ${row.employee.name}. Please re-submit.`,
+              ),
             );
           }
         }
@@ -1438,8 +1705,7 @@ export function useGatepassPage() {
     destination,
     fetchGatepassRecords,
     fetchHistoryRecords,
-    gatepassLeaveTypeById,
-    gatepassLeaveTypes.length,
+    gatepassLeaveTypes,
     leaveTypeId,
     purpose,
     recognizedRows,
@@ -1456,7 +1722,7 @@ export function useGatepassPage() {
   );
 
   return {
-    gatepassCameras,
+    gatepassCameras: allCameras,
     gatepassLeaveTypes,
     gatepassLeaveTypesLoading,
     gatepassLeaveTypesError,
@@ -1471,11 +1737,13 @@ export function useGatepassPage() {
     historySearch,
     historyFromDate,
     historyToDate,
-    historyLeaveTypeId,
+    historyLeaveTypeCategory,
+    historyPurposeId,
     recognizedRows,
     leaveTypeId,
     destination,
     purpose,
+    approxReturnTime,
     formErrors,
     recognitionActive,
     activeCameraId,
@@ -1493,21 +1761,29 @@ export function useGatepassPage() {
     summaryCounts,
     recognizedColumns,
     historyColumns,
+    removeRecognizedPerson,
     setHistorySearch,
     setHistoryFromDate,
     setHistoryToDate,
-    setHistoryLeaveTypeId,
+    setHistoryLeaveTypeCategory,
+    setHistoryPurposeId,
     setHistoryPage,
     setLeaveTypeId,
     setDestination,
     setPurpose,
+    setApproxReturnTime,
     setFormErrors,
     handleCameraChange,
     startSelectedCamera,
     stopSelectedCamera,
+    cancelGatepassFlow,
     submitRequest,
     resetHistoryFilters,
     fetchHistoryRecords,
     pageLimit: GATEPASS_HISTORY_PAGE_LIMIT,
+    selectedReportRecord,
+    isReportModalOpen,
+    setIsReportModalOpen,
+    handleViewReport,
   };
 }

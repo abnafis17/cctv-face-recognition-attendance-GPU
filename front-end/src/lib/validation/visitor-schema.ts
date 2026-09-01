@@ -17,8 +17,12 @@ export const visitorSchema = z.object({
   purposeOfVisit: z.string().min(1, "Purpose of visit is required"),
   department: z.string().min(1, "Department is required"),
   hostEmployeeId: z.string().min(1, "Host / employee name is required"),
+  hostEmployeeName: z.string().min(1, "Host name is required"),
+  hostPicUrl: z.string().optional().or(z.literal("")),
+  hostDesignationId: z.string().optional().or(z.literal("")),
+  hostDesignationName: z.string().optional().or(z.literal("")),
   
-  idProofType: z.string().min(1, "ID proof type is required"),
+  idProofType: z.string().optional().or(z.literal("")),
   idProofNumber: z.string().optional().or(z.literal("")),
   vehicleNumber: z.string().optional().or(z.literal("")),
   extraGuest: z.string().optional().or(z.literal("")),
@@ -29,16 +33,16 @@ export const visitorSchema = z.object({
   entryAuthorizedBy: z.string().optional().or(z.literal("")),
   remarks: z.string().optional().or(z.literal("")),
   
-  visitorPhoto: z.string().optional().or(z.literal("")),
+  visitorPhoto: z.string().min(1, "Visitor photo is required"),
 }).superRefine((data, ctx) => {
   const extraCount = data.extraGuest ? parseInt(data.extraGuest, 10) : 0;
-  if (extraCount > 0) {
+  if (extraCount > 0 && data.visitorPassNo) {
     const passes = data.visitorPassNo
       .split(",")
       .map((p) => p.trim())
       .filter(Boolean);
     const expectedCount = extraCount + 1;
-    if (passes.length !== expectedCount) {
+    if (passes.length > 0 && passes.length !== expectedCount) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: `Please enter exactly ${expectedCount} pass numbers (1 self + ${extraCount} extra guest${extraCount > 1 ? "s" : ""}) separated by commas.`,

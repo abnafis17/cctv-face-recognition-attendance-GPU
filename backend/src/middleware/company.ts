@@ -14,6 +14,7 @@ export function requireCompany(req: Request, res: Response, next: NextFunction) 
         return res.status(401).json({ error: "Missing company in token" });
       }
       (req as any).companyId = payload.companyId;
+      (req as any).userId = payload.sub;
       return next();
     } catch {
       return res.status(401).json({ error: "Invalid access token" });

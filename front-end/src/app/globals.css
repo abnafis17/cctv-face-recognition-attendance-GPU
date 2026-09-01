@@ -133,9 +133,7 @@
   }
 
   .page-header {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
+    display: none !important;
   }
 
   .page-title {

@@ -1,13 +1,15 @@
 # ---- Core ----
-numpy>=1.23,<3
+numpy>=1.23.5,<2
 # For CSRT/KCF trackers (opencv-contrib); the code falls back to MIL if unavailable.
-opencv-contrib-python>=4.8,<5
+opencv-contrib-python>=4.8,<4.11
+# Albumentations pulls this transitively; keep it NumPy 1.x-compatible too.
+opencv-python-headless>=4.9,<4.11
 pyyaml>=6,<7
 tqdm>=4.64,<5
 
 # ---- Face / ML ----
 insightface>=0.7.3
-onnxruntime-gpu>=1.15,<2
+onnxruntime
 onnx>=1.20,<2
 scikit-learn>=1.7,<2
 scikit-image>=0.25,<1
@@ -16,6 +18,7 @@ pillow>=10,<13
 ImageIO>=2.30,<3
 joblib>=1.3,<2
 threadpoolctl>=3.1,<4
+aiortc
 
 # ---- YOLO (person presence) ----
 ultralytics>=8.2,<9

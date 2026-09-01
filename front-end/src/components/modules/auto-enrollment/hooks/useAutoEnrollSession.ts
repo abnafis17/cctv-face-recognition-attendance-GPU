@@ -24,6 +24,13 @@ type UseAutoEnrollSessionArgs = {
   department: string;
   section: string;
   line: string;
+  deptId?: string;
+  sectionId?: string;
+  designationId?: string;
+  designation?: string;
+  unitId?: string;
+  lineId?: string;
+  empPicUrl?: string;
   reEnroll: boolean;
   ensureCameraOn: (camId: string) => Promise<boolean>;
   stopCamera: (camId: string) => Promise<void>;
@@ -38,6 +45,13 @@ export function useAutoEnrollSession({
   department,
   section,
   line,
+  deptId,
+  sectionId,
+  designationId,
+  designation,
+  unitId,
+  lineId,
+  empPicUrl,
   reEnroll,
   ensureCameraOn,
   stopCamera,
@@ -116,6 +130,15 @@ export function useAutoEnrollSession({
           ...(department.trim() ? { department: department.trim() } : {}),
           ...(section.trim() ? { section: section.trim() } : {}),
           ...(line.trim() ? { line: line.trim() } : {}),
+          
+          ...(deptId?.trim() ? { deptId: deptId.trim() } : {}),
+          ...(sectionId?.trim() ? { sectionId: sectionId.trim() } : {}),
+          ...(designationId?.trim() ? { designationId: designationId.trim() } : {}),
+          ...(designation?.trim() ? { designation: designation.trim() } : {}),
+          ...(unitId?.trim() ? { unitId: unitId.trim() } : {}),
+          ...(lineId?.trim() ? { lineId: lineId.trim() } : {}),
+          ...(empPicUrl?.trim() ? { empPicUrl: empPicUrl.trim() } : {}),
+
           cameraId,
           ...(reEnroll ? { reEnroll: true } : {}),
         }
@@ -148,6 +171,13 @@ export function useAutoEnrollSession({
     section,
     stopCamera,
     unit,
+    deptId,
+    sectionId,
+    designationId,
+    designation,
+    unitId,
+    lineId,
+    empPicUrl,
   ]);
 
   const stop = useCallback(async () => {

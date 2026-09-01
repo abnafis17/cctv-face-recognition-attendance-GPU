@@ -321,7 +321,7 @@ export default function GatepassHistoryLogPage() {
   return (
     <div className="w-full pb-10 space-y-6">
       {/* Header Banner */}
-      <div className="flex items-center justify-between rounded-xl bg-[#0c1b33] p-5 text-white shadow-md">
+      <div className="flex items-center justify-between rounded-xl bg-linear-to-r from-indigo-950 via-slate-950 to-[#0c1b33] p-5 text-white shadow-md">
         <div className="flex items-center gap-4">
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10 ring-1 ring-white/20">
             <History className="h-6 w-6 text-white" />

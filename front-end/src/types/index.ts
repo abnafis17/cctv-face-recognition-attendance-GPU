@@ -6,6 +6,13 @@ export type Employee = {
   section?: string | null;
   department?: string | null;
   line?: string | null;
+  deptId?: string | null;
+  sectionId?: string | null;
+  designationId?: string | null;
+  designation?: string | null;
+  unitId?: string | null;
+  lineId?: string | null;
+  empPicUrl?: string | null;
 };
 
 export type AttendanceRow = {

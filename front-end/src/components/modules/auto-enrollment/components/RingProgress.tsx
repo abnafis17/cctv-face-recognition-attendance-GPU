@@ -18,12 +18,12 @@ export const RingProgress = React.memo(function RingProgress({
 
   return (
     <div className="flex items-center gap-4">
-      <svg width="120" height="120" viewBox="0 0 120 120" className="shrink-0">
+      <svg width="100" height="100" viewBox="0 0 120 120" className="shrink-0">
         <circle
           cx="60"
           cy="60"
           r={r}
-          stroke="rgba(0,0,0,0.08)"
+          stroke="rgba(124, 58, 237, 0.08)"
           strokeWidth="10"
           fill="none"
         />
@@ -31,30 +31,30 @@ export const RingProgress = React.memo(function RingProgress({
           cx="60"
           cy="60"
           r={r}
-          stroke="rgba(0,0,0,0.85)"
+          stroke="rgb(124, 58, 237)"
           strokeWidth="10"
           fill="none"
           strokeLinecap="round"
           strokeDasharray={`${dash} ${c - dash}`}
           transform="rotate(-90 60 60)"
         />
-        <circle cx="60" cy="60" r="34" fill="rgba(0,0,0,0.03)" />
+        <circle cx="60" cy="60" r="34" fill="rgba(124, 58, 237, 0.03)" />
         <text
           x="60"
-          y="64"
+          y="66"
           textAnchor="middle"
           fontSize="18"
-          fontWeight="700"
-          fill="rgba(0,0,0,0.85)"
+          fontWeight="800"
+          fill="rgb(124, 58, 237)"
         >
           {pct}%
         </text>
       </svg>
 
       <div className="min-w-0">
-        <div className="text-xl font-semibold text-gray-900">{label}</div>
+        <div className="text-sm font-bold text-zinc-900">{label}</div>
         {sublabel ? (
-          <div className="text-sm text-gray-600 mt-1">{sublabel}</div>
+          <div className="text-xs text-zinc-500 mt-1 leading-relaxed">{sublabel}</div>
         ) : null}
       </div>
     </div>

@@ -20,16 +20,34 @@ import toast from "react-hot-toast";
 
 const visitorTypes = ["All Types", "Guest", "Contractor", "Official", "Interviewee", "Other"];
 
+function dhakaTodayYYYYMMDD() {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Dhaka" });
+}
+
 export default function VisitorsPage() {
   const [visitorList, setVisitorList] = useState<VisitorRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [checkingOutIds, setCheckingOutIds] = useState<Set<string>>(new Set());
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
+  const [permissions, setPermissions] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("userInfo");
+      const userInfo = raw ? JSON.parse(raw) : null;
+      if (userInfo?.permissions) {
+        setPermissions(userInfo.permissions);
+      }
+    } catch (err) {
+      console.error("Failed to load permissions in VisitorsPage:", err);
+    }
+  }, []);
 
   // Filters State
   const [searchQuery, setSearchQuery] = useState("");
   const [visitorTypeFilter, setVisitorTypeFilter] = useState("All Types");
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
+  const [fromDate, setFromDate] = useState(() => dhakaTodayYYYYMMDD());
+  const [toDate, setToDate] = useState(() => dhakaTodayYYYYMMDD());
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
@@ -75,8 +93,8 @@ export default function VisitorsPage() {
   const handleResetFilters = () => {
     setSearchQuery("");
     setVisitorTypeFilter("All Types");
-    setFromDate("");
-    setToDate("");
+    setFromDate(dhakaTodayYYYYMMDD());
+    setToDate(dhakaTodayYYYYMMDD());
   };
 
   const paginatedRows = useMemo(() => {
@@ -120,10 +138,60 @@ export default function VisitorsPage() {
     [fetchVisitorRecords]
   );
 
+  const handleDeleteVisitor = useCallback(
+    async (id: string) => {
+      if (
+        !window.confirm(
+          "Are you sure you want to delete this visitor? Their associated face template will also be permanently deleted."
+        )
+      ) {
+        return;
+      }
+
+      setDeletingIds((prev) => {
+        const next = new Set(prev);
+        next.add(id);
+        return next;
+      });
+
+      const toastId = toast.loading("Deleting visitor & face template...");
+      try {
+        const response = await axiosInstance.delete(`/visitors/${id}`);
+        if (response.data?.ok) {
+          toast.success("Visitor & corresponding face template deleted successfully!", {
+            id: toastId,
+          });
+          await fetchVisitorRecords(true);
+        } else {
+          toast.error(response.data?.error || "Delete failed", { id: toastId });
+        }
+      } catch (error: any) {
+        toast.error(
+          error?.response?.data?.error || "Delete request failed",
+          { id: toastId }
+        );
+      } finally {
+        setDeletingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      }
+    },
+    [fetchVisitorRecords]
+  );
+
   const columns = useMemo(() => {
     const skip = (currentPage - 1) * pageLimit;
-    return getVisitorColumns(skip, handleCheckout, checkingOutIds);
-  }, [currentPage, pageLimit, handleCheckout, checkingOutIds]);
+    return getVisitorColumns(
+      skip,
+      handleCheckout,
+      handleDeleteVisitor,
+      checkingOutIds,
+      deletingIds,
+      permissions
+    );
+  }, [currentPage, pageLimit, handleCheckout, handleDeleteVisitor, checkingOutIds, deletingIds, permissions]);
 
   return (
     <div className="w-full pb-10 space-y-6">

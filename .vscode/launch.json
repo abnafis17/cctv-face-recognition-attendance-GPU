@@ -1,0 +1,17 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Attach Backend",
+      "type": "node",
+      "request": "attach",
+      "port": 9229,
+      "restart": true,
+      "cwd": "${workspaceFolder}/backend",
+      "localRoot": "${workspaceFolder}/backend",
+      "remoteRoot": "${workspaceFolder}/backend",
+      "skipFiles": ["<node_internals>/**"],
+      "sourceMaps": true
+    }
+  ]
+}

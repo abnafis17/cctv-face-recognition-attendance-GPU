@@ -50,6 +50,7 @@ interface EmployeeReport {
   employeeId: string;
   employeeName: string;
   department: string;
+  hostPicUrl?: string | null;
   totalVisits: number;
   uniqueVisitors: number;
   lastVisit: string;
@@ -96,13 +97,17 @@ function formatTime12h(timeStr: string | null | undefined): string {
   return `${hours12Str}:${minutesStr} ${ampm}`;
 }
 
+function dhakaTodayYYYYMMDD() {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Dhaka" });
+}
+
 export default function EmployeeWiseVisitPage() {
   const [reportData, setReportData] = useState<EmployeeReport[]>([]);
   const [loading, setLoading] = useState(false);
 
   // Filters State
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
+  const [fromDate, setFromDate] = useState(() => dhakaTodayYYYYMMDD());
+  const [toDate, setToDate] = useState(() => dhakaTodayYYYYMMDD());
   const [searchEmployee, setSearchEmployee] = useState("");
   const [activeSearch, setActiveSearch] = useState("");
 
@@ -142,8 +147,8 @@ export default function EmployeeWiseVisitPage() {
   };
 
   const handleResetFilters = () => {
-    setFromDate("");
-    setToDate("");
+    setFromDate(dhakaTodayYYYYMMDD());
+    setToDate(dhakaTodayYYYYMMDD());
     setSearchEmployee("");
     setActiveSearch("");
   };
@@ -160,8 +165,8 @@ export default function EmployeeWiseVisitPage() {
     });
   };
 
-  const toggleVisitor = (empId: string, contactNumber: string) => {
-    const key = `${empId}-${contactNumber}`;
+  const toggleVisitor = (empId: string, contactNumber: string, visitorName: string) => {
+    const key = `${empId}-${contactNumber}-${visitorName}`;
     setExpandedVisitors((prev) => {
       const next = new Set(prev);
       if (next.has(key)) {
@@ -185,7 +190,7 @@ export default function EmployeeWiseVisitPage() {
       totalVisits += item.totalVisits;
       activeEmployeeSet.add(item.employeeId);
       for (const v of item.visitors) {
-        uniqueVisitorSet.add(v.contactNumber);
+        uniqueVisitorSet.add(`${v.contactNumber}_${v.visitorName}`);
       }
       if (item.totalVisits > topEmployeeVisits) {
         topEmployeeVisits = item.totalVisits;
@@ -396,15 +401,23 @@ export default function EmployeeWiseVisitPage() {
                       {index + 1}
                     </div>
                     {/* User icon avatar from mockup */}
-                    <div
-                      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
-                        isEmpExpanded
-                          ? "bg-white/10 text-white"
-                          : "bg-blue-50 text-blue-600 border border-blue-100/50"
-                      }`}
-                    >
-                      <Users className="h-5 w-5" />
-                    </div>
+                    {emp.hostPicUrl ? (
+                      <img
+                        src={emp.hostPicUrl}
+                        alt={emp.employeeName}
+                        className="h-10 w-10 shrink-0 rounded-full object-cover border border-zinc-200"
+                      />
+                    ) : (
+                      <div
+                        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
+                          isEmpExpanded
+                            ? "bg-white/10 text-white"
+                            : "bg-blue-50 text-blue-600 border border-blue-100/50"
+                        }`}
+                      >
+                        <Users className="h-5 w-5" />
+                      </div>
+                    )}
                     <div>
                       <h3 className={`font-semibold text-[15px] ${isEmpExpanded ? "text-white" : "text-zinc-800"}`}>
                         {emp.employeeName}
@@ -464,9 +477,10 @@ export default function EmployeeWiseVisitPage() {
                       </thead>
                       <tbody>
                         {emp.visitors.map((visitor, vIndex) => {
-                          const isVExpanded = expandedVisitors.has(`${emp.employeeId}-${visitor.contactNumber}`);
+                          const visitorKey = `${emp.employeeId}-${visitor.contactNumber}-${visitor.visitorName}`;
+                          const isVExpanded = expandedVisitors.has(visitorKey);
                           return (
-                            <React.Fragment key={visitor.contactNumber}>
+                            <React.Fragment key={visitorKey}>
                               {/* Visitor Row */}
                               <tr className="border-b border-zinc-100 hover:bg-zinc-50/30 transition-colors">
                                 <td className="py-3 px-3 text-zinc-400 font-normal">
@@ -521,7 +535,7 @@ export default function EmployeeWiseVisitPage() {
                                 </td>
                                 <td className="py-3 px-3 text-center">
                                   <button
-                                    onClick={() => toggleVisitor(emp.employeeId, visitor.contactNumber)}
+                                    onClick={() => toggleVisitor(emp.employeeId, visitor.contactNumber, visitor.visitorName)}
                                     className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-normal cursor-pointer shadow-sm transition-all ${
                                       isVExpanded
                                         ? "bg-zinc-100 border-zinc-300 text-zinc-700 hover:bg-zinc-200"

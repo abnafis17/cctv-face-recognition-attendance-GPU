@@ -1,57 +1,37 @@
-from __future__ import annotations
-
-import os
 from contextlib import asynccontextmanager
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 
+from app.core.logging import logger
+from app.services.model_manager import init_models
+from app.services.stream_manager import streams_lock, streams
 from app.api.router import api_router
-from app.core.container import build_container
-
-
-BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-HLS_STATIC_DIR = os.path.join(BASE_DIR, "hls")
-PUBLIC_STATIC_DIR = os.path.join(BASE_DIR, "public")
-os.makedirs(HLS_STATIC_DIR, exist_ok=True)
-os.makedirs(PUBLIC_STATIC_DIR, exist_ok=True)
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Build and attach service container (singletons)
-    app.state.container = build_container()
+    logger.warning("Pre-initializing AI models on startup to prevent GPU context race conditions...")
+    init_models()
+    logger.warning("AI models initialized successfully. Server is ready.")
     yield
-    # Graceful shutdown (best-effort)
-    c = getattr(app.state, "container", None)
-    if c:
-        try:
-            c.shutdown()
-        except Exception:
-            pass
+    logger.warning("Shutting down Lite AI Server. Stopping all active camera streams...")
+    with streams_lock:
+        for camera_id, stream in list(streams.items()):
+            try:
+                stream.stop()
+            except Exception as e:
+                logger.error(f"Error stopping stream {camera_id}: {e}")
+        streams.clear()
+    logger.warning("All active camera streams stopped.")
 
+app = FastAPI(title="CCTV Attendance Pro AI Server", version="1.5", lifespan=lifespan)
 
-def create_app() -> FastAPI:
-    app = FastAPI(title="AI Camera API", version="1.4", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-
-    # Static (HLS)
-    app.mount("/hls", StaticFiles(directory=HLS_STATIC_DIR), name="hls")
-    app.mount(
-        "/ai/public/images", StaticFiles(directory=PUBLIC_STATIC_DIR), name="public"
-    )
-
-    # Routes
-    app.include_router(api_router)
-
-    return app
-
-
-app = create_app()
+# Register API Router
+app.include_router(api_router)

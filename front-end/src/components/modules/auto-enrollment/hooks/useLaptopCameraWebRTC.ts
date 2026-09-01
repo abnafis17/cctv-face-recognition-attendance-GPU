@@ -1,13 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPeerConnection, replaceVideoTrack } from "@/lib/webrtc";
 
 type UseLaptopCameraWebRTCArgs = {
   laptopCameraId: string;
   companyId: string | null;
   aiHost: string;
-  selectedDeviceId?: string;
 };
 
 type ConnectionInfo = {
@@ -23,15 +21,22 @@ export function useLaptopCameraWebRTC({
   laptopCameraId,
   companyId,
   aiHost,
-  selectedDeviceId,
 }: UseLaptopCameraWebRTCArgs) {
   const previewVideoRef = useRef<HTMLVideoElement | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
-  const pendingIceCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
 
   const [laptopActive, setLaptopActive] = useState(false);
+  const isMountedRef = useRef(true);
+  const shouldRunRef = useRef(false);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   const wsSignalUrl = useMemo(() => {
     const base = String(aiHost || "")
@@ -41,31 +46,54 @@ export function useLaptopCameraWebRTC({
   }, [aiHost]);
 
   const stopLaptopCamera = useCallback(() => {
-    try {
-      localStreamRef.current?.getTracks().forEach((t) => t.stop());
-    } catch {}
+    shouldRunRef.current = false;
 
+    // 1. Close WebRTC PeerConnection and its senders/tracks
     try {
-      if (previewVideoRef.current) {
-        previewVideoRef.current.srcObject = null;
-        try {
-          previewVideoRef.current.load();
-        } catch {}
+      if (pcRef.current) {
+        pcRef.current.getSenders().forEach((sender) => {
+          try {
+            sender.track?.stop();
+          } catch {}
+        });
+        pcRef.current.close();
       }
-    } catch {}
+    } catch (e) {
+      console.warn("Error closing RTCPeerConnection:", e);
+    }
+    pcRef.current = null;
 
-    try {
-      pcRef.current?.close();
-    } catch {}
-
+    // 2. Close WebSignal WebSocket
     try {
       wsRef.current?.close();
     } catch {}
-
-    localStreamRef.current = null;
-    pcRef.current = null;
     wsRef.current = null;
-    pendingIceCandidatesRef.current = [];
+
+    // 3. Stop MediaStream tracks
+    try {
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach((t) => {
+          try {
+            t.stop();
+          } catch {}
+        });
+      }
+    } catch {}
+    localStreamRef.current = null;
+
+    try {
+      if (previewVideoRef.current) {
+        const stream = previewVideoRef.current.srcObject as MediaStream | null;
+        if (stream) {
+          stream.getTracks().forEach((t) => {
+            try {
+              t.stop();
+            } catch {}
+          });
+        }
+        previewVideoRef.current.srcObject = null;
+      }
+    } catch {}
 
     setLaptopActive(false);
   }, []);
@@ -74,55 +102,52 @@ export function useLaptopCameraWebRTC({
     return () => stopLaptopCamera();
   }, [stopLaptopCamera]);
 
-  const startLaptopCamera = useCallback(
-    async (overrideDeviceId?: string) => {
-      // if already running, restart cleanly
-      if (laptopActive) stopLaptopCamera();
+  const startLaptopCamera = useCallback(async () => {
+    shouldRunRef.current = true;
 
-      const deviceIdToUse = overrideDeviceId ?? selectedDeviceId;
+    // if already running, restart cleanly
+    if (localStreamRef.current || pcRef.current) {
+      stopLaptopCamera();
+    }
 
-      const nav = navigator as NavigatorWithConnection;
-      const effectiveType = String(
-        nav.connection?.effectiveType ?? "",
-      ).toLowerCase();
-      const constrainedNetwork =
-        !!nav.connection?.saveData ||
-        effectiveType === "slow-2g" ||
-        effectiveType === "2g" ||
-        effectiveType === "3g";
+    const nav = navigator as NavigatorWithConnection;
+    const effectiveType = String(
+      nav.connection?.effectiveType ?? "",
+    ).toLowerCase();
+    const constrainedNetwork =
+      !!nav.connection?.saveData ||
+      effectiveType === "slow-2g" ||
+      effectiveType === "2g" ||
+      effectiveType === "3g";
 
-      const maxFps = constrainedNetwork ? 10 : 15;
-      const idealFps = constrainedNetwork ? 8 : 12;
-      const maxBitrate = constrainedNetwork ? 350_000 : 650_000;
+    const maxFps = constrainedNetwork ? 10 : 25;
+    const idealFps = constrainedNetwork ? 8 : 20;
+    const maxBitrate = constrainedNetwork ? 350_000 : 1_500_000;
 
-      const baseConstraints: MediaTrackConstraints = constrainedNetwork
-        ? {
-            width: { ideal: 480, max: 640 },
-            height: { ideal: 360, max: 480 },
-            frameRate: { ideal: idealFps, max: maxFps },
-          }
-        : {
-            width: { ideal: 640, max: 960 },
-            height: { ideal: 480, max: 540 },
-            frameRate: { ideal: idealFps, max: maxFps },
-          };
+    const videoConstraints: MediaTrackConstraints = constrainedNetwork
+      ? {
+          facingMode: "user",
+          width: { ideal: 480, max: 640 },
+          height: { ideal: 360, max: 480 },
+          frameRate: { ideal: idealFps, max: maxFps },
+        }
+      : {
+          facingMode: "user",
+          width: { ideal: 1280, max: 1920 },
+          height: { ideal: 720, max: 1080 },
+          frameRate: { ideal: idealFps, max: maxFps },
+        };
 
-      let stream: MediaStream;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: deviceIdToUse
-            ? {
-                ...baseConstraints,
-                deviceId: { exact: deviceIdToUse },
-              }
-            : baseConstraints,
-          audio: false,
-        });
-      } catch {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: baseConstraints,
-          audio: false,
-        });
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: videoConstraints,
+        audio: false,
+      });
+
+      // Race condition check after async call
+      if (!isMountedRef.current || !shouldRunRef.current) {
+        stream.getTracks().forEach((t) => t.stop());
+        return;
       }
 
       const videoTrack = stream.getVideoTracks()[0];
@@ -130,24 +155,73 @@ export function useLaptopCameraWebRTC({
         try {
           videoTrack.contentHint = "motion";
         } catch {}
+        try {
+          await videoTrack.applyConstraints(videoConstraints);
+        } catch {
+          // ignore unsupported constraints
+        }
+      }
+
+      // Race condition check after constraints
+      if (!isMountedRef.current || !shouldRunRef.current) {
+        stream.getTracks().forEach((t) => t.stop());
+        return;
       }
 
       localStreamRef.current = stream;
 
-      // Show local preview immediately
+      // Show local preview immediately (MJPEG may take a moment to appear)
       try {
         if (previewVideoRef.current) {
           previewVideoRef.current.srcObject = stream;
           previewVideoRef.current.muted = true;
-          await previewVideoRef.current.play().catch(() => {});
+          await previewVideoRef.current.play();
         }
       } catch {}
 
+      // Race condition check after play
+      if (!isMountedRef.current || !shouldRunRef.current) {
+        stream.getTracks().forEach((t) => t.stop());
+        if (previewVideoRef.current) previewVideoRef.current.srcObject = null;
+        localStreamRef.current = null;
+        return;
+      }
+
       setLaptopActive(true);
 
-      const pc = createPeerConnection();
+      let iceConfig: RTCConfiguration = {
+        iceServers: [
+          { urls: "stun:stun.l.google.com:19302" },
+        ],
+      };
+
+      try {
+        const envIce = process.env.NEXT_PUBLIC_MEDIA_WEBRTC_ICE_SERVERS;
+        if (envIce) {
+          iceConfig.iceServers = JSON.parse(envIce);
+        } else {
+          // Dynamic fallback to the current hostname for TURN server
+          const turnHost = typeof window !== "undefined" ? window.location.hostname : "localhost";
+          iceConfig.iceServers = [
+            { urls: "stun:stun.l.google.com:19302" },
+            {
+              urls: `turn:${turnHost}:3478?transport=udp`,
+              username: "testuser",
+              credential: "testpass",
+            },
+            {
+              urls: `turn:${turnHost}:3478?transport=tcp`,
+              username: "testuser",
+              credential: "testpass",
+            },
+          ];
+        }
+      } catch (err) {
+        console.warn("Failed to parse iceServers env, using default stun:", err);
+      }
+
+      const pc = new RTCPeerConnection(iceConfig);
       pcRef.current = pc;
-      pendingIceCandidatesRef.current = [];
 
       stream.getTracks().forEach((track) => {
         const sender = pc.addTrack(track, stream);
@@ -163,62 +237,68 @@ export function useLaptopCameraWebRTC({
               maxFramerate: maxFps,
             },
           ];
-          sender.setParameters(params).catch(() => {});
-        } catch {}
+          sender.setParameters(params).catch(() => {
+            // browser may reject encoding hints; continue with defaults
+          });
+        } catch {
+          // ignore sender tuning failures
+        }
       });
 
       const ws = new WebSocket(wsSignalUrl);
       wsRef.current = ws;
 
       ws.onerror = () => {
-        stopLaptopCamera();
-      };
-
-      ws.onclose = () => {
-        if (pcRef.current) stopLaptopCamera();
-      };
-
-      ws.onopen = async () => {
-        try {
-          const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
-
-          ws.send(
-            JSON.stringify({
-              sdp: pc.localDescription,
-              cameraId: laptopCameraId,
-              companyId: companyId || undefined,
-              type: "attendance",
-              purpose: "enroll",
-            }),
-          );
-        } catch {
+        if (isMountedRef.current && shouldRunRef.current) {
           stopLaptopCamera();
         }
       };
 
+      ws.onclose = () => {
+        // if we didn't explicitly stop, close resources
+        if (isMountedRef.current && shouldRunRef.current && pcRef.current) {
+          stopLaptopCamera();
+        }
+      };
+
+      ws.onopen = async () => {
+        const offer = await pc.createOffer();
+
+        if (!isMountedRef.current || !shouldRunRef.current) {
+          pc.close();
+          ws.close();
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+
+        await pc.setLocalDescription(offer);
+
+        if (!isMountedRef.current || !shouldRunRef.current) {
+          pc.close();
+          ws.close();
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+
+        ws.send(
+          JSON.stringify({
+            sdp: pc.localDescription,
+            cameraId: laptopCameraId,
+            companyId: companyId || undefined,
+            type: "attendance",
+            purpose: "enroll",
+          }),
+        );
+      };
+
       ws.onmessage = async (event) => {
-        try {
-          const data = JSON.parse(event.data);
+        if (!isMountedRef.current || !shouldRunRef.current) return;
+        const data = JSON.parse(event.data);
 
-          if (data.sdp && data.cameraId === laptopCameraId) {
-            await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
-
-            while (pendingIceCandidatesRef.current.length > 0) {
-              const cand = pendingIceCandidatesRef.current.shift();
-              if (cand) {
-                await pc.addIceCandidate(cand).catch(() => {});
-              }
-            }
-          } else if (data.ice && data.cameraId === laptopCameraId) {
-            if (pc.remoteDescription) {
-              await pc.addIceCandidate(data.ice).catch(() => {});
-            } else {
-              pendingIceCandidatesRef.current.push(data.ice);
-            }
-          }
-        } catch (err) {
-          console.error("AutoEnroll WebRTC message error:", err);
+        if (data.sdp && data.cameraId === laptopCameraId) {
+          await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+        } else if (data.ice && data.cameraId === laptopCameraId) {
+          await pc.addIceCandidate(data.ice);
         }
       };
 
@@ -235,55 +315,11 @@ export function useLaptopCameraWebRTC({
           );
         }
       };
-    },
-    [companyId, laptopActive, laptopCameraId, selectedDeviceId, stopLaptopCamera, wsSignalUrl],
-  );
-
-  const switchDevice = useCallback(
-    async (newDeviceId: string) => {
-      if (!laptopActive) return;
-
-      try {
-        let newStream: MediaStream;
-        try {
-          newStream = await navigator.mediaDevices.getUserMedia({
-            video: {
-              deviceId: { exact: newDeviceId },
-              width: { ideal: 640, max: 960 },
-              height: { ideal: 480, max: 540 },
-            },
-            audio: false,
-          });
-        } catch {
-          newStream = await navigator.mediaDevices.getUserMedia({
-            video: true,
-            audio: false,
-          });
-        }
-
-        const newTrack = newStream.getVideoTracks()[0];
-        if (!newTrack) return;
-
-        const replaced = await replaceVideoTrack(pcRef.current, newTrack);
-
-        if (replaced) {
-          if (localStreamRef.current) {
-            localStreamRef.current.getTracks().forEach((t) => t.stop());
-          }
-          localStreamRef.current = newStream;
-          if (previewVideoRef.current) {
-            previewVideoRef.current.srcObject = newStream;
-            await previewVideoRef.current.play().catch(() => {});
-          }
-        } else {
-          await startLaptopCamera(newDeviceId);
-        }
-      } catch (err) {
-        console.error("Device switch in AutoEnroll failed:", err);
-      }
-    },
-    [laptopActive, startLaptopCamera],
-  );
+    } catch (err) {
+      console.error("startLaptopCamera failed:", err);
+      stopLaptopCamera();
+    }
+  }, [companyId, laptopCameraId, stopLaptopCamera, wsSignalUrl]);
 
   const attachPreviewIfNeeded = useCallback(async () => {
     const stream = localStreamRef.current;
@@ -302,7 +338,6 @@ export function useLaptopCameraWebRTC({
     laptopActive,
     startLaptopCamera,
     stopLaptopCamera,
-    switchDevice,
     attachPreviewIfNeeded,
   };
 }

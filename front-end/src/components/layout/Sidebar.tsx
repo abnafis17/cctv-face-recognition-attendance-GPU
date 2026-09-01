@@ -23,6 +23,7 @@ import {
   Database,
   ChevronLeft,
   ChevronRight,
+  // New relevant icons:
   ScanFace,
   IdCard,
   UserSearch,
@@ -33,7 +34,7 @@ import {
 } from "lucide-react";
 import * as LucideIcons from "lucide-react";
 import { useEffect, useState } from "react";
-import { clearAccessToken } from "@/lib/authStorage";
+import { clearAccessToken, getAccessToken } from "@/lib/authStorage";
 import { cn } from "@/lib/utils";
 import axiosInstance from "@/config/axiosInstance";
 
@@ -127,6 +128,8 @@ type SidebarIdentity = {
   email: string;
 };
 
+
+
 function SidebarContent({
   compact = false,
   onNavigate,
@@ -144,6 +147,7 @@ function SidebarContent({
     companyName: "",
     email: "",
   });
+
 
   const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
   const [permissions, setPermissions] = useState<Record<string, boolean>>({});
@@ -232,90 +236,88 @@ function SidebarContent({
     onNavigate?.();
   }
 
-  const filteredNav = currentNav.filter((n) => {
-    if (Object.keys(permissions).length === 0) return true;
-
-    if (n.subItems && n.subItems.length > 0) {
-      const allowedSubs = n.subItems.filter(
-        (sub) => permissions[sub.href] !== false
-      );
-      return allowedSubs.length > 0;
-    }
-
-    if (n.href) {
-      return permissions[n.href] !== false;
-    }
-
-    return true;
-  });
-
   return (
     <>
       <div
         className={cn(
           "shrink-0 border-b border-zinc-150 bg-[#f8fafc]",
-          compact ? "p-3 flex items-center justify-center" : "px-4 py-3.5 flex items-center justify-between gap-2.5",
+          compact ? "p-4 flex items-center justify-center" : "px-5 py-4 flex items-center justify-between gap-3",
         )}
       >
         {!compact ? (
           <>
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-violet-600 to-indigo-500 text-white ring-2 ring-violet-500/20 shadow-md shadow-violet-500/10">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-violet-600 to-indigo-500 text-white ring-2 ring-violet-500/25 shadow-lg shadow-violet-500/10">
                 <Video className="h-4.5 w-4.5" />
               </div>
               <div className="min-w-0">
-                <div className="text-[13px] font-black tracking-tight text-zinc-900 leading-none whitespace-nowrap">
-                  CRIPTON VISION
+                <div className="text-sm font-bold tracking-wide text-zinc-800">
+                  Cripton Vision
                 </div>
-                <div className="text-[9px] font-extrabold uppercase tracking-[0.18em] text-violet-600 mt-1 whitespace-nowrap">
+                <div className="text-[9.5px] font-bold uppercase tracking-wider text-violet-600 mt-0.5">
                   AI Attendance
                 </div>
               </div>
             </div>
+            
             {onToggleCollapse && (
               <button
                 type="button"
                 onClick={onToggleCollapse}
-                className="hidden md:flex h-7.5 w-7.5 shrink-0 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 transition cursor-pointer"
-                title="Collapse sidebar"
+                title="Collapse Sidebar"
+                className="h-8 w-8 rounded-lg border border-zinc-200 bg-white text-zinc-500 hover:text-zinc-800 hover:bg-zinc-50 transition flex items-center justify-center cursor-pointer shrink-0 shadow-xs"
               >
-                <ChevronLeft className="h-4 w-4" />
+                <Menu className="h-4 w-4" />
               </button>
             )}
           </>
         ) : (
-          <div className="flex flex-col items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-violet-600 to-indigo-500 text-white shadow-md">
-              <Video className="h-4.5 w-4.5" />
-            </div>
-            {onToggleCollapse && (
-              <button
-                type="button"
-                onClick={onToggleCollapse}
-                className="hidden md:flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 transition cursor-pointer"
-                title="Expand sidebar"
-              >
-                <ChevronRight className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
+          onToggleCollapse && (
+            <button
+              type="button"
+              onClick={onToggleCollapse}
+              title="Expand Sidebar"
+              className="h-9 w-9 rounded-lg border border-zinc-200 bg-white text-zinc-500 hover:text-zinc-800 hover:bg-zinc-50 transition flex items-center justify-center cursor-pointer shadow-sm"
+            >
+              <Menu className="h-4.5 w-4.5" />
+            </button>
+          )
         )}
       </div>
 
-      <nav className="flex-1 overflow-y-auto px-3 py-4">
-        <div className="space-y-1">
-          {filteredNav.map((n) => {
-            if (n.subItems && n.subItems.length > 0) {
-              const visibleSubItems = n.subItems.filter(
-                (sub) => Object.keys(permissions).length === 0 || permissions[sub.href] !== false
-              );
-              if (visibleSubItems.length === 0) return null;
+      <nav
+        className={cn(
+          "flex-1 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] bg-white",
+          compact ? "px-2 py-3" : "px-3 py-4",
+        )}
+        style={{ WebkitOverflowScrolling: "touch" }}
+      >
+        {!compact && (
+          <div className="mb-2 px-2 text-[11px] font-bold uppercase tracking-[0.18em] text-zinc-400">
+            Navigation
+          </div>
+        )}
 
-              const isGroupActive = visibleSubItems.some((sub) =>
-                isActive(pathname, sub.href),
-              );
-              const isOpen = openMenus[n.label] ?? isGroupActive;
-              const ParentIcon = n.icon;
+        <div className="space-y-1">
+          {currentNav
+            .filter((n) => {
+              if (n.subItems) {
+                const allowedSub = n.subItems.filter(
+                  (sub) => permissions[sub.href] !== false
+                );
+                return allowedSub.length > 0;
+              }
+              if (n.href) {
+                return permissions[n.href] !== false;
+              }
+              return true;
+            })
+            .map((n) => {
+            const hasSubItems = !!n.subItems && n.subItems.length > 0;
+
+            if (hasSubItems) {
+              const isOpen = openMenus[n.label] ?? false;
+              const Icon = n.icon;
 
               return (
                 <div key={n.label} className="space-y-1">
@@ -323,42 +325,39 @@ function SidebarContent({
                     onClick={() => toggleMenu(n.label)}
                     title={compact ? n.label : undefined}
                     className={cn(
-                      "group flex w-full items-center rounded-lg transition-all duration-200 border-l-2 cursor-pointer",
-                      compact ? "justify-center px-2 py-3 border-l-transparent" : "justify-between px-3 py-2.5",
-                      isGroupActive
-                        ? "bg-violet-50/70 text-violet-900 border-l-violet-600 font-bold"
-                        : "text-zinc-650 hover:bg-zinc-50 hover:text-zinc-900 border-l-transparent",
+                      "group flex w-full items-center justify-between rounded-lg transition-all duration-200 cursor-pointer text-left border-l-2 border-l-transparent",
+                      compact ? "justify-center px-2 py-3" : "px-3 py-2.5",
+                      "text-zinc-655 hover:bg-zinc-50 hover:text-zinc-900",
                     )}
                   >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <ParentIcon
+                    <div className="flex items-center gap-3">
+                      <Icon
                         className={cn(
                           compact ? "h-5 w-5" : "h-4 w-4",
-                          isGroupActive
-                            ? "text-violet-600"
-                            : "text-zinc-450 group-hover:text-zinc-750",
+                          "text-zinc-450 group-hover:text-zinc-750 transition-colors",
                         )}
                       />
-                      {!compact && (
-                        <span className="truncate text-sm font-medium">
-                          {n.label}
-                        </span>
-                      )}
+                      {!compact && <span className="truncate text-sm font-medium">{n.label}</span>}
                     </div>
                     {!compact && (
-                      <span className="text-zinc-400">
-                        {isOpen ? (
-                          <ChevronUp className="h-4 w-4" />
-                        ) : (
-                          <ChevronDown className="h-4 w-4" />
-                        )}
-                      </span>
+                      isOpen ? (
+                        <ChevronUp className="h-4 w-4 text-zinc-455 group-hover:text-zinc-755 transition-colors" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4 text-zinc-455 group-hover:text-zinc-755 transition-colors" />
+                      )
                     )}
                   </button>
 
                   {isOpen && (
-                    <div className={cn("space-y-1", compact ? "pl-0" : "pl-7")}>
-                      {visibleSubItems.map((sub) => {
+                    <div
+                      className={cn(
+                        "space-y-1 relative transition-all duration-200",
+                        !compact && "ml-5 pl-3 border-l border-zinc-100"
+                      )}
+                    >
+                      {n.subItems!
+                        .filter((sub) => permissions[sub.href] !== false)
+                        .map((sub) => {
                         const subActive = isActive(pathname, sub.href);
                         const SubIcon = sub.icon;
 
@@ -369,11 +368,11 @@ function SidebarContent({
                             onClick={onNavigate}
                             title={compact ? sub.label : undefined}
                             className={cn(
-                              "group flex items-center rounded-lg transition-all duration-200 font-medium",
-                              compact ? "justify-center px-2 py-2" : "gap-2.5 px-3 py-2",
+                              "group flex items-center rounded-lg transition-all duration-200 border-l-2",
+                              compact ? "justify-center px-2 py-2 border-l-transparent" : "gap-3 px-3 py-2",
                               subActive
-                                ? "bg-violet-100/70 text-violet-900 font-bold"
-                                : "text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900",
+                                ? "bg-violet-50 text-violet-700 border-l-violet-600 font-semibold"
+                                : "text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900 border-l-transparent",
                             )}
                           >
                             <SubIcon
@@ -501,6 +500,12 @@ export default function Sidebar() {
   }, [pathname]);
 
   useEffect(() => {
+    const handleToggle = () => setMobileOpen((prev) => !prev);
+    window.addEventListener("toggleSidebar", handleToggle);
+    return () => window.removeEventListener("toggleSidebar", handleToggle);
+  }, []);
+
+  useEffect(() => {
     if (!mobileOpen) return;
 
     const previousOverflow = document.body.style.overflow;
@@ -528,38 +533,6 @@ export default function Sidebar() {
 
   return (
     <>
-      <header className="fixed inset-x-0 top-0 z-40 border-b border-zinc-100 bg-white/90 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] backdrop-blur md:hidden">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-violet-600 to-indigo-500 text-white shadow-md shadow-violet-500/20">
-              <Video className="h-4 w-4" />
-            </div>
-            <div className="min-w-0">
-              <div className="truncate text-sm font-bold text-zinc-900 tracking-tight">
-                Cripton Vision
-              </div>
-              <div className="truncate text-[9.5px] font-bold uppercase tracking-wider text-violet-600 mt-0.5">
-                AI Attendance
-              </div>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            aria-label={mobileOpen ? "Close sidebar" : "Open sidebar"}
-            aria-expanded={mobileOpen}
-            aria-controls="mobile-sidebar"
-            onClick={() => setMobileOpen((prev) => !prev)}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-zinc-200 bg-white text-zinc-700 shadow-sm transition hover:bg-zinc-100 active:scale-[0.98]"
-          >
-            {mobileOpen ? (
-              <X className="h-5 w-5" />
-            ) : (
-              <Menu className="h-5 w-5" />
-            )}
-          </button>
-        </div>
-      </header>
 
       <div
         className={cn(
@@ -589,6 +562,7 @@ export default function Sidebar() {
         </aside>
       </div>
 
+      {/* Togglable Desktop Sidebar */}
       <aside className={cn(
         "ui-readable hidden h-dvh flex-col bg-slate-50 p-3 md:flex transition-all duration-350 ease-in-out shrink-0",
         isCollapsed ? "w-20" : "w-72"
