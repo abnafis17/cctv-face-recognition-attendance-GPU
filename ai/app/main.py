@@ -49,6 +49,10 @@ def create_app() -> FastAPI:
     )
 
     # Routes
+    @app.get("/")
+    def root():
+        return {"status": "ok", "service": "CCTV Face Recognition AI Server"}
+
     app.include_router(api_router)
 
     return app
