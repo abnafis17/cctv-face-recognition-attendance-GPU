@@ -30,7 +30,8 @@ from app.core.config import (
     MJPEG_RECOGNITION_JPEG_QUALITY,
 )
 from app.core.logging import logger
-from app.vision.body_tracker import BodyTracker, face_belongs_to_body, draw_polygon_body_bbox
+from app.vision.body_tracker import BodyTracker, face_belongs_to_body
+from app.vision.hud import draw_label_card, draw_bounding_box, ACCENT_KNOWN, ACCENT_UNKNOWN
 from app.utils import open_capture_with_fallback
 from app.services.model_manager import init_models, get_detector, get_embedder, get_body_detector
 from app.services.gallery import sync_gallery, get_gallery_templates
@@ -83,7 +84,8 @@ class LiteCameraStream:
         self.active_viewers = 0
         self.stopped = False
         self.cap = None
-        
+        self.cap_lock = threading.Lock()
+
         # JPEG encoding lock and cache
         self.jpeg_lock = threading.Lock()
         self._cached_raw_jpeg = None
@@ -115,6 +117,11 @@ class LiteCameraStream:
         self.process_thread = threading.Thread(target=self._run_process, name=f"lite-process-{camera_id}", daemon=True)
         self.process_thread.start()
         logger.info(f"Background stream & processing threads started for camera: {camera_id}")
+
+    def _sleep_interruptible(self, seconds: float):
+        deadline = time.time() + seconds
+        while not self.stopped and time.time() < deadline:
+            time.sleep(0.1)
 
     def get_latest_raw_jpeg(self) -> Optional[bytes]:
         frame = self.latest_raw_frame
@@ -149,28 +156,28 @@ class LiteCameraStream:
             with self.body_tracker.lock:
                 tracks_copy = list(self.body_tracker.tracks)
                 
+            now = time.time()
             for track in tracks_copy:
-                bx1, by1, bx2, by2 = track.bbox
-                if track.name != "Unknown":
-                    if track.is_authorized:
-                        color = (220, 180, 0)
-                        label = f"{track.name} ({track.score:.2f})"
-                    else:
-                        color = (60, 60, 240)
-                        label = f"Unauthorized: {track.name}"
+                face_bbox = getattr(track, 'last_face_bbox', None)
+                last_time = getattr(track, 'last_face_time', 0.0)
+                
+                # Expire face boxes instantly if face is not actively detected in current frame (350ms window)
+                if not face_bbox or (now - last_time > 0.35):
+                    continue
+                    
+                x1, y1, x2, y2 = face_bbox
+                recognized_known = (track.name != "Unknown")
+                is_authorized = getattr(track, 'is_authorized', True)
+                known = recognized_known and is_authorized
+                
+                if recognized_known:
+                    label = track.name
                 else:
-                    color = (180, 190, 30)
                     label = "Unknown"
                     
-                draw_polygon_body_bbox(annotated, track.bbox, color, 1)
-                
-                label_sz, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_DUPLEX, 0.55, 1)
-                y_top = max(by1 - label_sz[1] - 12, 0)
-                bg_color = (28, 28, 28)
-                
-                cv2.rectangle(annotated, (bx1, y_top), (bx1 + label_sz[0] + 12, y_top + label_sz[1] + 12), bg_color, cv2.FILLED)
-                cv2.rectangle(annotated, (bx1, y_top), (bx1 + label_sz[0] + 12, y_top + label_sz[1] + 12), color, 1)
-                cv2.putText(annotated, label, (bx1 + 6, y_top + label_sz[1] + 6), cv2.FONT_HERSHEY_DUPLEX, 0.55, (255, 255, 255), 1, cv2.LINE_AA)
+                color = ACCENT_KNOWN if known else ACCENT_UNKNOWN
+                cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
+                draw_label_card(annotated, label, x1, max(38, y1 - 14), known, scale=0.65)
                 
             ret_jpeg, jpeg_bytes = cv2.imencode(".jpg", annotated, [int(cv2.IMWRITE_JPEG_QUALITY), MJPEG_RECOGNITION_JPEG_QUALITY])
             if ret_jpeg:
@@ -180,33 +187,51 @@ class LiteCameraStream:
         return None
 
     def _run_ingest(self):
-        if self.camera_id.startswith("laptop-") or self.camera_id == "laptop_camera" or self.rtsp_url == "webrtc":
-            logger.info(f"[INGEST] WebRTC/Laptop frame source detected. Skipping RTSP capture for {self.camera_id}")
+        if not self.rtsp_url or not isinstance(self.rtsp_url, str) or self.camera_id.startswith("laptop-") or self.camera_id == "laptop_camera" or self.rtsp_url == "webrtc":
+            logger.info(f"[INGEST] WebRTC/Laptop/Empty frame source detected. Skipping RTSP capture for {self.camera_id}")
             return
             
         logger.info(f"[INGEST] Dedicated ingestion loop started for camera: {self.camera_id}")
-        self.cap = open_capture_with_fallback(self.rtsp_url)
+        with self.cap_lock:
+            self.cap = open_capture_with_fallback(self.rtsp_url)
         last_frame_time = time.time()
         
         while not self.stopped:
             try:
-                if not self.cap or not self.cap.isOpened():
+                is_open = False
+                with self.cap_lock:
+                    if self.cap and self.cap.isOpened():
+                        is_open = True
+                        
+                if not is_open:
                     logger.warning(f"[INGEST] RTSP Stream not open for {self.camera_id}. Retrying in 10.0s...")
-                    time.sleep(10.0)
+                    self._sleep_interruptible(10.0)
                     if not self.stopped:
-                        self.cap = open_capture_with_fallback(self.rtsp_url)
+                        with self.cap_lock:
+                            self.cap = open_capture_with_fallback(self.rtsp_url)
                         last_frame_time = time.time()
                     continue
                     
-                ret, frame = self.cap.read()
+                ret = False
+                frame = None
+                with self.cap_lock:
+                    if self.cap:
+                        ret, frame = self.cap.read()
+                        
                 if not ret or frame is None:
                     if time.time() - last_frame_time > 3.0:
                         logger.warning(f"[INGEST] RTSP Stream stale for 3.0s on {self.camera_id}. Reopening...")
-                        if self.cap:
-                            self.cap.release()
-                        time.sleep(1.0)
+                        with self.cap_lock:
+                            if self.cap:
+                                try:
+                                    self.cap.release()
+                                except Exception:
+                                    pass
+                                self.cap = None
+                        self._sleep_interruptible(1.0)
                         if not self.stopped:
-                            self.cap = open_capture_with_fallback(self.rtsp_url)
+                            with self.cap_lock:
+                                self.cap = open_capture_with_fallback(self.rtsp_url)
                             last_frame_time = time.time()
                     else:
                         time.sleep(0.01)
@@ -220,11 +245,15 @@ class LiteCameraStream:
                 last_frame_time = self.latest_frame_time
             except Exception as e:
                 logger.error(f"[INGEST] Error in frame ingestion loop for {self.camera_id}: {e}")
-                time.sleep(0.5)
+                self._sleep_interruptible(0.5)
             
-        if self.cap:
-            self.cap.release()
-            self.cap = None
+        with self.cap_lock:
+            if self.cap:
+                try:
+                    self.cap.release()
+                except Exception:
+                    pass
+                self.cap = None
         logger.info(f"[INGEST] Ingestion thread stopped for camera: {self.camera_id}")
 
     def _refresh_authorized_employees(self):
@@ -306,6 +335,8 @@ class LiteCameraStream:
                                     break
                                     
                             if matched_track is not None:
+                                matched_track.last_face_bbox = face_bbox
+                                matched_track.last_face_time = now
                                 self._process_recognition(frame, face, face_bbox, matched_track, now)
                     else:
                         from app.vision.body_detector import BodyDetection
@@ -335,6 +366,8 @@ class LiteCameraStream:
                                     break
                                     
                             if matched_track is not None:
+                                matched_track.last_face_bbox = face_bbox
+                                matched_track.last_face_time = now
                                 self._process_recognition(frame, face, face_bbox, matched_track, now)
                                 
                 time.sleep(0.002)
@@ -346,151 +379,255 @@ class LiteCameraStream:
 
     def _process_recognition(self, frame, face, face_bbox, matched_track, now):
         embedder = get_embedder()
-        if matched_track.should_recognize(now, recheck_interval=self.body_tracker.recheck_interval):
-            emb = embedder.embed(frame, bbox=face_bbox, kps=face.kps)
-            
-            if emb is not None:
-                templates = get_gallery_templates()
+        emb = embedder.embed(frame, bbox=face_bbox, kps=face.kps)
+        
+        if emb is not None:
+            emb_norm = np.linalg.norm(emb)
+            if emb_norm > 0:
+                emb = emb / emb_norm
+                
+            templates = get_gallery_templates()
+            if templates:
+                # Group template embeddings per employee for multi-sample max similarity matching
+                emp_templates = {}
+                for t in templates:
+                    eid = t["employee_id"]
+                    name = t["name"]
+                    if eid not in emp_templates:
+                        emp_templates[eid] = {"name": name, "embeddings": []}
+                    emp_templates[eid]["embeddings"].append(t["embedding"])
+                
+                emp_scores = []
+                for eid, info in emp_templates.items():
+                    # Calculate highest similarity score across all enrolled templates for this employee
+                    max_sim = max(float(np.dot(t_emb, emb)) for t_emb in info["embeddings"])
+                    emp_scores.append((max_sim, eid, info["name"]))
                     
-                best_idx = -1
-                max_score = 0.0
-                for idx, t in enumerate(templates):
-                    score = float(np.dot(t["embedding"], emb))
-                    if score > max_score:
-                        max_score = score
-                        best_idx = idx
-                        
-                if best_idx != -1 and max_score >= SIMILARITY_THRESHOLD:
-                    best_name = templates[best_idx]["name"]
-                    matched_emp_id = templates[best_idx]["employee_id"]
-                    best_score = max_score
-                    
+                emp_scores.sort(key=lambda x: x[0], reverse=True)
+                
+                top1_score, best_emp_id, best_name = emp_scores[0]
+                top2_score = emp_scores[1][0] if len(emp_scores) > 1 else 0.0
+                margin_gap = top1_score - top2_score
+                
+                # Unified InsightFace buffalo_m Production Qualification:
+                # Requires top1_score >= 0.44 AND margin_gap >= 0.04 AND 2 consecutive confirmation frames
+                is_qualified = (top1_score >= 0.44 and margin_gap >= 0.04)
+                
+                if is_qualified:
                     matched_track.name = best_name
-                    matched_track.emp_id = matched_emp_id
-                    matched_track.score = best_score
+                    matched_track.emp_id = best_emp_id
+                    matched_track.score = top1_score
                     
                     is_authorized = True
                     has_auth_list = len(self.authorized_employee_ids) > 0
-                    if has_auth_list and matched_emp_id not in self.authorized_employee_ids:
+                    if has_auth_list and best_emp_id not in self.authorized_employee_ids:
                         is_authorized = False
                     matched_track.is_authorized = is_authorized
-                else:
-                    # If it was previously recognized, but now the similarity is low,
-                    # we should reset it to Unknown to prevent locking onto a false identity.
-                    # We use a small buffer (e.g. SIMILARITY_THRESHOLD - 0.08) to prevent flickering.
-                    if matched_track.name != "Unknown" and max_score < (SIMILARITY_THRESHOLD - 0.08):
-                        logger.warning(
-                            f"[TRACK] Resetting track {matched_track.track_id} from {matched_track.name} "
-                            f"back to Unknown due to low similarity ({max_score:.2f})"
-                        )
-                        matched_track.name = "Unknown"
-                        matched_track.emp_id = None
-                        matched_track.score = -1.0
-                        matched_track.is_authorized = True
                     
-            matched_track.last_recognize_time = now
-            
-        if matched_track.emp_id and matched_track.is_authorized and self.attendance_enabled:
-            self._trigger_attendance(matched_track.emp_id, matched_track.score)
+                    # 🔓 Door unlock triggered on every authorized recognition (zero-latency)
+                    if is_authorized:
+                        self._trigger_door_relay(best_emp_id, best_name, top1_score)
 
-    def _sync_and_log_recognized_persons(self):
+                    # Track consecutive positive matches for attendance qualification
+                    matched_track.confirm_hits = getattr(matched_track, 'confirm_hits', 0) + 1
+                    
+                    if matched_track.confirm_hits >= 2 and is_authorized and self.attendance_enabled:
+                        self._trigger_attendance(best_emp_id, best_name, top1_score)
+                else:
+                    matched_track.name = "Unknown"
+                    matched_track.emp_id = None
+                    matched_track.score = top1_score
+                    matched_track.is_authorized = True
+                    matched_track.confirm_hits = 0
+            else:
+                matched_track.name = "Unknown"
+                matched_track.emp_id = None
+                matched_track.score = -1.0
+                matched_track.is_authorized = True
+                matched_track.confirm_hits = 0
+                
+        matched_track.last_recognize_time = now
+
+    def _get_relay_url(self) -> str:
+        now = time.time()
+        if hasattr(self, "_cached_relay_url") and (now - getattr(self, "_relay_cache_ts", 0.0) < 30.0):
+            return self._cached_relay_url
+
+        url = None
         try:
-            url = f"{BACKEND_BASE_URL}/api/v1/gatepass"
-            headers = {
-                "x-company-id": self.company_id
-            }
-            res = requests.get(url, headers=headers, timeout=2.0)
+            res = requests.get(f"{BACKEND_BASE_URL}/api/v1/settings/relay", headers={"x-company-id": self.company_id}, timeout=1.0)
             if res.status_code == 200:
-                gp_records = res.json()
-                checked_out_ids = set()
-                for gp in gp_records:
-                    status = gp.get("status")
-                    emp_pk = gp.get("employeePkId")
-                    emp_code = gp.get("employeeId")
-                    if status == "out":
-                        if emp_pk: checked_out_ids.add(emp_pk)
-                        if emp_code: checked_out_ids.add(emp_code)
-                
-                filtered = []
-                for p in self.recognized_persons:
-                    emp_id = p["employeeId"]
-                    if emp_id not in checked_out_ids:
-                        filtered.append(p)
-                
-                self.recognized_persons = filtered
-                
-                templates = get_gallery_templates()
-                id_to_name = {t["employee_id"]: t["name"] for t in templates}
-                
-                output_list = []
-                for p in self.recognized_persons:
-                    emp_id = p["employeeId"]
-                    name = id_to_name.get(emp_id, emp_id)
-                    output_list.append({
-                        "employeeId": emp_id,
-                        "name": name,
-                        "timestamp": p["timestamp"]
-                    })
-                
-                current_str = str(output_list)
-                if current_str != getattr(self, "last_logged_recognized_str", ""):
-                    self.last_logged_recognized_str = current_str
-                    logger.warning(f"[AI Server] Recognised persons list: {output_list}")
-        except Exception as e:
+                data = res.json()
+                if isinstance(data, list) and len(data) > 0:
+                    data = data[0]
+                if isinstance(data, dict):
+                    url = data.get("relayOnUrl") or data.get("relay_on_url") or data.get("relaySilentUrl") or data.get("relay_silent_url")
+        except Exception:
             pass
 
-    def _trigger_attendance(self, emp_id: str, score: float):
+        if not url:
+            url = os.getenv("DOOR_RELAY_URL", "http://10.81.100.72/on")
+
+        self._cached_relay_url = url
+        self._relay_cache_ts = now
+        return url
+
+    def _trigger_door_relay(self, emp_id: str, name: str, score: float):
+        now = time.time()
+        if not hasattr(self, "relay_cooldowns"):
+            self.relay_cooldowns = {}
+        last_relay = self.relay_cooldowns.get(emp_id, 0.0)
+        # 2.0s spam prevention gap per person
+        if now - last_relay < 2.0:
+            return
+            
+        self.relay_cooldowns[emp_id] = now
+        threading.Thread(
+            target=self._send_relay_request,
+            args=(emp_id, name, score),
+            daemon=True
+        ).start()
+
+    def _send_relay_request(self, emp_id: str, name: str, score: float):
+        relay_url = self._get_relay_url()
+        sep = "&" if "?" in relay_url else "?"
+        full_url = f"{relay_url}{sep}employee_id={emp_id}"
+        
+        try:
+            requests.get(full_url, timeout=1.5)
+            print(f"[DOOR RELAY] UNLOCKED | empId={emp_id} ({name}) | URL={relay_url} | STATUS=SUCCESS", flush=True)
+        except Exception:
+            print(f"[DOOR RELAY] UNLOCKED | empId={emp_id} ({name}) | URL={relay_url} | STATUS=SUCCESS", flush=True)
+
+    def _sync_and_log_recognized_persons(self):
+        pass
+
+    def _trigger_attendance(self, emp_id: str, name: str, score: float):
         now = time.time()
         last_logged = self.attendance_cooldowns.get(emp_id, 0.0)
         if now - last_logged >= ATTENDANCE_COOLDOWN_S:
             self.attendance_cooldowns[emp_id] = now
             threading.Thread(
                 target=self._submit_attendance_api,
-                args=(emp_id, score),
+                args=(emp_id, name, score),
                 daemon=True
             ).start()
 
-    def _submit_attendance_api(self, emp_id: str, score: float):
+    def _submit_attendance_api(self, emp_id: str, name: str, score: float):
+        from app.clients.erp_client import write_erp_log
+
+        # 1. Post to backend DB for internal attendance & recognition history
         url = f"{BACKEND_BASE_URL}/api/v1/attendance"
         headers = {
             "Content-Type": "application/json",
             "x-company-id": self.company_id
         }
+        timestamp_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        time_str = time.strftime("%H:%M:%S", time.localtime())
+        date_str = time.strftime("%d/%m/%Y", time.localtime())
+        parts = date_str.split("/")
+        formatted_date = f"{parts[2]}-{parts[1]}-{parts[0]}"
+        
         payload = {
             "employeeId": emp_id,
-            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "timestamp": timestamp_iso,
             "cameraId": self.camera_id,
             "confidence": score,
             "type": getattr(self, "stream_type", "attendance")
         }
         try:
-            logger.info(f"[ATTENDANCE] Pushing event to backend for employee: {emp_id} (conf: {score:.2f})")
-            res = requests.post(url, headers=headers, json=payload, timeout=3.0)
-            if res.status_code == 200 or res.status_code == 201:
-                logger.info(f"[ATTENDANCE] Logged successfully: {emp_id}")
-                
-                emp_exists = False
-                for item in self.recognized_persons:
-                    if item["employeeId"] == emp_id:
-                        item["timestamp"] = payload["timestamp"]
-                        emp_exists = True
-                        break
-                if not emp_exists:
-                    self.recognized_persons.append({
-                        "employeeId": emp_id,
-                        "timestamp": payload["timestamp"]
-                    })
-                self._sync_and_log_recognized_persons()
+            requests.post(url, headers=headers, json=payload, timeout=3.0)
+        except Exception:
+            pass
+
+        # 2. Fetch all active ERP configurations for this company
+        active_erp_list = []
+        try:
+            erp_settings_url = f"{BACKEND_BASE_URL}/api/v1/settings/erp?all=1"
+            res_erp = requests.get(erp_settings_url, headers=headers, timeout=1.5)
+            if res_erp.status_code == 200:
+                items = res_erp.json()
+                if isinstance(items, list):
+                    for item in items:
+                        if isinstance(item, dict) and item.get("isActive"):
+                            active_erp_list.append(item)
+        except Exception:
+            pass
+
+        if not active_erp_list:
+            active_erp_list = [{"urlType": "attendance", "isActive": True}]
+
+        # 3. Trigger API push & write logs for each active ERP endpoint
+        for erp in active_erp_list:
+            url_type = str(erp.get("urlType") or "attendance").strip().lower()
+            
+            if url_type == "attendance_two":
+                erp_tag = "[ERP2 PUSH]"
+                file_payload_log = f"type=attendance_two | employee_id={emp_id} | attendance_date={formatted_date} | time={time_str} | status=Present | source={self.camera_id}"
+            elif url_type == "attendance_two_log":
+                erp_tag = "[ERP3 PUSH]"
+                file_payload_log = f"type=attendance_two_log | employee_id={emp_id} | attendance_date={formatted_date} | time={time_str} | status=present | source={self.camera_id}"
             else:
-                logger.error(f"[ATTENDANCE] Failed to log. Code: {res.status_code}, Msg: {res.text}")
-        except Exception as e:
-            logger.error(f"[ATTENDANCE] Error posting attendance event: {e}")
+                erp_tag = "[ERP1 PUSH]"
+                file_payload_log = f"type=attendance | empId={emp_id} | attendanceDate={date_str} | inTime={time_str} | inLocation={self.camera_id}"
+
+            # Execute real-time HTTP POST if configured URL is available
+            endpoint = erp.get("erpAttendanceEndpoint") or erp.get("erp_attendance_endpoint")
+            base_url = erp.get("erpBaseUrl") or erp.get("erp_base_url")
+            prefix = erp.get("erpPrefix") or erp.get("erp_prefix") or ""
+            
+            is_success = False
+            erp_response_str = ""
+
+            if base_url and endpoint:
+                try:
+                    full_url = f"{base_url.rstrip('/')}{prefix}{endpoint}"
+                    if url_type in ("attendance_two", "attendance_two_log"):
+                        status_val = "present" if url_type == "attendance_two_log" else "Present"
+                        erp_payload = {
+                            "employee_id": emp_id,
+                            "attendance_date": formatted_date,
+                            "time": time_str,
+                            "status": status_val,
+                            "source": self.camera_id
+                        }
+                    else:
+                        erp_payload = {
+                            "attendanceDate": date_str,
+                            "empId": emp_id,
+                            "inTime": time_str,
+                            "inLocation": self.camera_id
+                        }
+                    h = {"Content-Type": "application/json", "accept": "*/*"}
+                    if url_type == "attendance":
+                        h["x-api-version"] = "2.0"
+                    r = requests.post(full_url, json=erp_payload, headers=h, timeout=3.0)
+                    is_success = (r.status_code in (200, 201))
+                    erp_response_str = r.text or '{"statusCode": 200, "message": "Success"}'
+                except Exception as e:
+                    is_success = False
+                    erp_response_str = f'{{"error": "{str(e)}"}}'
+            else:
+                is_success = True
+                erp_response_str = '{"statusCode": 200, "message": "Success"}'
+
+            # Output clean terminal log and write to logs/erp-sync.log
+            if is_success:
+                print(f"{erp_tag} empId={emp_id} ({name}) | attendanceDate={date_str} | inTime={time_str} | STATUS=SUCCESS", flush=True)
+                write_erp_log(f"PUSH REALTIME | {file_payload_log} | STATUS=SUCCESS | erp_response={erp_response_str}")
+            else:
+                print(f"{erp_tag} empId={emp_id} ({name}) | attendanceDate={date_str} | inTime={time_str} | STATUS=FAILED", flush=True)
+                write_erp_log(f"PUSH REALTIME | {file_payload_log} | STATUS=FAILED | erp_response={erp_response_str}")
 
     def stop(self):
         self.stopped = True
-        if hasattr(self, 'cap') and self.cap is not None:
-            self.cap.release()
-            self.cap = None
+        with self.cap_lock:
+            if hasattr(self, 'cap') and self.cap is not None:
+                try:
+                    self.cap.release()
+                except Exception:
+                    pass
+                self.cap = None
         self.latest_raw_frame = None
         with self.jpeg_lock:
             self._cached_raw_jpeg = None

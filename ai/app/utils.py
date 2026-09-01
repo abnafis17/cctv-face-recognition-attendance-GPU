@@ -184,6 +184,9 @@ def open_capture_with_fallback(rtsp_url: str) -> cv2.VideoCapture:
     Tries to open video stream capture with hardware-accelerated GStreamer decoders on Jetson,
     falling back to optimized low-latency software OpenCV FFmpeg.
     """
+    if not rtsp_url or not isinstance(rtsp_url, str):
+        return cv2.VideoCapture()
+
     # 1. Ensure low-latency FFmpeg parameters are set in the environment globally
     os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay"
     
@@ -255,20 +258,16 @@ def open_capture_with_fallback(rtsp_url: str) -> cv2.VideoCapture:
     ]
 
     for name, pipeline, backend in pipelines_to_try:
-        print(f"[Capture] Attempting {name} pipeline...")
         cap = cv2.VideoCapture(pipeline, backend)
         if backend == cv2.CAP_FFMPEG:
             cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         if cap.isOpened():
             ret, frame = cap.read()
             if ret and frame is not None:
-                print(f"[Capture] {name} pipeline initialized successfully.")
                 # Cache the pipeline string or "ffmpeg"
                 _WORKING_PIPELINE_CACHE[rtsp_url] = "ffmpeg" if backend == cv2.CAP_FFMPEG else pipeline
                 return cap
             else:
                 cap.release()
-                print(f"[Capture] {name} pipeline opened but failed to read frames.")
 
-    print("[Capture] All pipelines failed. Returning closed capture object.")
     return cap

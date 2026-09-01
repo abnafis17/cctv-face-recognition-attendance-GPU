@@ -13,7 +13,6 @@ def sync_gallery(company_id: str):
     url = f"{BACKEND_BASE_URL}/api/v1/gallery/templates"
     headers = {"x-company-id": company_id}
     try:
-        logger.warning(f"Syncing gallery templates from backend: {url}...")
         res = requests.get(url, headers=headers, timeout=5.0)
         if res.status_code == 200:
             templates = res.json()
@@ -32,7 +31,6 @@ def sync_gallery(company_id: str):
                     })
             with gallery_lock:
                 gallery_templates = loaded
-            logger.warning(f"Gallery synchronized: {len(gallery_templates)} templates loaded.")
         else:
             logger.error(f"Failed to load templates. Status: {res.status_code}")
     except Exception as e:

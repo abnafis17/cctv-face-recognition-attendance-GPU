@@ -17,8 +17,7 @@ def init_models():
         logger.info("Initializing Face Detection & Embedding models on GPU...")
         from app.vision.insightface_models import FaceDetector, FaceEmbedder
         model_name = os.getenv("INSIGHTFACE_MODEL", "buffalo_m")
-        det_model_name = os.getenv("AI_DETECTOR_MODEL", "buffalo_sc")
-        detector = FaceDetector(model_name=det_model_name, use_gpu=True)
+        detector = FaceDetector(model_name=model_name, use_gpu=True)
         embedder = FaceEmbedder(model_name=model_name, use_gpu=True)
         if BODY_PERSISTENCE_ENABLED:
             from app.vision.body_detector import UniversalBodyDetector

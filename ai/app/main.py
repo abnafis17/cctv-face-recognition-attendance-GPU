@@ -9,9 +9,12 @@ from app.api.router import api_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.warning("Pre-initializing AI models on startup to prevent GPU context race conditions...")
+    logger.warning("==========================================================================")
+    logger.warning("[AI SERVER] CCTV Face Recognition & Attendance Engine ON")
+    logger.warning("[AI SERVER] Models Loaded: InsightFace RetinaFace + MobileFaceNet (buffalo_m CUDA GPU)")
+    logger.warning("[AI SERVER] Services Active: Realtime ERP Attendance Sync & Door Unlock Relay")
+    logger.warning("==========================================================================")
     init_models()
-    logger.warning("AI models initialized successfully. Server is ready.")
     yield
     logger.warning("Shutting down Lite AI Server. Stopping all active camera streams...")
     with streams_lock:

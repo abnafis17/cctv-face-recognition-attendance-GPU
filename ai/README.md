@@ -36,7 +36,9 @@ Attendance is recorded via the recognition stream used by the web UI (Cameras/He
 
 ## 5) Run AI API
 ```powershell
-python -m uvicorn app.api_server:app --host 0.0.0.0 --port 8000
+python run.py
+# or
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 Open:
 - API docs: http://127.0.0.1:8000/docs
