@@ -33,6 +33,7 @@ export function useMjpegStream({
   // whenever the component is (re)mounted.
   const mountNonce = useId();
   const [streamAttempt, setStreamAttempt] = useState(0);
+  const [attemptNonce, setAttemptNonce] = useState(() => Date.now());
   const [streamHasFrame, setStreamHasFrame] = useState(false);
   const [streamRetries, setStreamRetries] = useState(0);
 
@@ -49,8 +50,8 @@ export function useMjpegStream({
     if (!enabled) return "";
     if (!streamUrl) return "";
     const sep = streamUrl.includes("?") ? "&" : "?";
-    return `${streamUrl}${sep}t=${encodeURIComponent(mountNonce)}-${streamAttempt}`;
-  }, [enabled, mountNonce, streamAttempt, streamUrl]);
+    return `${streamUrl}${sep}t=${encodeURIComponent(mountNonce)}-${attemptNonce}-${streamAttempt}`;
+  }, [attemptNonce, enabled, mountNonce, streamAttempt, streamUrl]);
 
   const resetStream = useCallback(() => {
     if (streamRetryTimerRef.current) window.clearTimeout(streamRetryTimerRef.current);
@@ -60,6 +61,8 @@ export function useMjpegStream({
 
     setStreamRetries(0);
     setStreamHasFrame(false);
+    streamHasFrameRef.current = false;
+    setAttemptNonce(Date.now());
     setStreamAttempt((a) => a + 1);
   }, []);
 
@@ -177,8 +180,8 @@ export function useMjpegStream({
   }, []);
 
   const imgKey = useMemo(
-    () => `${streamUrl}:${mountNonce}:${streamAttempt}`,
-    [mountNonce, streamAttempt, streamUrl],
+    () => `${streamUrl}:${mountNonce}:${attemptNonce}:${streamAttempt}`,
+    [attemptNonce, mountNonce, streamAttempt, streamUrl],
   );
 
   return {

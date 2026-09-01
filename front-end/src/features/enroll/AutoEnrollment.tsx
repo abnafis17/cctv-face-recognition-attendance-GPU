@@ -380,7 +380,12 @@ export default function AutoEnrollment({
     } catch {}
 
     try {
-      if (previewVideoRef.current) previewVideoRef.current.srcObject = null;
+      if (previewVideoRef.current) {
+        previewVideoRef.current.srcObject = null;
+        try {
+          previewVideoRef.current.load();
+        } catch {}
+      }
     } catch {}
 
     try {

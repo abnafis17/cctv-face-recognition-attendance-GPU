@@ -68,6 +68,10 @@ async def webrtc_signal(ws: WebSocket, container=Depends(get_container)):
                 camera_id_for_connection = str(camera_id)
                 pc = RTCPeerConnection()
 
+                # Clear any prior stale frame immediately before accepting new stream
+                container.camera_rt.clear_injected_frame(camera_id_for_connection)
+                container.rec_worker.clear(camera_id_for_connection)
+
                 @pc.on("track")
                 async def on_track(track):
                     if track.kind != "video":
@@ -178,6 +182,8 @@ async def webrtc_signal(ws: WebSocket, container=Depends(get_container)):
         if pc:
             await pc.close()
         if camera_id:
+            container.camera_rt.clear_injected_frame(camera_id)
+            container.rec_worker.clear(camera_id)
             container.rec_worker.stop(camera_id)
             container.hls_rt.stop(camera_id)
             try:

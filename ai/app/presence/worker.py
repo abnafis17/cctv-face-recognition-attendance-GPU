@@ -48,11 +48,26 @@ class PresenceWorker:
             1.0, _env_float("PRESENCE_ERROR_LOG_INTERVAL_S", 10.0)
         )
 
+    def clear(self, camera_id: str) -> None:
+        """Clear cached presence JPEGs and reset presence state."""
+        lock = self._locks.setdefault(camera_id, threading.Lock())
+        with lock:
+            self._no_person_since.pop(camera_id, None)
+            self._latest_jpg.pop(camera_id, None)
+            self._latest_stats.pop(camera_id, None)
+            self._last_error_log_ts.pop(camera_id, None)
+            self._last_error_msg.pop(camera_id, None)
+        try:
+            self.presence_rt.reset_camera(camera_id)
+        except Exception:
+            pass
+
     def start(self, camera_id: str, ai_fps: float = 8.0) -> bool:
         if self._running.get(camera_id):
             self._ai_fps[camera_id] = float(ai_fps)
             return False
 
+        self.clear(camera_id)
         self._running[camera_id] = True
         self._ai_fps[camera_id] = float(ai_fps)
         # Unknown state at start: only idle after first inference reports no person.
@@ -78,16 +93,7 @@ class PresenceWorker:
 
         self._threads.pop(camera_id, None)
         self._ai_fps.pop(camera_id, None)
-
-        lock = self._locks.setdefault(camera_id, threading.Lock())
-        with lock:
-            self._no_person_since.pop(camera_id, None)
-            self._latest_jpg.pop(camera_id, None)
-            self._latest_stats.pop(camera_id, None)
-            self._last_error_log_ts.pop(camera_id, None)
-            self._last_error_msg.pop(camera_id, None)
-
-        self.presence_rt.reset_camera(camera_id)
+        self.clear(camera_id)
         return was_running
 
     def stop_all(self) -> None:

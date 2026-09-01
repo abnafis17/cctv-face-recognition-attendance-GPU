@@ -119,9 +119,9 @@ export default function AutoEnrollment({
   const speak = useTTS(tts);
 
   // ---- Session state (start/stop/poll) ----
+  const resetStreamRef = useRef<() => void>(() => {});
   const onStopCleanup = useCallback(() => {
-    // clear MJPEG (done by resetStream effect below)
-    // stop any speaking
+    resetStreamRef.current();
     window.speechSynthesis.cancel();
   }, []);
 
@@ -161,6 +161,10 @@ export default function AutoEnrollment({
     streamUrl,
     enabled: screen === "enrolling",
   });
+
+  useEffect(() => {
+    resetStreamRef.current = resetStream;
+  }, [resetStream]);
 
   // When enrolling (or camera changes), force a fresh MJPEG connection
   useEffect(() => {

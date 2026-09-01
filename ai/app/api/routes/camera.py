@@ -322,6 +322,21 @@ def _stop_camera_runtime(*, container, camera_id: str) -> None:
         print(f"[CameraRoute] camera runtime stop failed cam={camera_id}: {exc}")
 
     try:
+        container.camera_rt.clear_injected_frame(camera_id)
+    except Exception:
+        pass
+
+    try:
+        container.rec_worker.clear(camera_id)
+    except Exception:
+        pass
+
+    try:
+        container.presence_worker.clear(camera_id)
+    except Exception:
+        pass
+
+    try:
         container.attendance_rt.set_authorized_employee_ids(camera_id, [])
     except Exception as exc:
         print(f"[CameraRoute] clear authorized ids failed cam={camera_id}: {exc}")

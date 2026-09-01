@@ -85,11 +85,18 @@ const PresenceLaptopCamera: React.FC<PresenceLaptopCameraProps> = ({
     return `${base}/webrtc/signal`;
   }, []);
 
-  const { streamSrc, streamHasFrame, streamRetries, imgKey, onFrame, onError } =
-    useMjpegStream({
-      streamUrl,
-      enabled: localActive,
-    });
+  const {
+    streamSrc,
+    streamHasFrame,
+    streamRetries,
+    imgKey,
+    onFrame,
+    onError,
+    resetStream,
+  } = useMjpegStream({
+    streamUrl,
+    enabled: localActive,
+  });
 
   const shouldRenderStream = localActive && Boolean(streamSrc);
   const shouldFillFrame = isFullscreen || fillContainer;
@@ -104,8 +111,17 @@ const PresenceLaptopCamera: React.FC<PresenceLaptopCameraProps> = ({
           .getTracks()
           .forEach((track) => track.stop());
         localVideoRef.current.srcObject = null;
+        try {
+          localVideoRef.current.load();
+        } catch {}
       }
     } catch {}
+
+    if (imgRef.current) {
+      try {
+        imgRef.current.src = "about:blank";
+      } catch {}
+    }
 
     try {
       pcRef.current?.close();
@@ -119,8 +135,9 @@ const PresenceLaptopCamera: React.FC<PresenceLaptopCameraProps> = ({
     pcRef.current = null;
     wsRef.current = null;
     pendingIceCandidatesRef.current = [];
+    resetStream();
     setLocalActive(false);
-  }, []);
+  }, [resetStream]);
 
   useEffect(() => {
     return () => stopLocalCamera();
@@ -176,6 +193,7 @@ const PresenceLaptopCamera: React.FC<PresenceLaptopCameraProps> = ({
 
     try {
       setWsError("");
+      resetStream();
       if (localActive) {
         stopLocalCamera();
       }
@@ -390,7 +408,10 @@ const PresenceLaptopCamera: React.FC<PresenceLaptopCameraProps> = ({
                 ref={imgRef}
                 src={streamSrc}
                 alt="Presence stream"
-                className="h-full w-full object-cover object-center"
+                className={cn(
+                  "h-full w-full object-cover object-center transition-opacity duration-150",
+                  streamHasFrame ? "opacity-100" : "opacity-0",
+                )}
                 width={1280}
                 height={720}
                 onLoad={onFrame}

@@ -45,6 +45,13 @@ class RecognitionWorker:
         self._ai_fps: Dict[str, float] = {}
         self._jpeg_quality = max(30, min(95, int(os.getenv("MJPEG_RECOGNITION_FALLBACK_JPEG_QUALITY", "60"))))
 
+    def clear(self, camera_id: str) -> None:
+        """Clear any cached annotated frames/JPEGs for a camera."""
+        lock = self._locks.setdefault(camera_id, threading.Lock())
+        with lock:
+            self._latest_frame.pop(camera_id, None)
+            self._latest_jpg.pop(camera_id, None)
+
     def start(self, camera_id: str, camera_name: str, ai_fps: float = 10.0):
         """
         Start recognition worker for camera if not already running.
@@ -55,6 +62,7 @@ class RecognitionWorker:
             self._ai_fps[camera_id] = float(ai_fps)
             return
 
+        self.clear(camera_id)
         self._running[camera_id] = True
         self._ai_fps[camera_id] = float(ai_fps)
         self._locks.setdefault(camera_id, threading.Lock())
@@ -78,11 +86,7 @@ class RecognitionWorker:
 
         self._threads.pop(camera_id, None)
         self._ai_fps.pop(camera_id, None)
-
-        lock = self._locks.setdefault(camera_id, threading.Lock())
-        with lock:
-            self._latest_frame.pop(camera_id, None)
-            self._latest_jpg.pop(camera_id, None)
+        self.clear(camera_id)
 
     def stop_all(self) -> None:
         for camera_id in list(self._threads.keys()):

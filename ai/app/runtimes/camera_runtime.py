@@ -81,6 +81,7 @@ class CameraRuntime:
             return True
 
     def stop(self, camera_id: str) -> bool:
+        self.clear_injected_frame(camera_id)
         with self._lock:
             grabber = self.cameras.pop(camera_id, None)
             self._camera_cfg.pop(camera_id, None)
@@ -139,6 +140,15 @@ class CameraRuntime:
             self.injected_locks[camera_id] = threading.Lock()
         with self.injected_locks[camera_id]:
             self.injected_frames[camera_id] = frame
+
+    def clear_injected_frame(self, camera_id: str):
+        """Remove any cached injected frame for a camera."""
+        lock = self.injected_locks.get(camera_id)
+        if lock:
+            with lock:
+                self.injected_frames.pop(camera_id, None)
+        else:
+            self.injected_frames.pop(camera_id, None)
 
     def get_frame(self, camera_id: str, copy: bool = True) -> Optional[np.ndarray]:
         # 1) Laptop camera (injected frames)

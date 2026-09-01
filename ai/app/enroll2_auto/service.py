@@ -196,6 +196,12 @@ class EnrollmentAutoService2:
             self.client.set_company_id(company_id)
         self.client.upsert_employee(name, employee_id)
 
+        if camera_id:
+            try:
+                self.camera_rt.clear_injected_frame(camera_id)
+            except Exception:
+                pass
+
         with self._lock:
             sid = f"enroll2_{int(time.time())}"
             self._session = Enroll2AutoSession(
@@ -225,11 +231,18 @@ class EnrollmentAutoService2:
         with self._lock:
             if not self._session:
                 return False
+            cid = self._session.camera_id
             self._session.status = "stopped"
             self._session.last_message = "Stopped"
             self._session.last_update_at = now_iso()
             self._run = False
-            return True
+
+        if cid:
+            try:
+                self.camera_rt.clear_injected_frame(cid)
+            except Exception:
+                pass
+        return True
 
     def status(self) -> Optional[Enroll2AutoSession]:
         with self._lock:

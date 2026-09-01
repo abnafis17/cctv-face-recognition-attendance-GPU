@@ -92,11 +92,18 @@ const HeadCountCameraComponent: React.FC<LocalCameraProps> = ({
     return `${base}/webrtc/signal`;
   }, []);
 
-  const { streamSrc, streamHasFrame, streamRetries, imgKey, onFrame, onError } =
-    useMjpegStream({
-      streamUrl: recUrl,
-      enabled: localActive,
-    });
+  const {
+    streamSrc,
+    streamHasFrame,
+    streamRetries,
+    imgKey,
+    onFrame,
+    onError,
+    resetStream,
+  } = useMjpegStream({
+    streamUrl: recUrl,
+    enabled: localActive,
+  });
 
   const shouldRenderStream = localActive && Boolean(streamSrc);
 
@@ -113,6 +120,15 @@ const HeadCountCameraComponent: React.FC<LocalCameraProps> = ({
     localStreamRef.current = null;
     if (localVideoRef.current) {
       localVideoRef.current.srcObject = null;
+      try {
+        localVideoRef.current.load();
+      } catch {}
+    }
+
+    if (imgRef.current) {
+      try {
+        imgRef.current.src = "about:blank";
+      } catch {}
     }
 
     try {
@@ -127,8 +143,9 @@ const HeadCountCameraComponent: React.FC<LocalCameraProps> = ({
     wsRef.current = null;
     pendingIceCandidatesRef.current = [];
 
+    resetStream();
     setLocalActive(false);
-  }, []);
+  }, [resetStream]);
 
   useEffect(() => {
     onActiveChange?.(localActive);
@@ -174,6 +191,7 @@ const HeadCountCameraComponent: React.FC<LocalCameraProps> = ({
 
     try {
       setWsError("");
+      resetStream();
 
       if (localActive) {
         stopLocalCamera();
@@ -469,7 +487,10 @@ const HeadCountCameraComponent: React.FC<LocalCameraProps> = ({
                 ref={imgRef}
                 src={streamSrc}
                 alt="Recognition stream"
-                className="h-full w-full object-cover"
+                className={cn(
+                  "h-full w-full object-cover transition-opacity duration-150",
+                  streamHasFrame ? "opacity-100" : "opacity-0",
+                )}
                 width={1280}
                 height={720}
                 onLoad={onFrame}

@@ -139,6 +139,7 @@ def mjpeg_generator_recognition(
 
     rec_worker.start(camera_id, camera_name, ai_fps=float(ai_fps))
 
+    stream_start_ts = time.time()
     wait_deadline = time.monotonic() + initial_wait_s
     while time.monotonic() < wait_deadline:
         if camera_rt.get_frame(camera_id, copy=False) is not None:
@@ -160,7 +161,10 @@ def mjpeg_generator_recognition(
             cached = rec_worker.get_latest_jpeg_item(camera_id)
             if cached is not None:
                 cached_bytes, cached_ts = cached
-                if (time.time() - float(cached_ts)) <= max_cached_jpeg_age_s:
+                if (
+                    float(cached_ts) >= (stream_start_ts - 0.05)
+                    and (time.time() - float(cached_ts)) <= max_cached_jpeg_age_s
+                ):
                     jpg_bytes = cached_bytes
 
             if jpg_bytes is None:
@@ -307,6 +311,7 @@ def mjpeg_generator_presence(
     presence_clients.inc(camera_id)
     presence_worker.start(camera_id, ai_fps=float(ai_fps))
 
+    stream_start_ts = time.time()
     wait_deadline = time.monotonic() + initial_wait_s
     while time.monotonic() < wait_deadline:
         if camera_rt.get_frame(camera_id, copy=False) is not None:
@@ -326,7 +331,10 @@ def mjpeg_generator_presence(
             cached = presence_worker.get_latest_jpeg_item(camera_id)
             if cached is not None:
                 cached_bytes, cached_ts = cached
-                if (time.time() - float(cached_ts)) <= max_cached_jpeg_age_s:
+                if (
+                    float(cached_ts) >= (stream_start_ts - 0.05)
+                    and (time.time() - float(cached_ts)) <= max_cached_jpeg_age_s
+                ):
                     jpg_bytes = cached_bytes
 
             if jpg_bytes is None:
