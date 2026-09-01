@@ -3,33 +3,30 @@
 import { useEffect, useRef } from "react";
 import axiosInstance, { API } from "@/config/axiosInstance";
 
-type AttendanceEvent = {
+type HeadcountEvent = {
   seq?: number;
   at?: string;
-  attendanceId?: string;
+  headcountId?: string;
   employeeId?: string;
+  status?: string;
   timestamp?: string;
   cameraId?: string | null;
 };
 
-type UseAttendanceEventsOptions = {
+type UseHeadcountEventsOptions = {
   enabled?: boolean;
   pollIntervalMs?: number; // default 600 (retry/backoff delay)
   waitMs?: number; // default 300000 (server long-poll wait)
   limit?: number; // default 50
-  syncLatestOnStart?: boolean; // default true; false starts from seq=0/current ref without sync jump
-  startSeq?: number;
-  onEvents?: (events: AttendanceEvent[]) => void;
+  onEvents?: (events: HeadcountEvent[]) => void;
 };
 
-export function useAttendanceEvents(options: UseAttendanceEventsOptions = {}) {
+export function useHeadcountEvents(options: UseHeadcountEventsOptions = {}) {
   const {
     enabled = true,
     pollIntervalMs = 600,
     waitMs = 300000,
     limit = 50,
-    syncLatestOnStart = true,
-    startSeq,
     onEvents,
   } = options;
 
@@ -40,10 +37,6 @@ export function useAttendanceEvents(options: UseAttendanceEventsOptions = {}) {
     if (!enabled) return;
     let cancelled = false;
 
-    if (startSeq !== undefined && startSeq > 0) {
-      seqRef.current = startSeq;
-    }
-
     const sleep = (ms: number) =>
       new Promise<void>((resolve) => {
         window.setTimeout(resolve, ms);
@@ -51,7 +44,7 @@ export function useAttendanceEvents(options: UseAttendanceEventsOptions = {}) {
 
     async function syncLatest() {
       try {
-        const resp = await axiosInstance.get(API.ATTENDANCE_EVENTS, {
+        const resp = await axiosInstance.get(API.HEADCOUNT_EVENTS, {
           params: { afterSeq: 0, limit: 1, waitMs: 0 },
         });
         const latest = Number(resp?.data?.latest_seq || 0) || 0;
@@ -70,12 +63,12 @@ export function useAttendanceEvents(options: UseAttendanceEventsOptions = {}) {
         inFlightRef.current = true;
 
         try {
-          const resp = await axiosInstance.get(API.ATTENDANCE_EVENTS, {
+          const resp = await axiosInstance.get(API.HEADCOUNT_EVENTS, {
             params: { afterSeq: seqRef.current, limit, waitMs },
           });
           if (cancelled) return;
 
-          const events = (resp?.data?.events || []) as AttendanceEvent[];
+          const events = (resp?.data?.events || []) as HeadcountEvent[];
           const latest = Number(resp?.data?.latest_seq || 0) || 0;
 
           let maxSeq = Math.max(seqRef.current, latest);
@@ -95,19 +88,12 @@ export function useAttendanceEvents(options: UseAttendanceEventsOptions = {}) {
     }
 
     const first = window.setTimeout(() => {
-      if (startSeq !== undefined && startSeq > 0) {
-        pollLoop();
-      } else if (syncLatestOnStart) {
-        syncLatest().finally(() => pollLoop());
-      } else {
-        pollLoop();
-      }
+      syncLatest().finally(() => pollLoop());
     }, 0);
 
     return () => {
       cancelled = true;
       window.clearTimeout(first);
     };
-  }, [enabled, pollIntervalMs, waitMs, limit, onEvents, syncLatestOnStart]);
+  }, [enabled, pollIntervalMs, waitMs, limit, onEvents]);
 }
-

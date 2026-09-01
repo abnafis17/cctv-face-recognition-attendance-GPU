@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type { Camera } from "@/types";
 import axiosInstance from "@/config/axiosInstance";
+import { API } from "@/constant/API_PATH";
 
 type UseCamerasLoaderArgs = {
   setCams: Dispatch<SetStateAction<Camera[]>>;
@@ -31,7 +32,7 @@ export function useCamerasLoader({ setCams, setErr, task }: UseCamerasLoaderArgs
 
     try {
       setErr("");
-      const response = await axiosInstance.get("/cameras", {
+      const response = await axiosInstance.get(API.CAMERAS, {
         params: task ? { task } : undefined,
       }); // baseURL includes /api
       if (mountedRef.current && response?.status === 200) {

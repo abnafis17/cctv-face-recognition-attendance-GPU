@@ -141,7 +141,7 @@ export default function UsersPanelPage() {
     setSelectedUser(user);
     setFormName(user.name || "");
     setFormEmail(user.email);
-    setFormPassword(user.password || ""); // Pre-populate with actual password
+    setFormPassword(user.password || "");
     setFormRole(user.role);
     setShowEditPassword(false);
     openEdit();
@@ -173,7 +173,6 @@ export default function UsersPanelPage() {
       if (res.data?.ok) {
         toast.success("User updated successfully!");
         
-        // If updating currently logged in user role, notify role change to sync permissions
         if (currentUser && selectedUser.id === currentUser.id) {
           const raw = localStorage.getItem("userInfo");
           const info = raw ? JSON.parse(raw) : {};
@@ -260,7 +259,7 @@ export default function UsersPanelPage() {
           const isMe = currentUser && row.original.id === currentUser.id;
           return (
             <div className="px-4 py-3 text-left text-sm flex items-center gap-2">
-              <span className={`font-mono text-xs ${isMe ? "text-emerald-950 font-semibold" : "text-zinc-650"}`}>
+              <span className={`font-mono text-xs ${isMe ? "text-emerald-950 font-semibold" : "text-zinc-655"}`}>
                 {row.original.email}
               </span>
               {isMe && (
@@ -336,7 +335,6 @@ export default function UsersPanelPage() {
     [currentUser, currentPage, limits]
   );
 
-  // Dynamic row styling callback for TanstackDataTable
   const getRowClassName = (row: any) => {
     const isMe = currentUser && row.original.id === currentUser.id;
     return isMe 

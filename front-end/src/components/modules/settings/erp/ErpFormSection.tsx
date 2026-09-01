@@ -9,6 +9,8 @@ type ErpFormSectionProps = {
   setAddErpPrefix: React.Dispatch<React.SetStateAction<string>>;
   addErpAttendanceEndpoint: string;
   setAddErpAttendanceEndpoint: React.Dispatch<React.SetStateAction<string>>;
+  addErpIsActive: boolean;
+  setAddErpIsActive: React.Dispatch<React.SetStateAction<boolean>>;
   loading: boolean;
   saving: boolean;
   submitAdd: (event: React.FormEvent<HTMLFormElement>) => void;
@@ -25,6 +27,8 @@ export function ErpFormSection({
   setAddErpPrefix,
   addErpAttendanceEndpoint,
   setAddErpAttendanceEndpoint,
+  addErpIsActive,
+  setAddErpIsActive,
   loading,
   saving,
   submitAdd,
@@ -67,12 +71,26 @@ export function ErpFormSection({
                 ? "ERP Attendance Endpoint"
                 : addErpUrlType.toLowerCase().includes("employee")
                 ? "ERP Employee Endpoint (e.g. /Employee/GetAllEMployeelists)"
+                : addErpUrlType.toLowerCase().includes("department")
+                ? "ERP Department Endpoint (e.g. /Employee/GetAllDepartment)"
                 : addErpUrlType.toLowerCase().includes("gatepass")
                 ? `ERP ${addErpUrlType.toUpperCase()} Endpoint`
                 : `ERP ${addErpUrlType} Endpoint`
             }
             disabled={loading || saving}
           />
+          <div className="lg:col-span-4 flex items-center gap-2 px-1 py-1">
+            <label className="flex items-center gap-2 text-sm font-medium text-zinc-700 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={addErpIsActive}
+                onChange={(event) => setAddErpIsActive(event.target.checked)}
+                disabled={loading || saving}
+                className="h-4 w-4 rounded border-zinc-300 text-zinc-950 focus:ring-zinc-950"
+              />
+              Active (Enable this ERP configuration)
+            </label>
+          </div>
         </div>
 
         <div className="mt-3 flex items-center justify-end gap-2">

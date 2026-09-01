@@ -1,4 +1,3 @@
-// src/routes/auth.routes.ts
 import { Router, Request, Response } from "express";
 import { ZodError } from "zod";
 import axios from "axios";
@@ -15,16 +14,12 @@ import {
 
 export const authRouter = Router();
 
-/**
- * Normalize API error responses (supports Zod + custom statusCode)
- */
 function sendError(
   res: Response,
   e: unknown,
   fallbackMessage: string,
   fallbackStatus = 400
 ) {
-  // ✅ Zod validation errors
   if (e instanceof ZodError) {
     const first = e.issues?.[0];
     const message =
@@ -36,16 +31,13 @@ function sendError(
     return res.status(400).json({
       ok: false,
       message,
-      issues: e.issues, // helpful for forms
+      issues: e.issues,
     });
   }
 
-  // ✅ Custom service errors (you set err.statusCode in service)
   const anyErr = e as { statusCode?: number; message?: string };
-
   const status =
     typeof anyErr?.statusCode === "number" ? anyErr.statusCode : fallbackStatus;
-
   const message = anyErr?.message || fallbackMessage;
 
   return res.status(status).json({ ok: false, message });
@@ -98,11 +90,10 @@ authRouter.get("/companies", async (req: Request, res: Response) => {
       }
     );
 
-    const erpData = response.data;
-    if (erpData && Array.isArray(erpData.data)) {
-      const list = erpData.data
+    if (response.data && Array.isArray(response.data.data)) {
+      const list = response.data.data
         .map((c: any) => ({
-          id: c.id,
+          id: c.id || c.orginationId || c.organizationId,
           name: c.name,
         }))
         .filter((c: any) => c.id && c.name);
@@ -153,7 +144,6 @@ authRouter.post("/login", async (req: Request, res: Response) => {
     const parsed = loginSchema.parse(req.body);
 
     const result = await loginUser(parsed, {
-      // If behind proxy: app.set("trust proxy", 1)
       ip: req.ip,
       userAgent: String(req.headers["user-agent"] ?? ""),
     });
@@ -167,12 +157,6 @@ authRouter.post("/login", async (req: Request, res: Response) => {
   }
 });
 
-/**
- * ✅ Must match axiosInstance.ts:
- * GET /api/auth/refresh
- * Header: refreshtoken: Bearer <token>
- * Response: { results: { accessToken } }
- */
 authRouter.get("/refresh", async (req: Request, res: Response) => {
   try {
     const header = String(req.headers["refreshtoken"] ?? "");

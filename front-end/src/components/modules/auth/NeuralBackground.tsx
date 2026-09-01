@@ -50,22 +50,19 @@ export default function NeuralBackground() {
     const draw = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Update and draw particles
       particles.forEach((p) => {
         p.x += p.vx;
         p.y += p.vy;
 
-        // Bounce on boundaries
         if (p.x < 0 || p.x > canvas.width) p.vx *= -1;
         if (p.y < 0 || p.y > canvas.height) p.vy *= -1;
 
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-        ctx.fillStyle = "rgba(139, 92, 246, 0.4)"; // Violet-500 tint
+        ctx.fillStyle = "rgba(139, 92, 246, 0.4)";
         ctx.fill();
       });
 
-      // Draw connections
       for (let i = 0; i < particles.length; i++) {
         for (let j = i + 1; j < particles.length; j++) {
           const p1 = particles[i];
@@ -80,14 +77,13 @@ export default function NeuralBackground() {
             ctx.beginPath();
             ctx.moveTo(p1.x, p1.y);
             ctx.lineTo(p2.x, p2.y);
-            ctx.strokeStyle = `rgba(99, 102, 241, ${alpha})`; // Indigo-500 tint
+            ctx.strokeStyle = `rgba(99, 102, 241, ${alpha})`;
             ctx.lineWidth = 0.75;
             ctx.stroke();
           }
         }
       }
 
-      // Mouse interactivity: connect nearby particles to mouse cursor
       if (mouseRef.current.active) {
         particles.forEach((p) => {
           const dx = p.x - mouseRef.current.x;
@@ -136,7 +132,6 @@ export default function NeuralBackground() {
 
   return (
     <div className="absolute inset-0 -z-10 bg-gradient-to-tr from-indigo-50/50 via-white to-violet-50/30 overflow-hidden pointer-events-none">
-      {/* Drifting Glowing Orbs */}
       <motion.div
         animate={{
           x: [0, 80, -40, 0],
@@ -177,7 +172,6 @@ export default function NeuralBackground() {
         className="absolute top-1/3 left-1/3 w-[350px] h-[350px] rounded-full bg-cyan-400/10 blur-[90px]"
       />
 
-      {/* Neural Network Canvas */}
       <canvas
         ref={canvasRef}
         className="absolute inset-0 h-full w-full opacity-85"

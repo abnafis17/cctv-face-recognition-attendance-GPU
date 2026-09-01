@@ -88,7 +88,7 @@ export async function registerUser(input: {
     },
     create: {
       camId: laptopCamId,
-      name: "Shapno Camera",
+      name: "Laptop Camera",
       companyId: company.id,
       isActive: false,
       ...(cameraHasAttendanceField ? { attendance: false } : {}),
@@ -154,7 +154,6 @@ export async function registerUser(input: {
     permissions: permissionsMap,
   };
 
-  // auto-login on register (optional)
   const tokens = await issueTokens(safeUserWithPerms);
 
   return { user: safeUserWithPerms, ...tokens };
@@ -245,7 +244,6 @@ export async function refreshAccessToken(refreshTokenRaw: string) {
   }
 
   if (row.expiresAt.getTime() < Date.now()) {
-    // revoke expired token
     await prisma.refreshToken.update({
       where: { id: row.id },
       data: { revokedAt: new Date() },

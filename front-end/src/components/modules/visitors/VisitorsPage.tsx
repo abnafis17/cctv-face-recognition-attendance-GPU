@@ -15,7 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import axiosInstance from "@/config/axiosInstance";
+import axiosInstance, { API } from "@/config/axiosInstance";
 import toast from "react-hot-toast";
 
 const visitorTypes = ["All Types", "Guest", "Contractor", "Official", "Interviewee", "Other"];
@@ -62,7 +62,7 @@ export default function VisitorsPage() {
         params.toDate = toDate;
       }
 
-      const response = await axiosInstance.get("/visitors", { params });
+      const response = await axiosInstance.get(API.VISITORS, { params });
       setVisitorList(response.data || []);
       setCurrentPage(1);
     } catch (error: any) {
@@ -102,7 +102,7 @@ export default function VisitorsPage() {
       });
       const toastId = toast.loading("Processing checkout...");
       try {
-        const response = await axiosInstance.post(`/visitors/${id}/checkout`);
+        const response = await axiosInstance.post(`${API.VISITORS}/${id}/checkout`);
         if (response.data?.ok) {
           toast.success("Visitor checked out successfully!", { id: toastId });
           await fetchVisitorRecords(true); // silent refresh

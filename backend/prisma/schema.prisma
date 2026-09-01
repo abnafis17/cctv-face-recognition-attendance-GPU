@@ -7,61 +7,47 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum UserRole {
-  SUPER_ADMIN
-  ADMIN
-  OPERATOR
-}
-
 model Company {
-  id              String   @id @default(cuid())
-  companyName     String
-  organization_id String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  users         User[]
-  employees     Employee[]
-  faceTemplates FaceTemplate[]
-  attendances   Attendance[]
-  unknownRecognitions UnknownRecognition[]
-  cameras       Camera[]
+  id                      String                      @id @default(cuid())
+  companyName             String
+  createdAt               DateTime                    @default(now())
+  updatedAt               DateTime                    @updatedAt
+  organization_id         String?
+  attendances             Attendance[]
+  cameras                 Camera[]
   boundingBoxTrackingRows CameraBoundingBoxTracking[]
-  refreshTokens RefreshToken[]
-
-  // ✅ Added (relay)
-  relayAgents RelayAgent[]
-  pairCodes   PairCode[]
-  relaySettings CompanyRelaySetting[]
-  erpSettings   CompanyErpSetting[]
-
-  headcounts Headcount[]
-  otRequisitions OtRequisition[]
-  gatepassRows    GatepassTable[]
-  visitors        Visitor[]
-  visitorFaceTemplates VisitorFaceTemplate[]
-  visitorTypes    VisitorType[]
-  purposeOfVisits PurposeOfVisit[]
-  permissions     Permission[]
+  refreshTokens           RefreshToken[]
+  relayAgents             RelayAgent[]
+  pairCodes               PairCode[]
+  relaySettings           CompanyRelaySetting[]
+  erpSettings             CompanyErpSetting[]
+  employees               Employee[]
+  faceTemplates           FaceTemplate[]
+  gatepassRows            GatepassTable[]
+  headcounts              Headcount[]
+  otRequisitions          OtRequisition[]
+  purposeOfVisits         PurposeOfVisit[]
+  unknownRecognitions     UnknownRecognition[]
+  users                   User[]
+  permissions             Permission[]
+  visitors                Visitor[]
+  visitorFaceTemplates    VisitorFaceTemplate[]
+  visitorTypes            VisitorType[]
 }
 
 model User {
-  id           String   @id @default(cuid())
-  name         String?
-  email        String   @unique
-  passwordHash String
-  password     String?
-  role         String   @default("ADMIN")
-  isActive     Boolean  @default(true)
-
-  companyId String?
-  company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
+  id            String         @id @default(cuid())
+  name          String?
+  email         String         @unique
+  passwordHash  String
+  password      String?
+  role          String         @default("ADMIN")
+  isActive      Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  companyId     String?
   refreshTokens RefreshToken[]
+  company       Company?       @relation(fields: [companyId], references: [id], onDelete: Cascade)
 }
 
 model Permission {
@@ -99,35 +85,32 @@ model Module {
 }
 
 model Employee {
-  id         String  @id @default(cuid())
-  empId      String? @map("emp_id")
-  name       String
-  unit       String?
-  section    String?
-  department String?
-  line       String?
-  companyId  String?
-  empPicUrl  String?
-  deptId        String?
-  sectionId     String?
-  designationId String?
-  designation   String?
-  unitId        String?
-  lineId        String?
-  company    Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  attendance Attendance[]
-  templates  FaceTemplate[]
-  cameraAuthorizations CameraAuthorizedEmployee[]
-  boundingBoxAssignments CameraBoundingBoxEmployee[]
+  id                      String                      @id @default(cuid())
+  name                    String
+  createdAt               DateTime                    @default(now())
+  updatedAt               DateTime                    @updatedAt
+  empId                   String?                     @map("emp_id")
+  companyId               String?
+  department              String?
+  line                    String?
+  section                 String?
+  unit                    String?
+  deptId                  String?
+  sectionId               String?
+  designationId           String?
+  designation             String?
+  unitId                  String?
+  lineId                  String?
+  empPicUrl               String?
+  attendance              Attendance[]
+  cameraAuthorizations    CameraAuthorizedEmployee[]
+  boundingBoxAssignments  CameraBoundingBoxEmployee[]
   boundingBoxTrackingRows CameraBoundingBoxTracking[]
-
-  headcounts Headcount[]
-  otRequisitions OtRequisition[]
-  gatepassRows    GatepassTable[]
+  company                 Company?                    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  templates               FaceTemplate[]
+  gatepassRows            GatepassTable[]
+  headcounts              Headcount[]
+  otRequisitions          OtRequisition[]
 
   @@unique([companyId, empId])
   @@index([empId])
@@ -141,17 +124,14 @@ model Employee {
 model FaceTemplate {
   id         String   @id @default(cuid())
   employeeId String
+  angle      String
+  modelName  String
+  embedding  Float[]
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  companyId  String?
+  company    Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
   employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-
-  companyId String?
-  company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
-
-  angle     String
-  modelName String
-  embedding Float[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 
   @@unique([employeeId, angle])
   @@index([employeeId])
@@ -161,78 +141,62 @@ model FaceTemplate {
 model Attendance {
   id         String   @id @default(cuid())
   employeeId String
-  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-
-  companyId String?
-  company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
-
   timestamp  DateTime
   cameraId   String?
   confidence Float?
+  createdAt  DateTime @default(now())
+  companyId  String?
+  camera     Camera?  @relation(fields: [cameraId], references: [id])
+  company    Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
-  createdAt DateTime @default(now())
-
-  camera     Camera?  @relation(fields: [cameraId], references: [id], onDelete: SetNull)
   @@index([employeeId, timestamp])
   @@index([companyId, timestamp])
 }
 
 model UnknownRecognition {
-  id        String   @id @default(cuid())
-  timestamp DateTime
-  confidence Float?
-  recognizedName String? @map("name")
-
-  companyId String?
-  company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
-
-  cameraId String?
-  camera   Camera? @relation(fields: [cameraId], references: [id], onDelete: SetNull)
-
-  createdAt DateTime @default(now())
+  id             String   @id @default(cuid())
+  timestamp      DateTime
+  confidence     Float?
+  companyId      String?
+  cameraId       String?
+  createdAt      DateTime @default(now())
+  recognizedName String?  @map("name")
+  camera         Camera?  @relation(fields: [cameraId], references: [id])
+  company        Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@index([companyId, timestamp])
   @@index([cameraId, timestamp])
 }
 
 model Camera {
-  id       String  @id @default(cuid())
-  camId    String? @map("cam_id")
-  name     String
-  rtspUrl  String? // ✅ keep optional (relay cameras won't store plaintext RTSP)
-  isActive   Boolean  @default(false)
-  attendance Boolean? @default(false)
-  task       String   @default("attendance")
-
-  companyId String?
-  company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
-
-  attendances Attendance[]
-  unknownRecognitions UnknownRecognition[]
-  authorizedEmployees CameraAuthorizedEmployee[]
-  boundingBoxes CameraBoundingBox[]
+  id                      String                      @id @default(cuid())
+  name                    String
+  rtspUrl                 String?
+  isActive                Boolean                     @default(false)
+  createdAt               DateTime                    @default(now())
+  updatedAt               DateTime                    @updatedAt
+  camId                   String?                     @map("cam_id")
+  companyId               String?
+  jpegQuality             Int                         @default(70)
+  relayAgentId            String?
+  rtspUrlEnc              String?
+  sendFps                 Int                         @default(2)
+  sendHeight              Int                         @default(360)
+  sendWidth               Int                         @default(640)
+  attendance              Boolean?                    @default(false)
+  task                    String                      @default("attendance")
+  attendances             Attendance[]
+  company                 Company?                    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  relayAgent              RelayAgent?                 @relation(fields: [relayAgentId], references: [id])
+  authorizedEmployees     CameraAuthorizedEmployee[]
+  boundingBoxes           CameraBoundingBox[]
   boundingBoxTrackingRows CameraBoundingBoxTracking[]
-  headcounts  Headcount[]
-  otRequisitions OtRequisition[]
-  gatepassRequestRows GatepassTable[] @relation("GatepassRequestCamera")
-  gatepassReturnRows  GatepassTable[] @relation("GatepassReturnCamera")
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // ✅ Added (relay support)
-  relayAgentId String?
-  relayAgent   RelayAgent? @relation(fields: [relayAgentId], references: [id], onDelete: SetNull)
-
-  // Encrypted RTSP blob stored as JSON string
-  // Example: {"encKey":"...","iv":"...","tag":"...","ciphertext":"..."}
-  rtspUrlEnc String? @db.Text
-
-  // Relay send controls
-  sendFps     Int @default(2)
-  sendWidth   Int @default(640)
-  sendHeight  Int @default(360)
-  jpegQuality Int @default(70)
+  gatepassRequestRows     GatepassTable[]             @relation("GatepassRequestCamera")
+  gatepassReturnRows      GatepassTable[]             @relation("GatepassReturnCamera")
+  headcounts              Headcount[]
+  otRequisitions          OtRequisition[]
+  unknownRecognitions     UnknownRecognition[]
 
   @@unique([companyId, camId])
   @@index([camId])
@@ -243,11 +207,9 @@ model Camera {
 model CameraAuthorizedEmployee {
   cameraId   String
   employeeId String
-
-  camera   Camera   @relation(fields: [cameraId], references: [id], onDelete: Cascade)
-  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  camera     Camera   @relation(fields: [cameraId], references: [id], onDelete: Cascade)
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@id([cameraId, employeeId])
   @@index([cameraId])
@@ -255,14 +217,10 @@ model CameraAuthorizedEmployee {
 }
 
 model CameraBoundingBox {
-  id    String @id @default(cuid())
-  name  String
-
-  cameraId String
-  camera   Camera @relation(fields: [cameraId], references: [id], onDelete: Cascade)
-
-  sortOrder Int @default(0)
-
+  id           String                      @id @default(cuid())
+  name         String
+  cameraId     String
+  sortOrder    Int                         @default(0)
   topLeftX     Float
   topLeftY     Float
   topRightX    Float
@@ -271,27 +229,23 @@ model CameraBoundingBox {
   bottomLeftY  Float
   bottomRightX Float
   bottomRightY Float
-
-  employees CameraBoundingBoxEmployee[]
+  createdAt    DateTime                    @default(now())
+  updatedAt    DateTime                    @updatedAt
+  camera       Camera                      @relation(fields: [cameraId], references: [id], onDelete: Cascade)
+  employees    CameraBoundingBoxEmployee[]
   trackingRows CameraBoundingBoxTracking[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 
   @@index([cameraId])
   @@index([cameraId, sortOrder])
 }
 
 model CameraBoundingBoxEmployee {
-  id String @id @default(cuid())
-
+  id            String            @id @default(cuid())
   boundingBoxId String
   employeeId    String
-
-  boundingBox CameraBoundingBox @relation(fields: [boundingBoxId], references: [id], onDelete: Cascade)
-  employee    Employee          @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-
-  createdAt DateTime @default(now())
+  createdAt     DateTime          @default(now())
+  boundingBox   CameraBoundingBox @relation(fields: [boundingBoxId], references: [id], onDelete: Cascade)
+  employee      Employee          @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@unique([boundingBoxId, employeeId])
   @@index([boundingBoxId])
@@ -299,28 +253,22 @@ model CameraBoundingBoxEmployee {
 }
 
 model CameraBoundingBoxTracking {
-  id String @id @default(cuid())
-
-  companyId String
-  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-
-  cameraId String
-  camera   Camera @relation(fields: [cameraId], references: [id], onDelete: Cascade)
-
-  boundingBoxId String
-  boundingBox   CameraBoundingBox @relation(fields: [boundingBoxId], references: [id], onDelete: Cascade)
-
-  employeeId String
-  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-
-  outTime DateTime
-  inTime  DateTime?
+  id              String            @id @default(cuid())
+  companyId       String
+  cameraId        String
+  boundingBoxId   String
+  employeeId      String
+  outTime         DateTime
+  inTime          DateTime?
   durationSeconds Int?
-  status String @default("out")
-  confidence Float?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  status          String            @default("out")
+  confidence      Float?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  boundingBox     CameraBoundingBox @relation(fields: [boundingBoxId], references: [id], onDelete: Cascade)
+  camera          Camera            @relation(fields: [cameraId], references: [id], onDelete: Cascade)
+  company         Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee        Employee          @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@index([companyId, outTime])
   @@index([cameraId, outTime])
@@ -330,48 +278,35 @@ model CameraBoundingBoxTracking {
 }
 
 model RefreshToken {
-  id        String @id @default(cuid())
-  tokenHash String @unique
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
   userId    String
-  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
+  revokedAt DateTime?
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+  ip        String?
+  userAgent String?
   companyId String?
-  company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
-
-  revokedAt  DateTime?
-  expiresAt  DateTime
-  createdAt  DateTime @default(now())
-  ip         String?
-  userAgent  String?
+  company   Company?  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([companyId])
 }
 
-//
-// ✅ NEW MODELS (relay agent)
-//
-
 model RelayAgent {
-  id   String @id @default(cuid())
-  name String
-
-  companyId String?
-  company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
-
-  publicKeyPem String @db.Text
-
-  // keep your field name as-is
+  id               String     @id @default(cuid())
+  name             String
+  companyId        String?
+  publicKeyPem     String
   refreshTokenHash String
-
-  isActive   Boolean  @default(true)
-  lastSeenAt DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  cameras   Camera[]
-  pairCodes PairCode[] // ✅ added because PairCode now links to RelayAgent
+  isActive         Boolean    @default(true)
+  lastSeenAt       DateTime?
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+  cameras          Camera[]
+  pairCodes        PairCode[]
+  company          Company?   @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@unique([companyId, name])
   @@index([companyId])
@@ -379,20 +314,15 @@ model RelayAgent {
 }
 
 model PairCode {
-  code String @id
-
+  code      String      @id
   companyId String?
-  company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
-
   agentName String
   expiresAt DateTime
-
-  // ✅ REQUIRED: prevent reuse + link which agent claimed it
-  usedAt DateTime?
-  agentId String?
-  agent   RelayAgent? @relation(fields: [agentId], references: [id], onDelete: SetNull)
-
-  createdAt DateTime @default(now())
+  usedAt    DateTime?
+  agentId   String?
+  createdAt DateTime    @default(now())
+  agent     RelayAgent? @relation(fields: [agentId], references: [id])
+  company   Company?    @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@index([companyId])
   @@index([expiresAt])
@@ -400,61 +330,49 @@ model PairCode {
 }
 
 model CompanyRelaySetting {
-  id String @id @default(cuid())
-
-  companyId String
-  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-
-  urlType String @default("door")
-  relayOnUrl     String? @db.Text
-  relaySilentUrl String? @db.Text
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id             String   @id @default(cuid())
+  companyId      String
+  relayOnUrl     String?
+  relaySilentUrl String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  urlType        String   @default("door")
+  company        Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@unique([companyId, urlType])
   @@index([companyId])
 }
 
 model CompanyErpSetting {
-  id String @id @default(cuid())
-
-  companyId String
-  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-
-  urlType String @default("attendance")
-  erpBaseUrl            String? @db.Text
-  erpPrefix             String? @db.Text
-  erpAttendanceEndpoint String? @db.Text
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                    String   @id @default(cuid())
+  companyId             String
+  erpBaseUrl            String?
+  erpPrefix             String?
+  erpAttendanceEndpoint String?
+  isActive              Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  urlType               String   @default("attendance")
+  company               Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@unique([companyId, urlType])
   @@index([companyId])
 }
 
-
 model Headcount {
-  id         String   @id @default(cuid())
-
+  id         String    @id @default(cuid())
   employeeId String?
-  employee   Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
-
   companyId  String?
-  company    Company?  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-
   cameraId   String?
-  camera     Camera?   @relation(fields: [cameraId], references: [id], onDelete: SetNull)
-
   timestamp  DateTime  @default(now())
   status     String
-
   confidence Float?
   notes      String?
-
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  camera     Camera?   @relation(fields: [cameraId], references: [id])
+  company    Company?  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee   Employee? @relation(fields: [employeeId], references: [id])
 
   @@index([companyId, timestamp])
   @@index([cameraId, timestamp])
@@ -463,24 +381,18 @@ model Headcount {
 }
 
 model OtRequisition {
-  id         String   @id
-
+  id         String    @id
   employeeId String?
-  employee   Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
-
   companyId  String?
-  company    Company?  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-
   cameraId   String?
-  camera     Camera?   @relation(fields: [cameraId], references: [id], onDelete: SetNull)
-
   timestamp  DateTime  @default(now())
-
   confidence Float?
   notes      String?
-
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  camera     Camera?   @relation(fields: [cameraId], references: [id])
+  company    Company?  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee   Employee? @relation(fields: [employeeId], references: [id])
 
   @@index([companyId, timestamp])
   @@index([cameraId, timestamp])
@@ -488,45 +400,35 @@ model OtRequisition {
 }
 
 model GatepassTable {
-  id String @id @default(cuid())
-
-  companyId String
-  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-
-  employeeId String
-  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-
-  leaveTypeId String?
-  leaveType   String
-  purpose     String
-  destination String?
-
-  outTime DateTime @default(now())
-  inTime  DateTime?
-  status  String   @default("out")
-
-  requestCameraId String?
-  requestCamera   Camera? @relation("GatepassRequestCamera", fields: [requestCameraId], references: [id], onDelete: SetNull)
-
-  returnCameraId String?
-  returnCamera   Camera? @relation("GatepassReturnCamera", fields: [returnCameraId], references: [id], onDelete: SetNull)
-
-  externalSubmitAckAt DateTime?
+  id                    String    @id @default(cuid())
+  companyId             String
+  employeeId            String
+  leaveType             String
+  purpose               String
+  destination           String?
+  outTime               DateTime  @default(now())
+  inTime                DateTime?
+  status                String    @default("out")
+  requestCameraId       String?
+  returnCameraId        String?
+  externalSubmitAckAt   DateTime?
   externalSubmitPayload Json?
-  externalReturnAckAt DateTime?
+  externalReturnAckAt   DateTime?
   externalReturnPayload Json?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  passType String?
-  remarks  String?
-  returnTime Int?
-
-  externalGatepassId String?
-  erpStatus          String?   @default("pending")
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  leaveTypeId           String?
+  passType              String?
+  remarks               String?
+  returnTime            Int?
+  erpStatus             String?   @default("pending")
+  externalGatepassId    String?
   approvedByName        String?
   approvedByDesignation String?
+  company               Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee              Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  requestCamera         Camera?   @relation("GatepassRequestCamera", fields: [requestCameraId], references: [id])
+  returnCamera          Camera?   @relation("GatepassReturnCamera", fields: [returnCameraId], references: [id])
 
   @@index([companyId, outTime])
   @@index([companyId, status, outTime])
@@ -539,40 +441,37 @@ model GatepassTable {
 }
 
 model Visitor {
-  id                String   @id @default(cuid())
-  companyId         String
-  company           Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  visitorName       String
-  contactNumber     String
-  emailAddress      String?
-  companyAddress    String
-  visitorType       String
-  purposeOfVisit    String
-  department        String
-  hostEmployeeId    String
-  hostEmployeeName  String   @default("")
-  hostPicUrl        String?
-  idProofType       String
-  idProofNumber     String?
-  vehicleNumber     String?
-  extraGuest        String?
-  visitorPassNo     String
-  dateOfVisit       String
-  timeIn            String
-  entryAuthorizedBy String?
-  remarks           String?
-  visitorPhoto      String?  @db.Text
-
+  id                    String   @id @default(cuid())
+  companyId             String
+  visitorName           String
+  contactNumber         String
+  emailAddress          String?
+  companyAddress        String
+  visitorType           String
+  purposeOfVisit        String
+  department            String
+  hostEmployeeId        String
+  hostEmployeeName      String   @default("")
+  hostPicUrl            String?
   host_designation_id   String?
   host_designation_name String?
+  idProofType           String
+  idProofNumber         String?
+  vehicleNumber         String?
+  extraGuest            String?
+  visitorPassNo         String
+  dateOfVisit           String
+  timeIn                String
+  entryAuthorizedBy     String?
+  remarks               String?
+  visitorPhoto          String?  @db.Text
+  status                String   @default("checked_in")
+  timeOut               String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  company               Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
-  status            String   @default("checked_in")
-  timeOut           String?
-
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  templates         VisitorFaceTemplate[]
+  templates             VisitorFaceTemplate[]
 
   @@index([companyId])
   @@index([contactNumber])
@@ -600,11 +499,10 @@ model VisitorFaceTemplate {
 model VisitorType {
   id        String   @id @default(cuid())
   companyId String
-  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   name      String
-
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@unique([companyId, name])
   @@index([companyId])
@@ -613,13 +511,17 @@ model VisitorType {
 model PurposeOfVisit {
   id        String   @id @default(cuid())
   companyId String
-  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   name      String
-
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@unique([companyId, name])
   @@index([companyId])
 }
 
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  OPERATOR
+}

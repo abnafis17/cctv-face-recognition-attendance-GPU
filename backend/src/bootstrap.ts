@@ -171,25 +171,25 @@ export async function bootstrap() {
       console.log("Seeding default system modules...");
 
       // Top-level modules
-      const cameras = await prisma.module.create({
+      await prisma.module.create({
         data: { name: "Cameras (Live)", route: "/cameras", sortOrder: 10 }
       });
-      const cameraList = await prisma.module.create({
+      await prisma.module.create({
         data: { name: "Camera List", route: "/camera-list", sortOrder: 20 }
       });
-      const enroll = await prisma.module.create({
+      await prisma.module.create({
         data: { name: "Enrollment (Auto)", route: "/enroll", sortOrder: 30 }
       });
-      const employees = await prisma.module.create({
+      await prisma.module.create({
         data: { name: "Employees", route: "/employees", sortOrder: 40 }
       });
-      const dailyAttendance = await prisma.module.create({
+      await prisma.module.create({
         data: { name: "Daily Attendance", route: "/daily-attendance", sortOrder: 50 }
       });
-      const attendance = await prisma.module.create({
+      await prisma.module.create({
         data: { name: "Recognition History", route: "/attendance", sortOrder: 60 }
       });
-      const unknownRecognition = await prisma.module.create({
+      await prisma.module.create({
         data: { name: "Unknown History", route: "/unknown-recognition", sortOrder: 70 }
       });
 
@@ -232,6 +232,9 @@ export async function bootstrap() {
         data: { name: "URLs", route: "/settings/urls", parentId: settingsGroup.id, sortOrder: 111 }
       });
       await prisma.module.create({
+        data: { name: "Users", route: "/settings/users", parentId: settingsGroup.id, sortOrder: 112 }
+      });
+      await prisma.module.create({
         data: { name: "Permissions", route: "/permissions", sortOrder: 120 }
       });
 
@@ -245,13 +248,11 @@ export async function bootstrap() {
       if (oldSettings) {
         console.log("Migrating legacy settings module in database...");
         
-        // Remove route from parent Settings module
         await prisma.module.update({
           where: { id: oldSettings.id },
           data: { route: null }
         });
 
-        // Ensure "URLs" submodule exists under Settings parent module
         let urlsSubModule = await prisma.module.findFirst({
           where: { route: "/settings/urls", parentId: oldSettings.id }
         });
@@ -268,16 +269,13 @@ export async function bootstrap() {
           console.log("Created URLs submodule under Settings.");
         }
 
-        // Migrate any existing permissions mapped to "/settings" to "/settings/urls"
         const oldPermissions = await prisma.permission.findMany({
           where: { module: "/settings" }
         });
 
         if (oldPermissions.length > 0) {
-          console.log(`Migrating ${oldPermissions.length} permissions from /settings to /settings/urls...`);
           for (const perm of oldPermissions) {
             const companyId = perm.companyId || "";
-            // Check if /settings/urls permission already exists
             const existingPerm = await prisma.permission.findUnique({
               where: {
                 companyId_role_module: {
@@ -305,7 +303,6 @@ export async function bootstrap() {
             }
           }
 
-          // Clean up old permissions
           await prisma.permission.deleteMany({
             where: { module: "/settings" }
           });
@@ -314,7 +311,7 @@ export async function bootstrap() {
       }
     }
 
-    // Ensure Employee action submodules exist (Edit, Re-enroll Face, Delete)
+    // Ensure Employee action submodules exist
     const employeesModule = await prisma.module.findFirst({
       where: { route: "/employees" }
     });

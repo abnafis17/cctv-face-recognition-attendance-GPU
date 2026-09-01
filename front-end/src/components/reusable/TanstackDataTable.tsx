@@ -159,8 +159,6 @@ export function TanstackDataTable<TData>({
                     ...(header.column.columnDef.size
                       ? {
                           width: `${header.column.columnDef.size}px`,
-                          // minWidth: `${header.column.columnDef.size}px`,
-                          // maxWidth: `${header.column.columnDef.size}px`,
                         }
                       : {}),
                   }}
@@ -172,7 +170,6 @@ export function TanstackDataTable<TData>({
                         header.getContext()
                       )}
 
-                      {/* ✅ sorting icons */}
                       {header.column.columnDef.enableSorting &&
                         header.column.getIsSorted() === "asc" && (
                           <ArrowUp size={14} />
@@ -183,9 +180,6 @@ export function TanstackDataTable<TData>({
                         )}
                     </div>
                   )}
-                  {/* {header.isPlaceholder
-                    ? null
-                    : flexRender(header.column.columnDef.header, header.getContext())} */}
                 </TableHead>
               ))}
             </TableRow>
@@ -218,13 +212,11 @@ export function TanstackDataTable<TData>({
                         getCellClassName ? getCellClassName(cell.column.id, row) : ""
                       )}
                       style={{
-                        height: cellHeight || "auto", // ✅ apply height to each cell
-                        verticalAlign: "middle", // optional: ensure content is vertically centered
+                        height: cellHeight || "auto",
+                        verticalAlign: "middle",
                         ...(cell.column.columnDef.size
                           ? {
                               width: `${cell.column.columnDef.size}px`,
-                              // minWidth: `${cell.column.columnDef.size}px`,
-                              // maxWidth: `${cell.column.columnDef.size}px`,
                             }
                           : {}),
                       }}

@@ -27,6 +27,7 @@ export function setTokens(accessToken: string, refreshToken: string) {
 export function setUser(user: any) {
   if (!isBrowser()) return;
   localStorage.setItem(USER_INFO, JSON.stringify(user));
+  window.dispatchEvent(new Event("userInfoUpdated"));
 }
 
 export function clearAccessToken() {
@@ -34,6 +35,7 @@ export function clearAccessToken() {
   localStorage.removeItem(ACCESS_TOKEN_KEY);
   localStorage.removeItem(REFRESH_TOKEN_KEY);
   localStorage.removeItem(USER_INFO);
+  window.dispatchEvent(new Event("userInfoUpdated"));
 }
 
 export function getAccessToken() {

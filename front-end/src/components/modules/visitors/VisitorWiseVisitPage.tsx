@@ -20,7 +20,7 @@ import {
   User,
   Award
 } from "lucide-react";
-import axiosInstance from "@/config/axiosInstance";
+import axiosInstance, { API } from "@/config/axiosInstance";
 import toast from "react-hot-toast";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -115,7 +115,7 @@ export default function VisitorWiseVisitPage() {
       if (toDate) params.toDate = toDate;
       if (activeSearch.trim()) params.q = activeSearch.trim();
 
-      const response = await axiosInstance.get("/visitors/reports/visitor-wise", {
+      const response = await axiosInstance.get(API.VISITORS_REPORT_VISITOR_WISE, {
         params
       });
       setReportData(response.data || []);

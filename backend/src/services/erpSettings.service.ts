@@ -63,6 +63,7 @@ export type ErpSettingsDto = {
   erpBaseUrl: string | null;
   erpPrefix: string | null;
   erpAttendanceEndpoint: string | null;
+  isActive: boolean | null;
   createdAt: string | null;
   updatedAt: string | null;
 };
@@ -83,6 +84,7 @@ function toErpSettingsDto(row: {
   erpBaseUrl: string | null;
   erpPrefix: string | null;
   erpAttendanceEndpoint: string | null;
+  isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
 }): ErpSettingsDto {
@@ -92,6 +94,7 @@ function toErpSettingsDto(row: {
     erpBaseUrl: row.erpBaseUrl ?? null,
     erpPrefix: row.erpPrefix ?? null,
     erpAttendanceEndpoint: row.erpAttendanceEndpoint ?? null,
+    isActive: row.isActive,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -104,6 +107,7 @@ function emptyErpSettingsDto(urlType: string): ErpSettingsDto {
     erpBaseUrl: null,
     erpPrefix: null,
     erpAttendanceEndpoint: null,
+    isActive: null,
     createdAt: null,
     updatedAt: null,
   };
@@ -120,6 +124,7 @@ export async function listCompanyErpSettings(
       erpBaseUrl: true,
       erpPrefix: true,
       erpAttendanceEndpoint: true,
+      isActive: true,
       createdAt: true,
       updatedAt: true,
     },
@@ -153,6 +158,7 @@ export async function getCompanyErpSettings(
       erpBaseUrl: true,
       erpPrefix: true,
       erpAttendanceEndpoint: true,
+      isActive: true,
       createdAt: true,
       updatedAt: true,
     },
@@ -204,6 +210,7 @@ export async function createCompanyErpSettings(
         payload.erpAttendanceEndpoint !== undefined
           ? payload.erpAttendanceEndpoint
           : null,
+      isActive: payload.isActive !== undefined ? payload.isActive : true,
     },
     select: {
       id: true,
@@ -211,6 +218,7 @@ export async function createCompanyErpSettings(
       erpBaseUrl: true,
       erpPrefix: true,
       erpAttendanceEndpoint: true,
+      isActive: true,
       createdAt: true,
       updatedAt: true,
     },
@@ -259,6 +267,7 @@ export async function updateCompanyErpSettings(
       ...(payload.erpAttendanceEndpoint !== undefined
         ? { erpAttendanceEndpoint: payload.erpAttendanceEndpoint }
         : {}),
+      ...(payload.isActive !== undefined ? { isActive: payload.isActive } : {}),
     },
     select: {
       id: true,
@@ -266,6 +275,7 @@ export async function updateCompanyErpSettings(
       erpBaseUrl: true,
       erpPrefix: true,
       erpAttendanceEndpoint: true,
+      isActive: true,
       createdAt: true,
       updatedAt: true,
     },

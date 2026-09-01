@@ -12,21 +12,25 @@ const allowedOrigins = (process.env.CORS_ORIGIN || "")
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (like mobile apps or curl)
+      // Allow requests with no origin (e.g. server-to-server, curl, Postman)
       if (!origin) return callback(null, true);
 
-      // Check if origin is explicitly allowed in CORS_ORIGIN
-      if (allowedOrigins.indexOf(origin) !== -1) {
+      // Explicit origins defined in env
+      if (allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
 
-      // Dynamically allow any origin on localhost or same local/private network in development/local environments
-      const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2[0-9]|3[0-1])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3})(:\d+)?$/.test(origin);
-      if (isLocal) {
+      // Allow any host on the 10.81.100.x subnet (e.g. http://10.81.100.any:3000)
+      if (/^http:\/\/10\.81\.100\.\d+(:\d+)?$/.test(origin)) {
         return callback(null, true);
       }
 
-      callback(new Error("Not allowed by CORS"));
+      // Allow local development (localhost / 127.0.0.1)
+      if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(null, false);
     },
     credentials: true,
   })

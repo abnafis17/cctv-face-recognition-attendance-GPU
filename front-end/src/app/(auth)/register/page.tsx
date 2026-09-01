@@ -103,7 +103,7 @@ export default function RegisterPage() {
           setCompaniesList(res.data.results);
         }
       } catch (err) {
-        console.error("Failed to fetch companies:", err);
+        console.error("Failed to fetch ERP companies:", err);
       }
     }
     fetchRoles();
@@ -124,7 +124,7 @@ export default function RegisterPage() {
       router.replace(next);
     } catch (e: unknown) {
       const message =
-        e instanceof Error ? e.message : typeof e === "string" ? e : "Register failed";
+        e instanceof Error ? e.message : typeof e === "string" ? e : "Registration failed";
 
       toast.error(message, { id: "register-error" });
     } finally {
@@ -140,396 +140,375 @@ export default function RegisterPage() {
       <AuthSidePanel />
 
       {/* ═══════ RIGHT PANEL — Form ═══════ */}
-      <div className="col-span-1 lg:col-span-6 h-screen p-6 md:p-10 relative bg-slate-50/40 dot-grid overflow-y-auto flex flex-col">
+      <div className="col-span-1 lg:col-span-6 min-h-screen lg:h-screen p-6 md:p-10 relative bg-slate-50/40 dot-grid overflow-y-auto flex flex-col">
         <div
           className="absolute pointer-events-none"
           style={{
-            width: 500,
-            height: 500,
-            left: "50%",
-            top: "50%",
-            transform: "translate(-50%, -50%)",
+            top: "15%",
+            right: "10%",
+            width: 400,
+            height: 400,
+            borderRadius: "50%",
             background: "radial-gradient(circle, rgba(124, 58, 237, 0.04), transparent 70%)",
           }}
         />
 
-        <div className="w-full min-h-full flex flex-col items-center py-6 md:py-8 relative z-10">
-          <div className="w-full max-w-[420px] my-auto">
-            <div
-              className="gradient-border rounded-2xl p-8 md:p-10 shadow-xl shadow-zinc-200/35"
-              style={{
-                animation: "scaleIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards",
-              }}
-            >
-              {/* Mobile Logo */}
-              <div className="flex items-center gap-3 mb-8 lg:hidden">
-                <PulsingLogo size={40} />
+        <div className="w-full max-w-[440px] mx-auto my-auto py-6">
+          <div className="gradient-border rounded-2xl p-7 md:p-9 transition-all duration-300">
+            {/* Top mobile header */}
+            <div className="flex lg:hidden items-center justify-between mb-6 pb-4 border-b border-zinc-150">
+              <div className="flex items-center gap-2.5">
+                <PulsingLogo size={36} />
                 <div>
-                  <h1 className="text-lg font-black tracking-tight text-zinc-900">
+                  <h1 className="text-sm font-black tracking-tight text-zinc-900 leading-none">
                     CRIPTON VISION
                   </h1>
-                  <p className="text-[9px] font-bold uppercase tracking-[0.25em] text-zinc-400 mt-0.5">
-                    Vision AI Platform
+                  <p className="text-[8px] font-bold uppercase tracking-[0.2em] text-violet-600 mt-0.5">
+                    Vision AI
                   </p>
-                </div>
-              </div>
-
-              {/* Header / Shield Badge */}
-              <div className="flex flex-col items-center text-center mb-6">
-                <div
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-full mb-3"
-                  style={{
-                    background: "rgba(124, 58, 237, 0.06)",
-                    border: "1px solid rgba(124, 58, 237, 0.12)",
-                  }}
-                >
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-violet-600"></span>
-                  </span>
-                  <span className="text-[9px] font-black uppercase tracking-widest text-violet-700 ml-1">
-                    Secure AI Gateway
-                  </span>
-                </div>
-                <h2 className="text-2xl md:text-3xl font-black tracking-tight mb-2 text-zinc-900">
-                  Create account
-                </h2>
-                <p className="text-xs text-zinc-500">
-                  Register a new admin workspace for attendance + cameras
-                </p>
-              </div>
-
-              {/* Security note */}
-              <div
-                className="rounded-md border border-zinc-200/60 bg-white/60 backdrop-blur-sm p-3 text-xs text-zinc-600 mb-5"
-                style={{ borderLeft: "3px solid #7c3aed" }}
-              >
-                <div className="flex items-center gap-1.5 font-bold text-zinc-800 uppercase tracking-wider text-[10px]">
-                  <ShieldCheck className="h-3.5 w-3.5 text-violet-600" />
-                  Security Note
-                </div>
-                <div className="mt-1 font-semibold text-zinc-500">
-                  Use a strong password. Accounts may access employee identity and camera streams.
-                </div>
-              </div>
-
-              {/* Form */}
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                {/* Name */}
-                <div>
-                  <Label
-                    className="block text-[10px] font-bold mb-2 uppercase tracking-wider text-zinc-400"
-                    htmlFor="name"
-                  >
-                    Name (Optional)
-                  </Label>
-                  <div className="login-glass-input rounded-md flex items-center gap-3 px-4 py-3">
-                    <User
-                      className="w-[18px] h-[18px] flex-shrink-0 transition-all duration-300"
-                      style={{ color: focusedField === "name" ? "#7c3aed" : "#a1a1aa" }}
-                    />
-                    <input
-                      id="name"
-                      type="text"
-                      onFocus={() => setFocusedField("name")}
-                      onBlur={(e) => {
-                        setFocusedField(null);
-                        nameBlur(e);
-                      }}
-                      placeholder="Enter your name"
-                      className="w-full bg-transparent outline-none text-xs font-semibold text-zinc-800 placeholder:text-zinc-400"
-                      autoComplete="name"
-                      {...nameRegister}
-                    />
-                  </div>
-                  {form.formState.errors.name?.message ? (
-                    <p className="text-xs text-rose-600 font-semibold mt-1">
-                      {form.formState.errors.name.message}
-                    </p>
-                  ) : null}
-                </div>
-
-                {/* Company Name */}
-                <div>
-                  <Label
-                    className="block text-[10px] font-bold mb-2 uppercase tracking-wider text-zinc-400"
-                    htmlFor="companyName"
-                  >
-                    Company Name
-                  </Label>
-                  <div className="relative">
-                    <div className="login-glass-input rounded-md flex items-center gap-3 px-4 py-3">
-                      <Building2
-                        className="w-[18px] h-[18px] flex-shrink-0 transition-all duration-300"
-                        style={{ color: focusedField === "companyName" ? "#7c3aed" : "#a1a1aa" }}
-                      />
-                      <input
-                        id="companyName"
-                        type="text"
-                        onFocus={() => {
-                          setFocusedField("companyName");
-                          setShowCompaniesDropdown(true);
-                        }}
-                        onBlur={(e) => {
-                          setFocusedField(null);
-                          // Delay closing the dropdown so item clicks can trigger onMouseDown
-                          setTimeout(() => setShowCompaniesDropdown(false), 200);
-                          companyNameBlur(e);
-                        }}
-                        placeholder="Select or type company name"
-                        className="w-full bg-transparent outline-none text-xs font-semibold text-zinc-800 placeholder:text-zinc-400"
-                        autoComplete="off"
-                        {...companyNameRegister}
-                        onChange={(e) => {
-                          companyNameRegister.onChange(e);
-                          const value = e.target.value;
-                          const matched = companiesList.find(
-                            (c) => c.name.toLowerCase() === value.trim().toLowerCase()
-                          );
-                          if (matched) {
-                            form.setValue("organization_id", matched.id);
-                          } else {
-                            form.setValue("organization_id", "");
-                          }
-                        }}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowCompaniesDropdown(!showCompaniesDropdown)}
-                        className="flex-shrink-0 p-1 text-zinc-400 hover:text-zinc-600 cursor-pointer"
-                      >
-                        <ArrowRight className="w-4 h-4 rotate-90 transition-transform duration-200" />
-                      </button>
-                    </div>
-
-                    {showCompaniesDropdown && companiesList.length > 0 && (
-                      <div className="absolute left-0 right-0 mt-1 bg-white/95 backdrop-blur-md border border-zinc-200/80 rounded-md shadow-lg max-h-40 overflow-y-auto z-50 py-1">
-                        {companiesList
-                          .filter((c) =>
-                            c.name
-                              .toLowerCase()
-                              .includes((form.watch("companyName") || "").toLowerCase())
-                          )
-                          .map((c) => (
-                            <button
-                              key={c.id}
-                              type="button"
-                              onMouseDown={() => {
-                                form.setValue("companyName", c.name, { shouldValidate: true });
-                                form.setValue("organization_id", c.id);
-                              }}
-                              className="w-full text-left px-4 py-2 text-xs font-semibold text-zinc-700 hover:bg-violet-50 hover:text-violet-700 transition-colors cursor-pointer"
-                            >
-                              {c.name}
-                            </button>
-                          ))}
-                      </div>
-                    )}
-                  </div>
-                  {form.formState.errors.companyName?.message ? (
-                    <p className="text-xs text-rose-600 font-semibold mt-1">
-                      {form.formState.errors.companyName.message}
-                    </p>
-                  ) : null}
-                </div>
-
-                {/* Email */}
-                <div>
-                  <Label
-                    className="block text-[10px] font-bold mb-2 uppercase tracking-wider text-zinc-400"
-                    htmlFor="email"
-                  >
-                    Email Address
-                  </Label>
-                  <div className="login-glass-input rounded-md flex items-center gap-3 px-4 py-3">
-                    <Mail
-                      className="w-[18px] h-[18px] flex-shrink-0 transition-all duration-300"
-                      style={{ color: focusedField === "email" ? "#7c3aed" : "#a1a1aa" }}
-                    />
-                    <input
-                      id="email"
-                      type="text"
-                      onFocus={() => setFocusedField("email")}
-                      onBlur={(e) => {
-                        setFocusedField(null);
-                        emailBlur(e);
-                      }}
-                      placeholder="admin@company.com"
-                      className="w-full bg-transparent outline-none text-xs font-semibold text-zinc-800 placeholder:text-zinc-400"
-                      autoComplete="email"
-                      {...emailRegister}
-                    />
-                  </div>
-                  {form.formState.errors.email?.message ? (
-                    <p className="text-xs text-rose-600 font-semibold mt-1">
-                      {form.formState.errors.email.message}
-                    </p>
-                  ) : null}
-                </div>
-
-                {/* User Role Selection (Combobox) */}
-                <div>
-                  <Label
-                    className="block text-[10px] font-bold mb-2 uppercase tracking-wider text-zinc-400"
-                    htmlFor="role"
-                  >
-                    User Role
-                  </Label>
-                  <div className="relative">
-                    <div className="login-glass-input rounded-md flex items-center gap-3 px-4 py-3">
-                      <ShieldCheck
-                        className="w-[18px] h-[18px] flex-shrink-0 transition-all duration-300"
-                        style={{ color: focusedField === "role" ? "#7c3aed" : "#a1a1aa" }}
-                      />
-                      <input
-                        id="role"
-                        type="text"
-                        onFocus={() => {
-                          setFocusedField("role");
-                          setShowRolesDropdown(true);
-                        }}
-                        onBlur={(e) => {
-                          setFocusedField(null);
-                          // Delay closing the dropdown so item clicks can trigger onMouseDown
-                          setTimeout(() => setShowRolesDropdown(false), 200);
-                          roleBlur(e);
-                        }}
-                        placeholder="Select or type user role (e.g. ADMIN)"
-                        className="w-full bg-transparent outline-none text-xs font-semibold text-zinc-800 placeholder:text-zinc-400"
-                        autoComplete="off"
-                        {...roleRegister}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowRolesDropdown(!showRolesDropdown)}
-                        className="flex-shrink-0 p-1 text-zinc-400 hover:text-zinc-600 cursor-pointer"
-                      >
-                        <ArrowRight className="w-4 h-4 rotate-90 transition-transform duration-200" />
-                      </button>
-                    </div>
-
-                    {showRolesDropdown && (
-                      <div className="absolute left-0 right-0 mt-1 bg-white/95 backdrop-blur-md border border-zinc-200/80 rounded-md shadow-lg max-h-40 overflow-y-auto z-50 py-1">
-                        {rolesList.map((r) => (
-                          <button
-                            key={r}
-                            type="button"
-                            onMouseDown={() => {
-                              form.setValue("role", r);
-                            }}
-                            className="w-full text-left px-4 py-2 text-xs font-semibold text-zinc-700 hover:bg-violet-50 hover:text-violet-700 transition-colors cursor-pointer"
-                          >
-                            {r}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  {form.formState.errors.role?.message ? (
-                    <p className="text-xs text-rose-600 font-semibold mt-1">
-                      {form.formState.errors.role.message}
-                    </p>
-                  ) : null}
-                </div>
-
-                {/* Password */}
-                <div>
-                  <Label
-                    className="block text-[10px] font-bold mb-2 uppercase tracking-wider text-zinc-400"
-                    htmlFor="password"
-                  >
-                    Password
-                  </Label>
-                  <div className="login-glass-input rounded-md flex items-center gap-3 px-4 py-3">
-                    <Lock
-                      className="w-[18px] h-[18px] flex-shrink-0 transition-all duration-300"
-                      style={{ color: focusedField === "password" ? "#7c3aed" : "#a1a1aa" }}
-                    />
-                    <input
-                      id="password"
-                      type={show ? "text" : "password"}
-                      onFocus={() => setFocusedField("password")}
-                      onBlur={(e) => {
-                        setFocusedField(null);
-                        passwordBlur(e);
-                      }}
-                      placeholder="Minimum 8 characters"
-                      className="w-full bg-transparent outline-none text-xs font-semibold text-zinc-800 placeholder:text-zinc-400"
-                      autoComplete="new-password"
-                      {...passwordRegister}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShow(!show)}
-                      className="flex-shrink-0 p-1 rounded-lg transition-all duration-300 text-zinc-400 hover:text-zinc-600"
-                      tabIndex={-1}
-                      aria-label={show ? "Hide password" : "Show password"}
-                    >
-                      {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                  {form.formState.errors.password?.message ? (
-                    <p className="text-xs text-rose-600 font-semibold mt-1">
-                      {form.formState.errors.password.message}
-                    </p>
-                  ) : null}
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="btn-shine group w-full py-3.5 rounded-md text-xs font-bold text-white flex items-center justify-center gap-2 mt-2 cursor-pointer"
-                >
-                  {loading ? (
-                    <div className="spinner-ring" />
-                  ) : (
-                    <>
-                      <span>Create Workspace Account</span>
-                      <ArrowRight className="w-4 h-4 transition-transform duration-250 group-hover:translate-x-1" />
-                    </>
-                  )}
-                </button>
-              </form>
-
-              {/* Switch to login */}
-              <div className="mt-6 text-center text-xs text-zinc-500">
-                Already have an account?{" "}
-                <Link href="/login" className="font-bold text-violet-600 hover:underline">
-                  Sign in
-                </Link>
-              </div>
-
-              <div className="mt-2 text-center text-[10px] text-zinc-400">
-                By continuing, you agree to your organization&apos;s security policy.
-              </div>
-
-              {/* Compliance badges */}
-              <div className="mt-6 pt-6 border-t border-zinc-200/50">
-                <div className="flex items-center justify-center gap-6">
-                  {["AES-256", "SOC 2", "GDPR"].map((badge) => (
-                    <div key={badge} className="flex items-center gap-1.5">
-                      <div className="w-1.5 h-1.5 rounded-full bg-violet-500" />
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
-                        {badge}
-                      </span>
-                    </div>
-                  ))}
                 </div>
               </div>
             </div>
 
-            {/* Footer links */}
-            <div className="mt-8 text-center space-y-3">
-              <div className="text-[10px] text-zinc-400">
-                © 2026 Cripton Vision. All rights reserved. •{" "}
-                <Link href="#" className="hover:underline">
-                  Privacy
-                </Link>{" "}
-                •{" "}
-                <Link href="#" className="hover:underline">
-                  Terms
-                </Link>
+            {/* Header */}
+            <div className="mb-6">
+              <div
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full mb-3"
+                style={{
+                  background: "rgba(124, 58, 237, 0.06)",
+                  border: "1px solid rgba(124, 58, 237, 0.12)",
+                }}
+              >
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-violet-600"></span>
+                </span>
+                <span className="text-[9px] font-black uppercase tracking-widest text-violet-700 ml-1">
+                  Enterprise Onboarding
+                </span>
               </div>
+              <h2 className="text-2xl md:text-3xl font-black tracking-tight mb-2 text-zinc-900">
+                Create Workspace
+              </h2>
+              <p className="text-xs text-zinc-500">
+                Setup your company profile to activate AI computer vision
+              </p>
+            </div>
+
+            {/* Form */}
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+              {/* Full Name */}
+              <div>
+                <Label
+                  className="block text-[10px] font-bold mb-2 uppercase tracking-wider text-zinc-400"
+                  htmlFor="name"
+                >
+                  Full Name (Optional)
+                </Label>
+                <div className="login-glass-input rounded-md flex items-center gap-3 px-4 py-3">
+                  <User
+                    className="w-[18px] h-[18px] flex-shrink-0 transition-all duration-300"
+                    style={{ color: focusedField === "name" ? "#7c3aed" : "#a1a1aa" }}
+                  />
+                  <input
+                    id="name"
+                    type="text"
+                    onFocus={() => setFocusedField("name")}
+                    onBlur={(e) => {
+                      setFocusedField(null);
+                      nameBlur(e);
+                    }}
+                    placeholder="e.g. John Doe"
+                    className="w-full bg-transparent outline-none text-xs font-semibold text-zinc-800 placeholder:text-zinc-400"
+                    autoComplete="name"
+                    {...nameRegister}
+                  />
+                </div>
+                {form.formState.errors.name?.message ? (
+                  <p className="text-xs text-rose-600 font-semibold mt-1">
+                    {form.formState.errors.name.message}
+                  </p>
+                ) : null}
+              </div>
+
+              {/* Company Name */}
+              <div>
+                <Label
+                  className="block text-[10px] font-bold mb-2 uppercase tracking-wider text-zinc-400"
+                  htmlFor="companyName"
+                >
+                  Company Name
+                </Label>
+                <div className="relative">
+                  <div className="login-glass-input rounded-md flex items-center gap-3 px-4 py-3">
+                    <Building2
+                      className="w-[18px] h-[18px] flex-shrink-0 transition-all duration-300"
+                      style={{ color: focusedField === "companyName" ? "#7c3aed" : "#a1a1aa" }}
+                    />
+                    <input
+                      id="companyName"
+                      type="text"
+                      onFocus={() => {
+                        setFocusedField("companyName");
+                        setShowCompaniesDropdown(true);
+                      }}
+                      onBlur={(e) => {
+                        setFocusedField(null);
+                        setTimeout(() => setShowCompaniesDropdown(false), 200);
+                        companyNameBlur(e);
+                      }}
+                      placeholder="Select or type company name"
+                      className="w-full bg-transparent outline-none text-xs font-semibold text-zinc-800 placeholder:text-zinc-400"
+                      autoComplete="off"
+                      {...companyNameRegister}
+                      onChange={(e) => {
+                        companyNameRegister.onChange(e);
+                        const value = e.target.value;
+                        const matched = companiesList.find(
+                          (c) => c.name.toLowerCase() === value.trim().toLowerCase()
+                        );
+                        if (matched) {
+                          form.setValue("organization_id", matched.id);
+                        } else {
+                          form.setValue("organization_id", "");
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowCompaniesDropdown(!showCompaniesDropdown)}
+                      className="flex-shrink-0 p-1 text-zinc-400 hover:text-zinc-600 cursor-pointer"
+                    >
+                      <ArrowRight className="w-4 h-4 rotate-90 transition-transform duration-200" />
+                    </button>
+                  </div>
+
+                  {showCompaniesDropdown && companiesList.length > 0 && (
+                    <div className="absolute left-0 right-0 mt-1 bg-white/95 backdrop-blur-md border border-zinc-200/80 rounded-md shadow-lg max-h-40 overflow-y-auto z-50 py-1">
+                      {companiesList
+                        .filter((c) =>
+                          c.name
+                            .toLowerCase()
+                            .includes((form.watch("companyName") || "").toLowerCase())
+                        )
+                        .map((c) => (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onMouseDown={() => {
+                              form.setValue("companyName", c.name, { shouldValidate: true });
+                              form.setValue("organization_id", c.id);
+                            }}
+                            className="w-full text-left px-4 py-2 text-xs font-semibold text-zinc-700 hover:bg-violet-50 hover:text-violet-700 transition-colors cursor-pointer"
+                          >
+                            {c.name}
+                          </button>
+                        ))}
+                    </div>
+                  )}
+                </div>
+                {form.formState.errors.companyName?.message ? (
+                  <p className="text-xs text-rose-600 font-semibold mt-1">
+                    {form.formState.errors.companyName.message}
+                  </p>
+                ) : null}
+              </div>
+
+              {/* Email */}
+              <div>
+                <Label
+                  className="block text-[10px] font-bold mb-2 uppercase tracking-wider text-zinc-400"
+                  htmlFor="email"
+                >
+                  Email Address
+                </Label>
+                <div className="login-glass-input rounded-md flex items-center gap-3 px-4 py-3">
+                  <Mail
+                    className="w-[18px] h-[18px] flex-shrink-0 transition-all duration-300"
+                    style={{ color: focusedField === "email" ? "#7c3aed" : "#a1a1aa" }}
+                  />
+                  <input
+                    id="email"
+                    type="text"
+                    onFocus={() => setFocusedField("email")}
+                    onBlur={(e) => {
+                      setFocusedField(null);
+                      emailBlur(e);
+                    }}
+                    placeholder="admin@company.com"
+                    className="w-full bg-transparent outline-none text-xs font-semibold text-zinc-800 placeholder:text-zinc-400"
+                    autoComplete="email"
+                    {...emailRegister}
+                  />
+                </div>
+                {form.formState.errors.email?.message ? (
+                  <p className="text-xs text-rose-600 font-semibold mt-1">
+                    {form.formState.errors.email.message}
+                  </p>
+                ) : null}
+              </div>
+
+              {/* User Role Selection (Combobox) */}
+              <div>
+                <Label
+                  className="block text-[10px] font-bold mb-2 uppercase tracking-wider text-zinc-400"
+                  htmlFor="role"
+                >
+                  User Role
+                </Label>
+                <div className="relative">
+                  <div className="login-glass-input rounded-md flex items-center gap-3 px-4 py-3">
+                    <ShieldCheck
+                      className="w-[18px] h-[18px] flex-shrink-0 transition-all duration-300"
+                      style={{ color: focusedField === "role" ? "#7c3aed" : "#a1a1aa" }}
+                    />
+                    <input
+                      id="role"
+                      type="text"
+                      onFocus={() => {
+                        setFocusedField("role");
+                        setShowRolesDropdown(true);
+                      }}
+                      onBlur={(e) => {
+                        setFocusedField(null);
+                        setTimeout(() => setShowRolesDropdown(false), 200);
+                        roleBlur(e);
+                      }}
+                      placeholder="Select or type user role (e.g. ADMIN)"
+                      className="w-full bg-transparent outline-none text-xs font-semibold text-zinc-800 placeholder:text-zinc-400"
+                      autoComplete="off"
+                      {...roleRegister}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowRolesDropdown(!showRolesDropdown)}
+                      className="flex-shrink-0 p-1 text-zinc-400 hover:text-zinc-600 cursor-pointer"
+                    >
+                      <ArrowRight className="w-4 h-4 rotate-90 transition-transform duration-200" />
+                    </button>
+                  </div>
+
+                  {showRolesDropdown && (
+                    <div className="absolute left-0 right-0 mt-1 bg-white/95 backdrop-blur-md border border-zinc-200/80 rounded-md shadow-lg max-h-40 overflow-y-auto z-50 py-1">
+                      {rolesList.map((r) => (
+                        <button
+                          key={r}
+                          type="button"
+                          onMouseDown={() => {
+                            form.setValue("role", r);
+                          }}
+                          className="w-full text-left px-4 py-2 text-xs font-semibold text-zinc-700 hover:bg-violet-50 hover:text-violet-700 transition-colors cursor-pointer"
+                        >
+                          {r}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {form.formState.errors.role?.message ? (
+                  <p className="text-xs text-rose-600 font-semibold mt-1">
+                    {form.formState.errors.role.message}
+                  </p>
+                ) : null}
+              </div>
+
+              {/* Password */}
+              <div>
+                <Label
+                  className="block text-[10px] font-bold mb-2 uppercase tracking-wider text-zinc-400"
+                  htmlFor="password"
+                >
+                  Password
+                </Label>
+                <div className="login-glass-input rounded-md flex items-center gap-3 px-4 py-3">
+                  <Lock
+                    className="w-[18px] h-[18px] flex-shrink-0 transition-all duration-300"
+                    style={{ color: focusedField === "password" ? "#7c3aed" : "#a1a1aa" }}
+                  />
+                  <input
+                    id="password"
+                    type={show ? "text" : "password"}
+                    onFocus={() => setFocusedField("password")}
+                    onBlur={(e) => {
+                      setFocusedField(null);
+                      passwordBlur(e);
+                    }}
+                    placeholder="Minimum 8 characters"
+                    className="w-full bg-transparent outline-none text-xs font-semibold text-zinc-800 placeholder:text-zinc-400"
+                    autoComplete="new-password"
+                    {...passwordRegister}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShow(!show)}
+                    className="flex-shrink-0 p-1 rounded-lg transition-all duration-300 text-zinc-400 hover:text-zinc-600"
+                    tabIndex={-1}
+                    aria-label={show ? "Hide password" : "Show password"}
+                  >
+                    {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                {form.formState.errors.password?.message ? (
+                  <p className="text-xs text-rose-600 font-semibold mt-1">
+                    {form.formState.errors.password.message}
+                  </p>
+                ) : null}
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="btn-shine group w-full py-3.5 rounded-md text-xs font-bold text-white flex items-center justify-center gap-2 mt-2 cursor-pointer"
+              >
+                {loading ? (
+                  <div className="spinner-ring" />
+                ) : (
+                  <>
+                    <span>Create Workspace Account</span>
+                    <ArrowRight className="w-4 h-4 transition-transform duration-250 group-hover:translate-x-1" />
+                  </>
+                )}
+              </button>
+            </form>
+
+            {/* Switch to login */}
+            <div className="mt-6 text-center text-xs text-zinc-500">
+              Already have an account?{" "}
+              <Link href="/login" className="font-bold text-violet-600 hover:underline">
+                Sign in
+              </Link>
+            </div>
+
+            <div className="mt-2 text-center text-[10px] text-zinc-400">
+              By continuing, you agree to your organization&apos;s security policy.
+            </div>
+
+            {/* Compliance badges */}
+            <div className="mt-6 pt-6 border-t border-zinc-200/50">
+              <div className="flex items-center justify-center gap-6">
+                {["AES-256", "SOC 2", "GDPR"].map((badge) => (
+                  <div key={badge} className="flex items-center gap-1.5">
+                    <div className="w-1.5 h-1.5 rounded-full bg-violet-500" />
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                      {badge}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Footer links */}
+          <div className="mt-8 text-center space-y-3">
+            <div className="text-[10px] text-zinc-400">
+              © 2026 Cripton Vision. All rights reserved. •{" "}
+              <Link href="#" className="hover:underline">
+                Privacy
+              </Link>{" "}
+              •{" "}
+              <Link href="#" className="hover:underline">
+                Terms
+              </Link>
             </div>
           </div>
         </div>

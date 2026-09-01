@@ -157,6 +157,19 @@ const erpEndpointField = z
 
 const erpUrlTypeField = urlTypeField(DEFAULT_ERP_URL_TYPE);
 
+const erpIsActiveField = z
+  .union([z.boolean(), z.null(), z.undefined(), z.string()])
+  .transform((value) => {
+    if (value === undefined || value === null) return undefined;
+    if (typeof value === "boolean") return value;
+    if (typeof value === "string") {
+      const trimmed = value.trim().toLowerCase();
+      if (trimmed === "true" || trimmed === "1") return true;
+      if (trimmed === "false" || trimmed === "0") return false;
+    }
+    return undefined;
+  });
+
 export const erpSettingsCreateSchema = z
   .object({
     erpBaseUrl: erpUrlField.optional(),
@@ -167,6 +180,8 @@ export const erpSettingsCreateSchema = z
     erp_base_url: erpUrlField.optional(),
     erp_prefix: erpPrefixField.optional(),
     erp_attendance_endpoint: erpEndpointField.optional(),
+    isActive: erpIsActiveField.optional(),
+    is_active: erpIsActiveField.optional(),
   })
   .transform((value) => ({
     urlType: value.urlType !== undefined ? value.urlType : value.url_type,
@@ -178,6 +193,7 @@ export const erpSettingsCreateSchema = z
       value.erpAttendanceEndpoint !== undefined
         ? value.erpAttendanceEndpoint
         : value.erp_attendance_endpoint,
+    isActive: value.isActive !== undefined ? value.isActive : value.is_active,
   }))
   .refine(
     (value) =>
@@ -200,6 +216,8 @@ export const erpSettingsUpdateSchema = z
     erp_base_url: erpUrlField.optional(),
     erp_prefix: erpPrefixField.optional(),
     erp_attendance_endpoint: erpEndpointField.optional(),
+    isActive: erpIsActiveField.optional(),
+    is_active: erpIsActiveField.optional(),
   })
   .transform((value) => ({
     id: value.id,
@@ -212,6 +230,7 @@ export const erpSettingsUpdateSchema = z
       value.erpAttendanceEndpoint !== undefined
         ? value.erpAttendanceEndpoint
         : value.erp_attendance_endpoint,
+    isActive: value.isActive !== undefined ? value.isActive : value.is_active,
   }))
   .refine(
     (value) =>

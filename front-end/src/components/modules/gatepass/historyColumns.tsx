@@ -14,7 +14,6 @@ function extractDhakaDatePart(isoString: string): string {
     const parsed = new Date(isoString);
     if (isNaN(parsed.getTime())) return "";
     
-    // Dhaka timezone is UTC+6
     const dhakaTime = new Date(parsed.getTime() + 6 * 60 * 60 * 1000);
     const day = String(dhakaTime.getUTCDate()).padStart(2, "0");
     const month = String(dhakaTime.getUTCMonth() + 1).padStart(2, "0");
@@ -102,26 +101,16 @@ export function getHistoryColumns(
       header: () => (
         <div className="w-full px-1 py-2 text-center font-bold">Leave Type</div>
       ),
-      cell: ({ row }) => {
-        const pType = row.original.passType ||
-          (row.original.typeId === "Long Leave" || row.original.type === "Long Leave" ? "Long Leave" : "short leave");
-        const isShort = String(pType).toLowerCase() === "short leave";
-        return (
-          <div className="flex justify-center px-1 py-2">
-            <Badge
-              variant="outline"
-              className={cn(
-                "rounded-full font-semibold border-none px-2.5 py-0.5",
-                isShort
-                  ? "bg-amber-100/70 text-amber-800"
-                  : "bg-purple-100/70 text-purple-800"
-              )}
-            >
-              {isShort ? "Short Leave" : "Long Leave"}
-            </Badge>
-          </div>
-        );
-      },
+      cell: ({ row }) => (
+        <div className="flex justify-center px-1 py-2">
+          <Badge
+            variant="outline"
+            className="rounded-full border-zinc-200 bg-zinc-50 text-zinc-700"
+          >
+            {row.original.type}
+          </Badge>
+        </div>
+      ),
       size: 120,
     },
     {

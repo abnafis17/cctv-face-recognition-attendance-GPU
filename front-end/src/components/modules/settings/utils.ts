@@ -68,6 +68,7 @@ export function normalizeErpApiRow(input: ErpSettingsResponse): ErpApiRow | null
     erpBaseUrl: toNullableTrimmed(input?.erpBaseUrl),
     erpPrefix: toNullableTrimmed(input?.erpPrefix),
     erpAttendanceEndpoint: toNullableTrimmed(input?.erpAttendanceEndpoint),
+    isActive: input?.isActive ?? true,
     createdAt: String(input?.createdAt ?? "").trim(),
     updatedAt: String(input?.updatedAt ?? "").trim(),
   };

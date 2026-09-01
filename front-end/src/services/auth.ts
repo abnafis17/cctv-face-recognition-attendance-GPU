@@ -6,14 +6,13 @@ import {
   setUser,
 } from "@/lib/authStorage";
 
-// Adjust to your backend API path constants if you have them.
 const AUTH = {
   LOGIN: "/auth/login",
   REGISTER: "/auth/register",
   LOGOUT: "/auth/logout",
 };
 
-type AuthUser = {
+export type AuthUser = {
   id: string;
   name?: string | null;
   email: string;
@@ -22,9 +21,10 @@ type AuthUser = {
   oragnizationId?: string | null;
   role: string;
   isActive: boolean;
+  permissions?: Record<string, boolean>;
 };
 
-type AuthResponse = {
+export type AuthResponse = {
   user: AuthUser;
   accessToken: string;
   refreshToken: string;
