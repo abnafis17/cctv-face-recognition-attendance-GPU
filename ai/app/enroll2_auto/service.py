@@ -118,7 +118,7 @@ class EnrollmentAutoService2:
     def __init__(
         self,
         camera_rt: CameraRuntime,
-        model_name: str = "buffalo_m",
+        model_name: str = "buffalo_sc",
         min_face_size: int = 40,
     ):
         self.camera_rt = camera_rt

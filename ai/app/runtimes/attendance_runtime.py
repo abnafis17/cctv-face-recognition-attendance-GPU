@@ -66,7 +66,7 @@ class AttendanceRuntime:
     def __init__(
         self,
         use_gpu: bool = False,
-        model_name: str = "buffalo_m",
+        model_name: str = "buffalo_sc",
         min_face_size: int = 20,
         similarity_threshold: float = 0.35,
         gallery_refresh_s: float = 5.0,

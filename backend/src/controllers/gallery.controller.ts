@@ -51,24 +51,36 @@ export async function upsertTemplate(req: Request, res: Response) {
       nameIfCreate: "Unknown",
     });
 
-    const tpl = await prisma.faceTemplate.upsert({
-      where: { employeeId_angle: { employeeId: employee.id, angle } },
-      update: {
-        embedding,
-        modelName: modelName ?? "unknown",
-        companyId,
-      },
-      create: {
-        employeeId: employee.id,
-        angle,
-        embedding,
-        modelName: modelName ?? "unknown",
-        companyId,
-      },
+    // Check for existing template by employee ID and angle
+    const existing = await prisma.faceTemplate.findFirst({
+      where: { employeeId: employee.id, angle },
     });
+
+    let tpl;
+    if (existing) {
+      tpl = await prisma.faceTemplate.update({
+        where: { id: existing.id },
+        data: {
+          embedding,
+          modelName: modelName ?? "unknown",
+          companyId,
+        },
+      });
+    } else {
+      tpl = await prisma.faceTemplate.create({
+        data: {
+          employeeId: employee.id,
+          angle,
+          embedding,
+          modelName: modelName ?? "unknown",
+          companyId,
+        },
+      });
+    }
 
     res.json(tpl);
   } catch (e: any) {
+    console.error("upsertTemplate error:", e);
     res.status(500).json({
       error: "Failed to upsert template",
       detail: e?.message ?? String(e),

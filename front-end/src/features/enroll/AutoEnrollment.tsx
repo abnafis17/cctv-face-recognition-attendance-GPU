@@ -20,6 +20,7 @@ import { Label } from "@/components/ui/label";
 import { useErpEmployees } from "@/hooks/useErpEmployees";
 import { SearchableSelect } from "@/components/reusable/SearchableSelect";
 import { getCompanyIdFromToken } from "@/lib/authStorage";
+import { createPeerConnection } from "@/lib/webrtc";
 
 type Camera = {
   id: string;
@@ -422,21 +423,7 @@ export default function AutoEnrollment({
 
     setLaptopActive(true);
 
-    const pc = new RTCPeerConnection({
-      iceServers: [
-        { urls: "stun:stun.l.google.com:19302" },
-        {
-          urls: "turn:10.81.100.128:3478?transport=udp",
-          username: "testuser",
-          credential: "testpass",
-        },
-        {
-          urls: "turn:10.81.100.128:3478?transport=tcp",
-          username: "testuser",
-          credential: "testpass",
-        },
-      ],
-    });
+    const pc = createPeerConnection();
     pcRef.current = pc;
     stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 

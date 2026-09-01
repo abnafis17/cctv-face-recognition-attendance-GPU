@@ -84,7 +84,7 @@ class FaceDetector:
     def __init__(
         self,
         *,
-        model_name: str = "buffalo_m",
+        model_name: str = "buffalo_sc",
         use_gpu: bool = True,
         det_size: Tuple[int, int] = (640, 640),
         min_face_size: int = 30,
@@ -156,7 +156,7 @@ class FaceEmbedder:
     Recognition-only embedder (ArcFace ONNX from the same InsightFace model pack).
     """
 
-    def __init__(self, *, model_name: str = "buffalo_m", use_gpu: bool = True):
+    def __init__(self, *, model_name: str = "buffalo_sc", use_gpu: bool = True):
         use_gpu = _env_bool("USE_GPU", use_gpu)
 
         # Default behavior:

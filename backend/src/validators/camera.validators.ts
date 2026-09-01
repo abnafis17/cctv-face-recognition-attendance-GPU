@@ -40,10 +40,29 @@ const optionalTrackingStatusSchema = z.preprocess((value) => {
   return normalized || undefined;
 }, z.enum(["out", "in"]).optional());
 
-const optionalSendFpsSchema = z.coerce.number().int().min(1).max(30).optional();
-const optionalSendWidthSchema = z.coerce.number().int().min(160).max(3840).optional();
-const optionalSendHeightSchema = z.coerce.number().int().min(120).max(2160).optional();
-const optionalJpegQualitySchema = z.coerce.number().int().min(1).max(100).optional();
+const optionalSendFpsSchema = z.preprocess((val) => {
+  if (val === undefined || val === null || val === "") return undefined;
+  const n = Number(val);
+  return Number.isFinite(n) ? Math.round(n) : undefined;
+}, z.number().int().min(1).max(30).optional());
+
+const optionalSendWidthSchema = z.preprocess((val) => {
+  if (val === undefined || val === null || val === "") return undefined;
+  const n = Number(val);
+  return Number.isFinite(n) ? Math.round(n) : undefined;
+}, z.number().int().min(160).max(3840).optional());
+
+const optionalSendHeightSchema = z.preprocess((val) => {
+  if (val === undefined || val === null || val === "") return undefined;
+  const n = Number(val);
+  return Number.isFinite(n) ? Math.round(n) : undefined;
+}, z.number().int().min(120).max(2160).optional());
+
+const optionalJpegQualitySchema = z.preprocess((val) => {
+  if (val === undefined || val === null || val === "") return undefined;
+  const n = Number(val);
+  return Number.isFinite(n) ? Math.round(n) : undefined;
+}, z.number().int().min(1).max(100).optional());
 const optionalIsActiveSchema = z.preprocess((value) => {
   if (value === undefined) return undefined;
   if (value === null) return undefined;

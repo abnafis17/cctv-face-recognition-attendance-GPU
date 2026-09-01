@@ -19,6 +19,7 @@ import { stepLabel } from "./utils";
 
 import { useTTS } from "./hooks/useTTS";
 import { useMjpegStream } from "./hooks/useMjpegStream";
+import { useCameraDevices } from "@/hooks/useCameraDevices";
 import { useLaptopCameraWebRTC } from "./hooks/useLaptopCameraWebRTC";
 import { useCameraControls } from "./hooks/useCameraControls";
 import { useAutoEnrollSession } from "./hooks/useAutoEnrollSession";
@@ -51,6 +52,12 @@ export default function AutoEnrollment({
   const [section, setSection] = useState("");
   const [line, setLine] = useState("");
 
+  const {
+    devices: cameraDevices,
+    selectedDeviceId,
+    setSelectedDeviceId,
+  } = useCameraDevices();
+
   // ---- Laptop camera WebRTC publisher (to AI server) ----
   const {
     previewVideoRef,
@@ -62,6 +69,7 @@ export default function AutoEnrollment({
     laptopCameraId,
     companyId,
     aiHost: AI_HOST,
+    selectedDeviceId,
   });
 
   // ---- Cameras list + controls ----
@@ -354,6 +362,9 @@ export default function AutoEnrollment({
           cameraId={cameraId}
           setCameraId={setCameraId}
           camerasWithLaptop={camerasWithLaptop}
+          cameraDevices={cameraDevices}
+          selectedDeviceId={selectedDeviceId}
+          onSelectDeviceId={setSelectedDeviceId}
           selectedCamIsActive={selectedCamIsActive}
           busy={busy}
           selectedErpEmployeeId={selectedErpEmployeeId}

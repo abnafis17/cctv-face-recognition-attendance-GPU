@@ -12,6 +12,9 @@ export const SetupPanel = React.memo(function SetupPanel({
   cameraId,
   setCameraId,
   camerasWithLaptop,
+  cameraDevices = [],
+  selectedDeviceId = "",
+  onSelectDeviceId,
   selectedCamIsActive,
   busy,
 
@@ -52,6 +55,9 @@ export const SetupPanel = React.memo(function SetupPanel({
   cameraId: string;
   setCameraId: (v: string) => void;
   camerasWithLaptop: Camera[];
+  cameraDevices?: Array<{ deviceId: string; label: string }>;
+  selectedDeviceId?: string;
+  onSelectDeviceId?: (id: string) => void;
   selectedCamIsActive: boolean;
   busy: boolean;
 
@@ -130,22 +136,48 @@ export const SetupPanel = React.memo(function SetupPanel({
             </span>
           </div>
 
-          <div>
-            <Label className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider block mb-1.5">
-              SELECT CAMERA
-            </Label>
-            <select
-              className="w-full rounded-xl border border-zinc-200 bg-white px-3.5 h-10 text-sm text-zinc-800 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all shadow-xs"
-              value={cameraId}
-              onChange={(e) => setCameraId(e.target.value)}
-              disabled={busy}
-            >
-              {camerasWithLaptop.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name ? `${c.name} (${c.id})` : c.id}
-                </option>
-              ))}
-            </select>
+          <div className="space-y-3.5">
+            <div>
+              <Label className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider block mb-1.5">
+                SELECT CAMERA
+              </Label>
+              <select
+                className="w-full rounded-xl border border-zinc-200 bg-white px-3.5 h-10 text-sm text-zinc-800 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all shadow-xs"
+                value={cameraId}
+                onChange={(e) => setCameraId(e.target.value)}
+                disabled={busy}
+              >
+                {camerasWithLaptop.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name ? `${c.name} (${c.id})` : c.id}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* If Laptop Camera is selected and we have devices */}
+            {cameraId.startsWith("laptop-") ||
+            cameraId === "cmkdpsq300000j7284bwluxh2" ? (
+              cameraDevices.length > 0 ? (
+                <div>
+                  <Label className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider block mb-1.5">
+                    VIDEO INPUT DEVICE ({cameraDevices.length})
+                  </Label>
+                  <select
+                    className="w-full rounded-xl border border-purple-200 bg-purple-50/50 px-3.5 h-10 text-sm text-zinc-800 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 transition-all shadow-xs"
+                    value={selectedDeviceId}
+                    onChange={(e) => onSelectDeviceId?.(e.target.value)}
+                    disabled={busy}
+                  >
+                    {cameraDevices.map((d) => (
+                      <option key={d.deviceId} value={d.deviceId}>
+                        {d.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null
+            ) : null}
           </div>
         </div>
 

@@ -73,6 +73,17 @@ async def webrtc_signal(ws: WebSocket, container=Depends(get_container)):
                     if track.kind != "video":
                         return
 
+                    if not ingest_only_for_connection:
+                        try:
+                            container.rec_worker.start(
+                                camera_id=camera_id_for_connection,
+                                camera_name=f"Laptop-{camera_id_for_connection}",
+                                ai_fps=30.0,
+                            )
+                            container.hls_rt.start(camera_id_for_connection)
+                        except Exception as e:
+                            print(f"[WebRTC] worker start warning for {camera_id_for_connection}: {e}")
+
                     last_ingest_at = 0.0
                     while True:
                         try:
@@ -99,18 +110,12 @@ async def webrtc_signal(ws: WebSocket, container=Depends(get_container)):
                             container.camera_rt.inject_frame(camera_id_for_connection, img)
 
                             if not ingest_only_for_connection:
-                                container.rec_worker.start(
-                                    camera_id=camera_id_for_connection,
-                                    camera_name=f"Laptop-{camera_id_for_connection}",
-                                    ai_fps=30.0,
-                                )
                                 try:
                                     annotated = container.rec_worker.get_latest_annotated(
                                         camera_id_for_connection
                                     )
                                     if annotated is None:
                                         annotated = img
-                                    container.hls_rt.start(camera_id_for_connection)
                                     container.hls_rt.write(camera_id_for_connection, annotated)
                                 except Exception as e:
                                     print(

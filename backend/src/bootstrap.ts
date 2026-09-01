@@ -365,6 +365,15 @@ export async function bootstrap() {
         }
       }
     }
+
+    // Ensure FaceTemplate unique constraint exists in PostgreSQL
+    try {
+      await prisma.$executeRawUnsafe(
+        'CREATE UNIQUE INDEX IF NOT EXISTS "FaceTemplate_employeeId_angle_key" ON "FaceTemplate"("employeeId", "angle");'
+      );
+    } catch {
+      // ignore
+    }
   } catch (err) {
     console.error("Failed to seed system modules:", err);
   }

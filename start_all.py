@@ -57,6 +57,14 @@ def is_port_in_use(port: int, host: str = "127.0.0.1") -> bool:
         return s.connect_ex((host, port)) == 0
 
 
+def free_port(port: int) -> None:
+    try:
+        subprocess.run(["fuser", "-k", f"{port}/tcp"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        time.sleep(0.3)
+    except Exception:
+        pass
+
+
 def wait_for_port(port: int, host: str = "127.0.0.1", timeout: float = 25.0) -> bool:
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -156,8 +164,13 @@ class ProcessSupervisor:
         all_clear = True
         for port, name in ports:
             if is_port_in_use(port):
-                print(f" [WARNING] Port {port} ({name}) is already in use!")
-                all_clear = False
+                print(f" [WARNING] Port {port} ({name}) is in use! Clearing stale process...")
+                free_port(port)
+                if is_port_in_use(port):
+                    print(f" [ERROR] Could not free port {port} ({name}).")
+                    all_clear = False
+                else:
+                    print(f" [OK] Port {port} ({name}) has been freed successfully.")
             else:
                 print(f" [OK] Port {port} ({name}) is available.")
 
