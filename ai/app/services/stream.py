@@ -418,7 +418,7 @@ class LiteCameraStream:
                 top2_score = emp_scores[1][0] if len(emp_scores) > 1 else 0.0
                 margin_gap = top1_score - top2_score
                 
-                is_qualified = (top1_score >= SIMILARITY_THRESHOLD and margin_gap >= 0.03)
+                is_qualified = (top1_score >= SIMILARITY_THRESHOLD and margin_gap >= 0.04)
                 
                 if is_qualified:
                     last_id = getattr(matched_track, 'last_known_emp_id', None)
@@ -427,52 +427,45 @@ class LiteCameraStream:
                     else:
                         matched_track.confirm_hits = 1
 
-                    matched_track.name = best_name
-                    matched_track.emp_id = best_emp_id
-                    matched_track.score = top1_score
-                    matched_track.last_known_name = best_name
-                    matched_track.last_known_emp_id = best_emp_id
-                    matched_track.last_known_time = now
-                    
-                    is_authorized = True
-                    has_auth_list = len(self.authorized_employee_ids) > 0
-                    if has_auth_list and best_emp_id not in self.authorized_employee_ids:
-                        is_authorized = False
-                    matched_track.is_authorized = is_authorized
-                    
-                    # 🔓 Door unlock triggered on every authorized recognition
-                    if is_authorized:
-                        self._trigger_door_relay(best_emp_id, best_name, top1_score)
-
-                    if matched_track.confirm_hits >= 1 and is_authorized and self.attendance_enabled:
-                        self._trigger_attendance(best_emp_id, best_name, top1_score)
-                else:
-                    # Identity hold hysteresis: if track was matched to known employee within 3.0s, keep green card on head turns / phone glances
-                    last_ts = getattr(matched_track, 'last_known_time', 0.0)
-                    last_emp = getattr(matched_track, 'last_known_emp_id', None)
-                    if (now - last_ts < 3.0) and last_emp:
-                        matched_track.name = getattr(matched_track, 'last_known_name', 'Unknown')
-                        matched_track.emp_id = last_emp
+                    # Only display green box with name after 2 consecutive matching frames to prevent false names
+                    if matched_track.confirm_hits >= 2:
+                        matched_track.name = best_name
+                        matched_track.emp_id = best_emp_id
                         matched_track.score = top1_score
+                        matched_track.last_known_name = best_name
+                        matched_track.last_known_emp_id = best_emp_id
+                        matched_track.last_known_time = now
+                        
+                        is_authorized = True
+                        has_auth_list = len(self.authorized_employee_ids) > 0
+                        if has_auth_list and best_emp_id not in self.authorized_employee_ids:
+                            is_authorized = False
+                        matched_track.is_authorized = is_authorized
+                        
+                        # 🔓 Door unlock triggered on every authorized recognition
+                        if is_authorized:
+                            self._trigger_door_relay(best_emp_id, best_name, top1_score)
+
+                        if is_authorized and self.attendance_enabled:
+                            self._trigger_attendance(best_emp_id, best_name, top1_score)
                     else:
+                        # Pending confirmation: show Red Box "Unknown" until 2nd consecutive hit
                         matched_track.name = "Unknown"
                         matched_track.emp_id = None
                         matched_track.score = top1_score
-                        matched_track.is_authorized = True
-                        matched_track.confirm_hits = 0
-            else:
-                last_ts = getattr(matched_track, 'last_known_time', 0.0)
-                last_emp = getattr(matched_track, 'last_known_emp_id', None)
-                if (now - last_ts < 3.0) and last_emp:
-                    matched_track.name = getattr(matched_track, 'last_known_name', 'Unknown')
-                    matched_track.emp_id = last_emp
-                    matched_track.score = 0.0
                 else:
+                    # Low confidence or ambiguous match (margin_gap < 0.04): RED BOX "Unknown"
                     matched_track.name = "Unknown"
                     matched_track.emp_id = None
-                    matched_track.score = -1.0
+                    matched_track.score = top1_score
                     matched_track.is_authorized = True
                     matched_track.confirm_hits = 0
+            else:
+                matched_track.name = "Unknown"
+                matched_track.emp_id = None
+                matched_track.score = -1.0
+                matched_track.is_authorized = True
+                matched_track.confirm_hits = 0
                 
         matched_track.last_recognize_time = now
 
