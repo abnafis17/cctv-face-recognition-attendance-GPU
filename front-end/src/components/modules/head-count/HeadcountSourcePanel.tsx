@@ -45,13 +45,7 @@ const HeadcountSourcePanel = memo(function HeadcountSourcePanel({
           >
             <option value="">Laptop Camera (WebRTC)</option>
             {cams.map((camera) => (
-              <option
-                key={camera.id}
-                value={camera.id}
-                disabled={
-                  Boolean(camera.isActive) && camera.id !== selectedCamId
-                }
-              >
+              <option key={camera.id} value={camera.id}>
                 {camera.name}
                 {camera.isActive ? " (Active)" : ""}
               </option>
