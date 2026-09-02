@@ -418,7 +418,7 @@ class LiteCameraStream:
                 top2_score = emp_scores[1][0] if len(emp_scores) > 1 else 0.0
                 margin_gap = top1_score - top2_score
                 
-                is_qualified = (top1_score >= SIMILARITY_THRESHOLD)
+                is_qualified = (top1_score >= SIMILARITY_THRESHOLD and margin_gap >= 0.03)
                 
                 if is_qualified:
                     matched_track.name = best_name
@@ -445,34 +445,18 @@ class LiteCameraStream:
                         matched_track.confirm_hits = 0
                         self._trigger_attendance(best_emp_id, best_name, top1_score)
                 else:
-                    # Pose & angle persistence: keep green HUD card for 3.0s if similarity dips when turning head
-                    last_known_ts = getattr(matched_track, 'last_known_time', 0.0)
-                    if now - last_known_ts < 3.0 and getattr(matched_track, 'last_known_emp_id', None):
-                        matched_track.name = getattr(matched_track, 'last_known_name', 'Unknown')
-                        matched_track.emp_id = getattr(matched_track, 'last_known_emp_id', None)
-                        matched_track.score = top1_score
-                        if matched_track.emp_id and self.attendance_enabled:
-                            self._trigger_attendance(matched_track.emp_id, matched_track.name, matched_track.score)
-                    else:
-                        matched_track.name = "Unknown"
-                        matched_track.emp_id = None
-                        matched_track.score = top1_score
-                        matched_track.is_authorized = True
-                        matched_track.confirm_hits = 0
-            else:
-                last_known_ts = getattr(matched_track, 'last_known_time', 0.0)
-                if now - last_known_ts < 3.0 and getattr(matched_track, 'last_known_emp_id', None):
-                    matched_track.name = getattr(matched_track, 'last_known_name', 'Unknown')
-                    matched_track.emp_id = getattr(matched_track, 'last_known_emp_id', None)
-                    matched_track.score = 0.0
-                    if matched_track.emp_id and self.attendance_enabled:
-                        self._trigger_attendance(matched_track.emp_id, matched_track.name, matched_track.score)
-                else:
+                    # Low confidence or unknown: DO NOT trigger attendance! Show Red Box "Unknown"
                     matched_track.name = "Unknown"
                     matched_track.emp_id = None
-                    matched_track.score = -1.0
+                    matched_track.score = top1_score
                     matched_track.is_authorized = True
                     matched_track.confirm_hits = 0
+            else:
+                matched_track.name = "Unknown"
+                matched_track.emp_id = None
+                matched_track.score = -1.0
+                matched_track.is_authorized = True
+                matched_track.confirm_hits = 0
                 
         matched_track.last_recognize_time = now
 
@@ -626,7 +610,8 @@ class LiteCameraStream:
     def _trigger_attendance(self, emp_id: str, name: str, score: float):
         now = time.time()
         emp_key = str(emp_id or "").strip()
-        if not emp_key:
+        name_str = str(name or "").strip()
+        if not emp_key or name_str == "Unknown" or float(score or 0.0) < SIMILARITY_THRESHOLD:
             return
             
         with GLOBAL_ATTENDANCE_LOCK:
