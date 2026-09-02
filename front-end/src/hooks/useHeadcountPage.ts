@@ -130,8 +130,14 @@ export function useHeadcountPage() {
 
   const fetchCameras = useCallback(async () => {
     try {
-      const response = await axiosInstance.get(API.HEADCOUNT_CAMERAS);
-      const list = Array.isArray(response?.data) ? response.data : [];
+      const response = await axiosInstance.get(API.HEADCOUNT_CAMERAS, {
+        params: { task: "headcount" },
+      });
+      const list = Array.isArray(response?.data)
+        ? response.data
+        : Array.isArray(response?.data?.cameras)
+        ? response.data.cameras
+        : [];
       setCams(list.map(normalizeHeadcountCamera));
     } catch (error: unknown) {
       toast.error(getApiErrorMessage(error, "Failed to load cameras"));

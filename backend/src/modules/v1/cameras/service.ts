@@ -146,10 +146,21 @@ export async function listCompanyCameras(
   companyId: string,
   options?: ListCompanyCamerasOptions,
 ) {
-  return prisma.camera.findMany({
-    where: cameraListWhere(companyId, options),
+  const primaryWhere = cameraListWhere(companyId, options);
+  let cameras = await prisma.camera.findMany({
+    where: primaryWhere,
     orderBy: [{ isActive: "desc" }, { name: "asc" }, { createdAt: "desc" }],
   });
+
+  if (cameras.length === 0 && options?.task && options.task !== "all") {
+    const fallbackWhere = cameraListWhere(companyId, { ...options, task: undefined });
+    cameras = await prisma.camera.findMany({
+      where: fallbackWhere,
+      orderBy: [{ isActive: "desc" }, { name: "asc" }, { createdAt: "desc" }],
+    });
+  }
+
+  return cameras;
 }
 
 export async function createCompanyCamera(

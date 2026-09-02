@@ -77,28 +77,49 @@ export async function listHeadcountCameras(req: Request, res: Response) {
     if (!companyId)
       return res.status(400).json({ error: "Missing company id" });
 
-    const cams = await prisma.camera.findMany({
-      where: {
-        companyId,
-        NOT: {
-          OR: [
-            { camId: { startsWith: "laptop-" } },
-            { id: { startsWith: "laptop-" } },
-          ],
-        },
+    const taskParam = String(req.query.task ?? "").trim().toLowerCase();
+
+    const where: any = {
+      companyId,
+      NOT: {
+        OR: [
+          { camId: { startsWith: "laptop-" } },
+          { id: { startsWith: "laptop-" } },
+        ],
       },
-      select: { id: true, name: true, rtspUrl: true, isActive: true },
+    };
+
+    if (taskParam) {
+      where.task = taskParam;
+    }
+
+    let cams = await prisma.camera.findMany({
+      where,
+      select: { id: true, name: true, rtspUrl: true, isActive: true, task: true },
       orderBy: [{ name: "asc" }],
       take: 5000,
     });
 
+    if (cams.length === 0 && taskParam) {
+      delete where.task;
+      cams = await prisma.camera.findMany({
+        where,
+        select: { id: true, name: true, rtspUrl: true, isActive: true, task: true },
+        orderBy: [{ name: "asc" }],
+        take: 5000,
+      });
+    }
+
+    const cameras = cams.map((c: any) => ({
+      id: c.id,
+      name: c.name,
+      rtspUrl: c.rtspUrl,
+      isActive: Boolean(c.isActive),
+      task: c.task || "headcount",
+    }));
+
     return res.json({
-      cameras: cams.map((c) => ({
-        id: c.id,
-        name: c.name,
-        rtspUrl: c.rtspUrl,
-        isActive: Boolean(c.isActive),
-      })),
+      cameras,
     });
   } catch (err: any) {
     console.error("listHeadcountCameras error:", err);

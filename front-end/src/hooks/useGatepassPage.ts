@@ -583,14 +583,16 @@ export function useGatepassPage() {
       });
 
       const list = Array.isArray(response.data) ? response.data : [];
-      const filtered = list
-        .filter((camera) => normalizeTask(camera.task) === "gate_pass")
-        .sort((a, b) =>
-          String(a.name ?? "").localeCompare(String(b.name ?? ""), undefined, {
-            numeric: true,
-            sensitivity: "base",
-          }),
-        );
+      let filtered = list.filter((camera) => normalizeTask(camera.task) === "gate_pass");
+      if (filtered.length === 0 && list.length > 0) {
+        filtered = list;
+      }
+      filtered.sort((a, b) =>
+        String(a.name ?? "").localeCompare(String(b.name ?? ""), undefined, {
+          numeric: true,
+          sensitivity: "base",
+        }),
+      );
 
       setGatepassCameras(filtered);
     } catch (error: unknown) {
