@@ -418,9 +418,15 @@ class LiteCameraStream:
                 top2_score = emp_scores[1][0] if len(emp_scores) > 1 else 0.0
                 margin_gap = top1_score - top2_score
                 
-                is_qualified = (top1_score >= SIMILARITY_THRESHOLD and margin_gap >= 0.03)
+                is_qualified = (top1_score >= SIMILARITY_THRESHOLD and margin_gap >= 0.04)
                 
                 if is_qualified:
+                    last_id = getattr(matched_track, 'last_known_emp_id', None)
+                    if last_id == best_emp_id:
+                        matched_track.confirm_hits = getattr(matched_track, 'confirm_hits', 0) + 1
+                    else:
+                        matched_track.confirm_hits = 1
+
                     matched_track.name = best_name
                     matched_track.emp_id = best_emp_id
                     matched_track.score = top1_score
@@ -434,18 +440,14 @@ class LiteCameraStream:
                         is_authorized = False
                     matched_track.is_authorized = is_authorized
                     
-                    # 🔓 Door unlock triggered on every authorized recognition (zero-latency)
+                    # 🔓 Door unlock triggered on every authorized recognition
                     if is_authorized:
                         self._trigger_door_relay(best_emp_id, best_name, top1_score)
 
-                    # Track positive matches for instant zero-latency attendance/headcount qualification
-                    matched_track.confirm_hits = getattr(matched_track, 'confirm_hits', 0) + 1
-                    
-                    if matched_track.confirm_hits >= 1 and is_authorized and self.attendance_enabled:
-                        matched_track.confirm_hits = 0
+                    if matched_track.confirm_hits >= 2 and is_authorized and self.attendance_enabled:
                         self._trigger_attendance(best_emp_id, best_name, top1_score)
                 else:
-                    # Low confidence or unknown: DO NOT trigger attendance! Show Red Box "Unknown"
+                    # Low confidence or ambiguous match: RED BOX "Unknown", NO attendance trigger!
                     matched_track.name = "Unknown"
                     matched_track.emp_id = None
                     matched_track.score = top1_score
