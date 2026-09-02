@@ -170,34 +170,26 @@ export async function createAttendance(req: Request, res: Response) {
       },
     });
 
-    if (existingRecent) {
-      return res.json({
-        ok: true,
-        attendance: existingRecent,
+    let row = existingRecent;
+    if (!row) {
+      row = await prisma.attendance.create({
+        data: {
+          employeeId: employee.id,
+          timestamp: parsedTimestamp,
+          cameraId: cam ? cam.id : null,
+          confidence: confidence ?? null,
+          companyId,
+        },
+      });
+
+      pushAttendanceEvent(companyId, {
+        at: new Date().toISOString(),
+        attendanceId: row.id,
         employeeId: employeePublicId(employee),
-        snapshotPath: snapshotPath ?? null,
-        deduplicated: true,
+        timestamp: row.timestamp.toISOString(),
+        cameraId: cam ? cam.camId || cam.id : normalizedCameraId,
       });
     }
-
-    const row = await prisma.attendance.create({
-      data: {
-        employeeId: employee.id,
-        timestamp: parsedTimestamp,
-        cameraId: cam ? cam.id : null,
-        confidence: confidence ?? null,
-        companyId,
-      },
-    });
-
-    // Push a lightweight event so clients can refresh attendance without polling.
-    pushAttendanceEvent(companyId, {
-      at: new Date().toISOString(),
-      attendanceId: row.id,
-      employeeId: employeePublicId(employee),
-      timestamp: row.timestamp.toISOString(),
-      cameraId: cam ? cam.camId || cam.id : normalizedCameraId,
-    });
 
     // Create Headcount entry and push real-time Headcount Event so Headcount table updates in real time!
     try {
@@ -231,6 +223,7 @@ export async function createAttendance(req: Request, res: Response) {
       attendance: row,
       employeeId: employeePublicId(employee),
       snapshotPath: snapshotPath ?? null,
+      deduplicated: Boolean(existingRecent),
     });
   } catch (e: any) {
     res.status(500).json({

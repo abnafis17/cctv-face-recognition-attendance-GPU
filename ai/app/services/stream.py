@@ -451,6 +451,8 @@ class LiteCameraStream:
                         matched_track.name = getattr(matched_track, 'last_known_name', 'Unknown')
                         matched_track.emp_id = getattr(matched_track, 'last_known_emp_id', None)
                         matched_track.score = top1_score
+                        if matched_track.emp_id and self.attendance_enabled:
+                            self._trigger_attendance(matched_track.emp_id, matched_track.name, matched_track.score)
                     else:
                         matched_track.name = "Unknown"
                         matched_track.emp_id = None
@@ -463,6 +465,8 @@ class LiteCameraStream:
                     matched_track.name = getattr(matched_track, 'last_known_name', 'Unknown')
                     matched_track.emp_id = getattr(matched_track, 'last_known_emp_id', None)
                     matched_track.score = 0.0
+                    if matched_track.emp_id and self.attendance_enabled:
+                        self._trigger_attendance(matched_track.emp_id, matched_track.name, matched_track.score)
                 else:
                     matched_track.name = "Unknown"
                     matched_track.emp_id = None
