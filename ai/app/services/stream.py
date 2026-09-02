@@ -82,8 +82,9 @@ class LiteCameraStream:
     Decoupled non-blocking reader and face recognition loop.
     Optimized for Jetson Orin Nano GPU/CPU.
     """
-    def __init__(self, camera_id: str, rtsp_url: str, company_id: str):
+    def __init__(self, camera_id: str, rtsp_url: str, company_id: str, camera_name: Optional[str] = None):
         self.camera_id = camera_id
+        self.camera_name = camera_name or camera_id
         self.rtsp_url = rtsp_url
         self.company_id = company_id
         

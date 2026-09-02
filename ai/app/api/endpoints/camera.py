@@ -36,23 +36,95 @@ from app.services.model_manager import get_enroller2_auto
 
 router = APIRouter()
 
-def make_dark_placeholder(name: str) -> bytes:
-    frame = np.zeros((480, 640, 3), dtype=np.uint8)
-    for x in range(0, 640, 40):
-        cv2.line(frame, (x, 0), (x, 480), (10, 10, 10), 1)
-    for y in range(0, 480, 40):
-        cv2.line(frame, (0, y), (640, y), (10, 10, 10), 1)
-    cv2.putText(frame, f"[ {name} ]", (40, 220), cv2.FONT_HERSHEY_DUPLEX, 0.65, (255, 255, 255), 1, cv2.LINE_AA)
-    cv2.putText(frame, "Connecting to camera stream...", (40, 255), cv2.FONT_HERSHEY_DUPLEX, 0.5, (0, 165, 255), 1, cv2.LINE_AA)
-    ret, jpeg = cv2.imencode(".jpg", frame)
+def make_dark_placeholder(name: str, status_msg: str = "Connecting to camera stream...") -> bytes:
+    width, height = 640, 480
+    frame = np.zeros((height, width, 3), dtype=np.uint8)
+
+    # 1. Vignette dark background
+    center_x, center_y = width // 2, height // 2
+    y_coords, x_coords = np.ogrid[:height, :width]
+    dist_from_center = np.sqrt((x_coords - center_x)**2 + (y_coords - center_y)**2)
+    max_dist = np.sqrt(center_x**2 + center_y**2)
+    norm_dist = np.clip(dist_from_center / max_dist, 0, 1)
+
+    center_color = np.array([28, 32, 42], dtype=np.float32)
+    edge_color = np.array([12, 14, 20], dtype=np.float32)
+
+    for c in range(3):
+        frame[:, :, c] = (center_color[c] * (1 - norm_dist * 0.7) + edge_color[c] * (norm_dist * 0.7)).astype(np.uint8)
+
+    # 2. Subtle Grid Overlay
+    grid_color = (35, 40, 52)
+    for x in range(0, width, 40):
+        cv2.line(frame, (x, 0), (x, height), grid_color, 1)
+    for y in range(0, height, 40):
+        cv2.line(frame, (0, y), (width, y), grid_color, 1)
+
+    # 3. Center Overlay Card Box
+    card_w, card_h = 460, 140
+    card_x1 = (width - card_w) // 2
+    card_y1 = (height - card_h) // 2
+    card_x2 = card_x1 + card_w
+    card_y2 = card_y1 + card_h
+
+    overlay = frame.copy()
+    cv2.rectangle(overlay, (card_x1, card_y1), (card_x2, card_y2), (22, 26, 36), -1)
+    cv2.addWeighted(overlay, 0.85, frame, 0.15, 0, frame)
+
+    cv2.rectangle(frame, (card_x1, card_y1), (card_x2, card_y2), (55, 65, 85), 1)
+
+    # Card Corner Accents
+    accent_len = 8
+    accent_color = (0, 165, 255) # Warm Amber Accent
+    cv2.line(frame, (card_x1, card_y1), (card_x1 + accent_len, card_y1), accent_color, 2)
+    cv2.line(frame, (card_x1, card_y1), (card_x1, card_y1 + accent_len), accent_color, 2)
+    cv2.line(frame, (card_x2 - accent_len, card_y1), (card_x2, card_y1), accent_color, 2)
+    cv2.line(frame, (card_x2, card_y1), (card_x2, card_y1 + accent_len), accent_color, 2)
+    cv2.line(frame, (card_x1, card_y2), (card_x1 + accent_len, card_y2), accent_color, 2)
+    cv2.line(frame, (card_x1, card_y2 - accent_len), (card_x1, card_y2), accent_color, 2)
+    cv2.line(frame, (card_x2 - accent_len, card_y2), (card_x2, card_y2), accent_color, 2)
+    cv2.line(frame, (card_x2, card_y2 - accent_len), (card_x2, card_y2), accent_color, 2)
+
+    # 4. Glowing Status Indicator Dot
+    dot_cy = card_y1 + 28
+    cv2.circle(frame, (center_x, dot_cy), 8, (0, 90, 200), -1, cv2.LINE_AA)
+    cv2.circle(frame, (center_x, dot_cy), 4, (0, 185, 255), -1, cv2.LINE_AA)
+
+    # 5. Centered Camera Name Text
+    camera_title = str(name or "Camera Stream").strip()
+    font = cv2.FONT_HERSHEY_DUPLEX
+    font_scale = 0.7
+    thickness = 1
+
+    (tw, th), baseline = cv2.getTextSize(camera_title, font, font_scale, thickness)
+    if tw > card_w - 40:
+        font_scale = 0.55
+        (tw, th), baseline = cv2.getTextSize(camera_title, font, font_scale, thickness)
+
+    title_x = (width - tw) // 2
+    title_y = card_y1 + 72
+    cv2.putText(frame, camera_title, (title_x, title_y), font, font_scale, (255, 255, 255), thickness, cv2.LINE_AA)
+
+    # 6. Centered Status Subtitle Text
+    sub_font_scale = 0.48
+    (sw, sh), _ = cv2.getTextSize(status_msg, font, sub_font_scale, 1)
+    sub_x = (width - sw) // 2
+    sub_y = card_y1 + 108
+    cv2.putText(frame, status_msg, (sub_x, sub_y), font, sub_font_scale, (0, 185, 255), 1, cv2.LINE_AA)
+
+    ret, jpeg = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
     return jpeg.tobytes()
 
-def mjpeg_recognition_generator(camera_id: str, company_id: str):
+def mjpeg_recognition_generator(camera_id: str, company_id: str, camera_name: Optional[str] = None):
     logger.info(f"Client started viewing recognition stream: {camera_id}")
-    stream = get_stream_for_camera(camera_id, company_id)
+    stream = get_stream_for_camera(camera_id, company_id, camera_name=camera_name)
     
+    display_name = camera_name or getattr(stream, "camera_name", None) or camera_id
+    if display_name == camera_id and getattr(stream, "camera_name", None) and stream.camera_name != camera_id:
+        display_name = stream.camera_name
+
     gui_period = 1.0 / MJPEG_STREAM_FPS_RECOGNITION
-    placeholder_bytes = make_dark_placeholder(camera_id)
+    placeholder_bytes = make_dark_placeholder(display_name)
     
     stream.active_viewers += 1
     try:
@@ -82,12 +154,13 @@ def mjpeg_recognition_generator(camera_id: str, company_id: str):
         stream.active_viewers = max(0, stream.active_viewers - 1)
         logger.info(f"Client stopped viewing recognition stream: {camera_id}")
 
-def mjpeg_raw_generator(camera_id: str, company_id: str):
+def mjpeg_raw_generator(camera_id: str, company_id: str, camera_name: Optional[str] = None):
     logger.info(f"Client started viewing raw stream: {camera_id}")
-    stream = get_stream_for_camera(camera_id, company_id)
+    stream = get_stream_for_camera(camera_id, company_id, camera_name=camera_name)
     
+    display_name = camera_name or getattr(stream, "camera_name", None) or camera_id
     gui_period = 1.0 / MJPEG_STREAM_FPS_RAW
-    placeholder_bytes = make_dark_placeholder(camera_id)
+    placeholder_bytes = make_dark_placeholder(display_name)
     
     stream.active_viewers += 1
     try:
@@ -117,13 +190,14 @@ def mjpeg_raw_generator(camera_id: str, company_id: str):
         stream.active_viewers = max(0, stream.active_viewers - 1)
         logger.info(f"Client stopped viewing raw stream: {camera_id}")
 
-def mjpeg_enroll_generator(camera_id: str):
+def mjpeg_enroll_generator(camera_id: str, camera_name: Optional[str] = None):
     logger.info(f"Client started viewing enroll stream: {camera_id}")
-    stream = get_stream_for_camera(camera_id, DEFAULT_COMPANY_ID)
+    stream = get_stream_for_camera(camera_id, DEFAULT_COMPANY_ID, camera_name=camera_name)
     
+    display_name = camera_name or getattr(stream, "camera_name", None) or "Laptop Camera"
     enroll_fps = float(os.getenv("MJPEG_STREAM_FPS_ENROLL", os.getenv("ENROLL_STREAM_FPS", "10.0")))
     gui_period = 1.0 / enroll_fps
-    placeholder_bytes = make_dark_placeholder(camera_id)
+    placeholder_bytes = make_dark_placeholder(display_name)
     
     try:
         from app.enroll2_auto.hud import draw_enroll2_auto_hud
@@ -238,6 +312,24 @@ def refresh_templates(x_company_id: Optional[str] = Header(default=None, alias="
     sync_gallery(comp_id)
     return {"ok": True, "templates": len(get_gallery_templates())}
 
+@router.get("/camera/recognition/stream/{camera_id}")
+def recognition_stream_by_id(
+    camera_id: str,
+    company_id: Optional[str] = Query(default=None, alias="companyId"),
+    x_company_id: Optional[str] = Header(default=None, alias="x-company-id")
+):
+    comp_id = company_id or x_company_id or DEFAULT_COMPANY_ID
+    return StreamingResponse(
+        mjpeg_recognition_generator(camera_id, comp_id),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            "Connection": "keep-alive"
+        }
+    )
+
 @router.get("/camera/recognition/stream/{camera_id}/{camera_name}")
 def recognition_stream(
     camera_id: str,
@@ -247,7 +339,7 @@ def recognition_stream(
 ):
     comp_id = company_id or x_company_id or DEFAULT_COMPANY_ID
     return StreamingResponse(
-        mjpeg_recognition_generator(camera_id, comp_id),
+        mjpeg_recognition_generator(camera_id, comp_id, camera_name=camera_name),
         media_type="multipart/x-mixed-replace; boundary=frame",
         headers={
             "Cache-Control": "no-cache, no-store, must-revalidate",

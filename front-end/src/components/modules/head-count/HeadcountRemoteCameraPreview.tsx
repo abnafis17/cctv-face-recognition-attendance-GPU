@@ -102,8 +102,19 @@ const HeadcountRemoteCameraPreview = memo(
                   onError={() => setStreamHasFrame(false)}
                 />
                 {!streamHasFrame ? (
-                  <div className="absolute inset-0 flex items-center justify-center text-sm text-zinc-500">
-                    Loading stream...
+                  <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-zinc-950/90 backdrop-blur-xs p-4 text-center">
+                    <div className="flex flex-col items-center justify-center gap-2.5 rounded-2xl border border-zinc-800/80 bg-zinc-900/90 px-7 py-5 shadow-2xl backdrop-blur-md max-w-[90%]">
+                      <div className="relative flex h-3.5 w-3.5 items-center justify-center">
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
+                        <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-amber-500" />
+                      </div>
+                      <div className="text-sm font-semibold tracking-wide text-zinc-100">
+                        {camera.name || "Camera Stream"}
+                      </div>
+                      <div className="text-xs font-medium text-amber-400/90">
+                        Connecting to camera stream...
+                      </div>
+                    </div>
                   </div>
                 ) : null}
               </>

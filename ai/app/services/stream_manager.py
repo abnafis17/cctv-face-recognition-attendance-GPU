@@ -18,11 +18,12 @@ def get_all_streams():
     with streams_lock:
         return list(streams.items())
 
-def get_stream_for_camera(camera_id: str, company_id: str, rtsp_url: Optional[str] = None) -> LiteCameraStream:
+def get_stream_for_camera(camera_id: str, company_id: str, rtsp_url: Optional[str] = None, camera_name: Optional[str] = None) -> LiteCameraStream:
     global streams
     
-    if not rtsp_url:
-        rtsp_url = FALLBACK_CAMERAS.get(camera_id)
+    fetched_name = camera_name
+    if not rtsp_url or not fetched_name:
+        rtsp_url_fallback = FALLBACK_CAMERAS.get(camera_id)
         try:
             url = f"{BACKEND_BASE_URL}/api/v1/cameras"
             headers = {"x-company-id": company_id}
@@ -32,20 +33,26 @@ def get_stream_for_camera(camera_id: str, company_id: str, rtsp_url: Optional[st
                 for dc in db_cameras:
                     dc_id = dc.get("id") or dc.get("camId") or ""
                     dc_url = dc.get("rtspUrl") or dc.get("url") or ""
-                    if dc_id == camera_id and dc_url:
-                        rtsp_url = dc_url
+                    dc_name = dc.get("name") or dc.get("cameraName") or ""
+                    if dc_id == camera_id:
+                        if dc_url and not rtsp_url:
+                            rtsp_url = dc_url
+                        if dc_name and not fetched_name:
+                            fetched_name = dc_name
                         break
         except Exception as e:
             logger.warning(f"Failed to query backend camera catalog: {e}. Using fallbacks.")
             
         if not rtsp_url:
-            rtsp_url = FALLBACK_CAMERAS.get("entry_cam")
+            rtsp_url = rtsp_url_fallback or FALLBACK_CAMERAS.get("entry_cam")
         
     with streams_lock:
         last_active_times[camera_id] = time.time()
         if camera_id not in streams or streams[camera_id].stopped:
-            new_stream = LiteCameraStream(camera_id, rtsp_url, company_id)
+            new_stream = LiteCameraStream(camera_id, rtsp_url, company_id, camera_name=fetched_name)
             streams[camera_id] = new_stream
+        elif fetched_name and getattr(streams[camera_id], "camera_name", "") == camera_id:
+            streams[camera_id].camera_name = fetched_name
         return streams[camera_id]
 
 def update_active_time(camera_id: str):
