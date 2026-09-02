@@ -1,5 +1,3 @@
-"use client";
-
 import React, {
   useCallback,
   useEffect,
@@ -7,17 +5,8 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Camera, Check, ChevronDown, Video } from "lucide-react";
 import { AI_HOST } from "@/config/axiosInstance";
 import { cn } from "@/lib/utils";
-import { useCameraDevices } from "@/hooks/useCameraDevices";
-import { useMjpegStream } from "@/hooks/useMjpegStream";
-import { createPeerConnection, replaceVideoTrack } from "@/lib/webrtc";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 
 interface LocalCameraProps {
   userId?: string;
@@ -31,7 +20,6 @@ interface LocalCameraProps {
 }
 
 const DEFAULT_CAMERA_ID = "cmkdpsq300000j7284bwluxh2";
-const FIRST_FRAME_DETECT_WINDOW_MS = 20000;
 
 const HeadCountCameraComponent: React.FC<LocalCameraProps> = ({
   userId,
@@ -47,20 +35,9 @@ const HeadCountCameraComponent: React.FC<LocalCameraProps> = ({
   const localStreamRef = useRef<MediaStream | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
-  const pendingIceCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
-  const imgRef = useRef<HTMLImageElement | null>(null);
 
   const [localActive, setLocalActive] = useState(false);
   const [wsError, setWsError] = useState("");
-  const [deviceMenuOpen, setDeviceMenuOpen] = useState(false);
-
-  const {
-    devices,
-    selectedDeviceId,
-    setSelectedDeviceId,
-    selectedDevice,
-    refreshDevices,
-  } = useCameraDevices();
 
   const cameraId = useMemo(() => {
     if (userId?.trim()) return userId.trim();
@@ -92,44 +69,16 @@ const HeadCountCameraComponent: React.FC<LocalCameraProps> = ({
     return `${base}/webrtc/signal`;
   }, []);
 
-  const {
-    streamSrc,
-    streamHasFrame,
-    streamRetries,
-    imgKey,
-    onFrame,
-    onError,
-    resetStream,
-  } = useMjpegStream({
-    streamUrl: recUrl,
-    enabled: localActive,
-  });
-
-  const shouldRenderStream = localActive && Boolean(streamSrc);
-
   const stopLocalCamera = useCallback(() => {
     setWsError("");
 
     const stream =
       localStreamRef.current ||
       (localVideoRef.current?.srcObject as MediaStream | null);
-    if (stream) {
-      stream.getTracks().forEach((t) => t.stop());
-    }
+    if (stream) stream.getTracks().forEach((t) => t.stop());
 
     localStreamRef.current = null;
-    if (localVideoRef.current) {
-      localVideoRef.current.srcObject = null;
-      try {
-        localVideoRef.current.load();
-      } catch {}
-    }
-
-    if (imgRef.current) {
-      try {
-        imgRef.current.src = "about:blank";
-      } catch {}
-    }
+    if (localVideoRef.current) localVideoRef.current.srcObject = null;
 
     try {
       pcRef.current?.close();
@@ -141,11 +90,9 @@ const HeadCountCameraComponent: React.FC<LocalCameraProps> = ({
 
     pcRef.current = null;
     wsRef.current = null;
-    pendingIceCandidatesRef.current = [];
 
-    resetStream();
     setLocalActive(false);
-  }, [resetStream]);
+  }, []);
 
   useEffect(() => {
     onActiveChange?.(localActive);
@@ -165,80 +112,40 @@ const HeadCountCameraComponent: React.FC<LocalCameraProps> = ({
     prevKeyRef.current = key;
   }, [cameraId, companyId, streamType, localActive, stopLocalCamera]);
 
-  useEffect(() => {
-    if (!shouldRenderStream) return;
-
-    let raf = 0;
-    const deadline = window.performance.now() + FIRST_FRAME_DETECT_WINDOW_MS;
-
-    const check = () => {
-      const img = imgRef.current;
-      if (img && img.naturalWidth > 0 && img.naturalHeight > 0) {
-        onFrame();
-        return;
-      }
-      if (window.performance.now() < deadline) {
-        raf = window.requestAnimationFrame(check);
-      }
-    };
-
-    raf = window.requestAnimationFrame(check);
-    return () => window.cancelAnimationFrame(raf);
-  }, [imgKey, onFrame, shouldRenderStream]);
-
-  const startLocalCamera = async (targetDeviceId?: string) => {
-    const deviceIdToUse = targetDeviceId ?? selectedDeviceId;
-
+  const startLocalCamera = async () => {
     try {
       setWsError("");
-      resetStream();
 
-      if (localActive) {
-        stopLocalCamera();
-      }
+      if (localActive) stopLocalCamera();
 
-      let stream: MediaStream;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia(
-          deviceIdToUse
-            ? {
-                video: {
-                  deviceId: { exact: deviceIdToUse },
-                  width: { ideal: 640, max: 1280 },
-                  height: { ideal: 480, max: 720 },
-                },
-                audio: false,
-              }
-            : {
-                video: {
-                  width: { ideal: 640, max: 1280 },
-                  height: { ideal: 480, max: 720 },
-                },
-                audio: false,
-              },
-        );
-      } catch {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            width: { ideal: 640, max: 1280 },
-            height: { ideal: 480, max: 720 },
-          },
-          audio: false,
-        });
-      }
-
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: 640, height: 480 },
+        audio: false,
+      });
       localStreamRef.current = stream;
-      void refreshDevices();
 
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
         localVideoRef.current.muted = true;
-        await localVideoRef.current.play().catch(() => {});
+        await localVideoRef.current.play();
       }
 
-      const pc = createPeerConnection();
+      const pc = new RTCPeerConnection({
+        iceServers: [
+          { urls: "stun:stun.l.google.com:19302" },
+          {
+            urls: "turn:10.81.100.128:3478?transport=udp",
+            username: "testuser",
+            credential: "testpass",
+          },
+          {
+            urls: "turn:10.81.100.128:3478?transport=tcp",
+            username: "testuser",
+            credential: "testpass",
+          },
+        ],
+      });
       pcRef.current = pc;
-      pendingIceCandidatesRef.current = [];
 
       stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
@@ -253,58 +160,27 @@ const HeadCountCameraComponent: React.FC<LocalCameraProps> = ({
         if (pcRef.current) setWsError("WebSocket connection closed");
       };
 
-      pc.onconnectionstatechange = () => {
-        const state = pc.connectionState;
-        if (
-          state === "failed" ||
-          state === "disconnected" ||
-          state === "closed"
-        ) {
-          stopLocalCamera();
-        }
-      };
-
       ws.onopen = async () => {
-        try {
-          const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
 
-          ws.send(
-            JSON.stringify({
-              sdp: pc.localDescription,
-              cameraId,
-              companyId,
-              type: streamType,
-            }),
-          );
-        } catch (err) {
-          console.error("Offer creation failed:", err);
-          stopLocalCamera();
-        }
+        ws.send(
+          JSON.stringify({
+            sdp: pc.localDescription,
+            cameraId,
+            companyId,
+            type: streamType,
+          }),
+        );
       };
 
       ws.onmessage = async (event) => {
-        try {
-          const data = JSON.parse(event.data);
+        const data = JSON.parse(event.data);
 
-          if (data.sdp && data.cameraId === cameraId) {
-            await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
-
-            while (pendingIceCandidatesRef.current.length > 0) {
-              const cand = pendingIceCandidatesRef.current.shift();
-              if (cand) {
-                await pc.addIceCandidate(cand).catch(() => {});
-              }
-            }
-          } else if (data.ice && data.cameraId === cameraId) {
-            if (pc.remoteDescription) {
-              await pc.addIceCandidate(data.ice).catch(() => {});
-            } else {
-              pendingIceCandidatesRef.current.push(data.ice);
-            }
-          }
-        } catch (err) {
-          console.error("Headcount WebRTC message error:", err);
+        if (data.sdp && data.cameraId === cameraId) {
+          await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+        } else if (data.ice && data.cameraId === cameraId) {
+          await pc.addIceCandidate(data.ice);
         }
       };
 
@@ -329,53 +205,6 @@ const HeadCountCameraComponent: React.FC<LocalCameraProps> = ({
     }
   };
 
-  const handleDeviceChange = async (newDeviceId: string) => {
-    setSelectedDeviceId(newDeviceId);
-
-    if (!localActive) return;
-
-    try {
-      let newStream: MediaStream;
-      try {
-        newStream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            deviceId: { exact: newDeviceId },
-            width: { ideal: 640, max: 1280 },
-            height: { ideal: 480, max: 720 },
-          },
-          audio: false,
-        });
-      } catch {
-        newStream = await navigator.mediaDevices.getUserMedia({
-          video: true,
-          audio: false,
-        });
-      }
-
-      const newTrack = newStream.getVideoTracks()[0];
-      if (!newTrack) return;
-
-      const replaced = await replaceVideoTrack(pcRef.current, newTrack);
-
-      if (replaced) {
-        if (localStreamRef.current) {
-          localStreamRef.current.getTracks().forEach((t) => t.stop());
-        }
-        localStreamRef.current = newStream;
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = newStream;
-          await localVideoRef.current.play().catch(() => {});
-        }
-      } else {
-        await startLocalCamera(newDeviceId);
-      }
-    } catch (err) {
-      console.error("Device switch failed:", err);
-    }
-  };
-
-  const activeDeviceLabel = selectedDevice?.label || "Default Camera";
-
   return (
     <article
       className={cn(
@@ -393,67 +222,16 @@ const HeadCountCameraComponent: React.FC<LocalCameraProps> = ({
       />
 
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0">
           <div className="truncate text-sm font-semibold text-zinc-900">
             {displayName}
           </div>
-          <div className="flex items-center gap-1.5 text-xs text-zinc-500 mt-0.5">
-            {devices.length > 1 ? (
-              <Popover open={deviceMenuOpen} onOpenChange={setDeviceMenuOpen}>
-                <PopoverTrigger asChild>
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-1 text-[11px] font-medium text-purple-700 hover:text-purple-900 bg-purple-50 px-2 py-0.5 rounded border border-purple-200 max-w-[200px]"
-                    title="Switch camera device"
-                  >
-                    <Camera className="h-3 w-3 shrink-0" />
-                    <span className="truncate">{activeDeviceLabel}</span>
-                    <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent align="start" className="w-56 p-1.5 shadow-lg">
-                  <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-400 border-b border-zinc-100 mb-1">
-                    Select Camera Device
-                  </div>
-                  <div className="max-h-48 overflow-y-auto space-y-0.5">
-                    {devices.map((device) => {
-                      const isSelected = device.deviceId === selectedDeviceId;
-                      return (
-                        <button
-                          key={device.deviceId}
-                          type="button"
-                          onClick={() => {
-                            setDeviceMenuOpen(false);
-                            void handleDeviceChange(device.deviceId);
-                          }}
-                          className={cn(
-                            "flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs transition",
-                            isSelected
-                              ? "bg-purple-50 font-semibold text-purple-800"
-                              : "text-zinc-700 hover:bg-zinc-100",
-                          )}
-                        >
-                          <span className="truncate pr-2">{device.label}</span>
-                          {isSelected && (
-                            <Check className="h-3.5 w-3.5 shrink-0 text-purple-600" />
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </PopoverContent>
-              </Popover>
-            ) : (
-              <span>WebRTC + Recognition</span>
-            )}
-          </div>
+          <div className="text-xs text-zinc-500">WebRTC + Recognition</div>
         </div>
 
         <button
           type="button"
-          onClick={
-            localActive ? stopLocalCamera : () => void startLocalCamera()
-          }
+          onClick={localActive ? stopLocalCamera : startLocalCamera}
           className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition ${
             localActive
               ? "border-red-300 bg-red-50 text-red-700 hover:bg-red-100"
@@ -479,40 +257,18 @@ const HeadCountCameraComponent: React.FC<LocalCameraProps> = ({
                 : "aspect-video"),
           )}
         >
-          {shouldRenderStream ? (
-            <>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                key={imgKey}
-                ref={imgRef}
-                src={streamSrc}
-                alt="Recognition stream"
-                className={cn(
-                  "h-full w-full object-cover transition-opacity duration-150",
-                  streamHasFrame ? "opacity-100" : "opacity-0",
-                )}
-                width={1280}
-                height={720}
-                onLoad={onFrame}
-                onError={onError}
-              />
-              {!streamHasFrame ? (
-                <div className="absolute inset-0 flex items-center justify-center text-sm text-zinc-400">
-                  {streamRetries > 0
-                    ? "Reconnecting stream..."
-                    : "Connecting recognition stream..."}
-                </div>
-              ) : null}
-            </>
+          {localActive ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={recUrl}
+              alt="Recognition stream"
+              className="h-full w-full object-cover"
+              width={1280}
+              height={720}
+            />
           ) : (
-            <div className="flex h-full w-full flex-col items-center justify-center gap-2 p-4 text-center text-sm text-zinc-400">
-              <Video className="h-7 w-7 text-zinc-500" />
-              <span>Start camera to view recognition overlay</span>
-              {devices.length > 0 ? (
-                <span className="text-[11px] text-zinc-500">
-                  Selected: {activeDeviceLabel}
-                </span>
-              ) : null}
+            <div className="flex h-full w-full items-center justify-center text-sm text-zinc-300">
+              Start camera to view recognition overlay
             </div>
           )}
         </div>
@@ -521,9 +277,7 @@ const HeadCountCameraComponent: React.FC<LocalCameraProps> = ({
           {localActive ? "LIVE" : "OFFLINE"}
         </div>
 
-        {streamHasFrame ? (
-          <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(transparent_0,rgba(255,255,255,0.05)_50%,transparent_100%)] bg-[length:100%_6px] opacity-20" />
-        ) : null}
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(transparent_0,rgba(255,255,255,0.05)_50%,transparent_100%)] bg-[length:100%_6px] opacity-20" />
       </div>
 
       {wsError ? (

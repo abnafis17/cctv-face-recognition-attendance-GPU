@@ -16,6 +16,8 @@ import unknownRecognitionRoutes from "./unknownRecognition/router";
 import gatepassRoutes from "./gatepass/router";
 import visitorRoutes from "./visitors/router";
 import masterDataRoutes from "./masterData/router";
+import headcountRoutes from "./headcount/router";
+import presenceControl from "./presence/router";
 
 import { updateGatepassErpStatus } from "./gatepass/controller";
 
@@ -34,6 +36,7 @@ router.use("/auth", authRouter);
 router.use("/employees", requireCompany, employeesRoutes);
 router.use("/gallery", requireCompany, galleryRoutes);
 router.use("/attendance", requireCompany, attendanceRoutes);
+router.use("/headcount", requireCompany, headcountRoutes);
 router.use("/stats", requireCompany, statsRoutes);
 
 // cameras
@@ -42,6 +45,7 @@ router.use("/cameras", requireCompany, cameraControl);
 
 // controls
 router.use("/attendance-control", requireCompany, attendanceControl);
+router.use("/presence-control", requireCompany, presenceControl);
 
 // enroll2 auto routes
 router.use("/enroll2-auto", requireCompany, enroll2AutoRoutes);

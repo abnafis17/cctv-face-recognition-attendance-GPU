@@ -44,6 +44,9 @@ function getIconForRoute(route: string | null | undefined, label: string) {
   if (route === "/enroll") return LucideIcons.ScanFace;
   if (route === "/employees") return LucideIcons.Users;
   if (route === "/daily-attendance") return LucideIcons.CalendarClock;
+  if (route === "/headcount") return LucideIcons.Activity;
+  if (route === "/presence") return LucideIcons.Video;
+  if (route === "/bounding-box") return LucideIcons.Activity;
   if (route === "/attendance") return LucideIcons.History;
   if (route === "/unknown-recognition") return LucideIcons.UserX;
   if (route === "/gatepass") return LucideIcons.ScanFace;
@@ -84,6 +87,9 @@ const staticNav: NavItem[] = [
   { href: "/enroll", label: "Enrollment (Auto)", icon: ScanFace },
   { href: "/employees", label: "Employees", icon: Users },
   { href: "/daily-attendance", label: "Daily Attendance", icon: CalendarClock },
+  { href: "/headcount", label: "Headcount (Realtime)", icon: Activity },
+  { href: "/presence", label: "Presence Monitor", icon: Video },
+  { href: "/bounding-box", label: "Bounding Box Config", icon: Activity },
   { href: "/attendance", label: "Recognition History", icon: History },
   { href: "/unknown-recognition", label: "Unknown History", icon: UserX },
   {

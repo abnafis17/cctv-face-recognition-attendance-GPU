@@ -342,6 +342,28 @@ export async function bootstrap() {
       }
     }
 
+    // Ensure Headcount, Presence, and Bounding Box modules exist
+    const additionalModules = [
+      { name: "Headcount (Realtime)", route: "/headcount", sortOrder: 55 },
+      { name: "Presence Monitor", route: "/presence", sortOrder: 56 },
+      { name: "Bounding Box Config", route: "/bounding-box", sortOrder: 57 }
+    ];
+    for (const mod of additionalModules) {
+      const existing = await prisma.module.findFirst({
+        where: { route: mod.route }
+      });
+      if (!existing) {
+        await prisma.module.create({
+          data: {
+            name: mod.name,
+            route: mod.route,
+            sortOrder: mod.sortOrder
+          }
+        });
+        console.log(`✅ Seeded missing system module: ${mod.name}`);
+      }
+    }
+
     // Ensure Visitor action submodules exist (Delete)
     const visitorsModule = await prisma.module.findFirst({
       where: { route: "/visitors" }
