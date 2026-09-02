@@ -630,13 +630,18 @@ class LiteCameraStream:
         if not emp_key or name_str == "Unknown" or float(score or 0.0) < SIMILARITY_THRESHOLD:
             return
             
-        cooldown_key = f"{self.company_id}:{emp_key}"
-        cooldown_duration = max(30.0, float(ATTENDANCE_COOLDOWN_S))
-        with GLOBAL_ATTENDANCE_LOCK:
-            last_logged = GLOBAL_ATTENDANCE_COOLDOWNS.get(cooldown_key, 0.0)
-            if now - last_logged < cooldown_duration:
-                return
-            GLOBAL_ATTENDANCE_COOLDOWNS[cooldown_key] = now
+        stream_type = str(getattr(self, "stream_type", "attendance") or "attendance").lower()
+
+        # The 30s cooldown rule ONLY applies to standard attendance mode (Attendance & Recognition History).
+        # For headcount and OT requisition modes, NO 30s rule applies — data entry is INSTANT zero-latency!
+        if stream_type not in ("headcount", "ot", "ot_requisition", "ot-requisition", "otrequisition"):
+            cooldown_key = f"{self.company_id}:{emp_key}"
+            cooldown_duration = max(30.0, float(ATTENDANCE_COOLDOWN_S))
+            with GLOBAL_ATTENDANCE_LOCK:
+                last_logged = GLOBAL_ATTENDANCE_COOLDOWNS.get(cooldown_key, 0.0)
+                if now - last_logged < cooldown_duration:
+                    return
+                GLOBAL_ATTENDANCE_COOLDOWNS[cooldown_key] = now
             
         threading.Thread(
             target=self._submit_attendance_api,
