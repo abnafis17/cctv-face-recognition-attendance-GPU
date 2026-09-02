@@ -16,7 +16,7 @@ def init_models():
             return
         logger.info("Initializing Face Detection & Embedding models on GPU...")
         from app.vision.insightface_models import FaceDetector, FaceEmbedder
-        model_name = os.getenv("INSIGHTFACE_MODEL", "buffalo_m")
+        model_name = os.getenv("INSIGHTFACE_MODEL", "buffalo_l")
         detector = FaceDetector(model_name=model_name, use_gpu=True)
         embedder = FaceEmbedder(model_name=model_name, use_gpu=True)
         if BODY_PERSISTENCE_ENABLED:
@@ -54,7 +54,7 @@ def get_enroller2_auto(camera_rt_compat):
         logger.info("Lazy-loading Auto-Enrollment Service on GPU...")
         enroller2_auto_inst = EnrollmentAutoService2(
             camera_rt=camera_rt_compat, 
-            model_name=os.getenv("INSIGHTFACE_MODEL", "buffalo_m"), 
+            model_name=os.getenv("INSIGHTFACE_MODEL", "buffalo_l"), 
             min_face_size=30
         )
     return enroller2_auto_inst
