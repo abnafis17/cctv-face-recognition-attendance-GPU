@@ -418,7 +418,22 @@ class LiteCameraStream:
                 top2_score = emp_scores[1][0] if len(emp_scores) > 1 else 0.0
                 margin_gap = top1_score - top2_score
                 
-                is_qualified = (top1_score >= SIMILARITY_THRESHOLD and margin_gap >= 0.02)
+                last_emp = getattr(matched_track, 'last_known_emp_id', None)
+                last_ts = getattr(matched_track, 'last_known_time', 0.0)
+                is_recent_known = (now - last_ts < 3.0) and last_emp is not None
+
+                # Anti-Flip Guard for tight edge angles:
+                # If track was recently verified as Person A, do not flip to Person B on an ambiguous low-margin edge angle frame.
+                if is_recent_known and best_emp_id != last_emp and top1_score < 0.50 and margin_gap < 0.05:
+                    last_emp_score = next((s for (s, eid, _n) in emp_scores if eid == last_emp), 0.0)
+                    if top1_score - last_emp_score < 0.05:
+                        best_emp_id = last_emp
+                        best_name = getattr(matched_track, 'last_known_name', best_name)
+                        top1_score = max(top1_score, last_emp_score)
+                        margin_gap = 0.05
+
+                req_margin = 0.02 if is_recent_known else 0.035
+                is_qualified = (top1_score >= SIMILARITY_THRESHOLD and margin_gap >= req_margin)
                 
                 if is_qualified:
                     matched_track.name = best_name
