@@ -15,7 +15,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import axiosInstance, { API } from "@/config/axiosInstance";
+import axiosInstance from "@/config/axiosInstance";
+import { API } from "@/constant/API_PATH";
 import toast from "react-hot-toast";
 
 const visitorTypes = ["All Types", "Guest", "Contractor", "Official", "Interviewee", "Other"];
@@ -156,7 +157,7 @@ export default function VisitorsPage() {
 
       const toastId = toast.loading("Deleting visitor & face template...");
       try {
-        const response = await axiosInstance.delete(`/visitors/${id}`);
+        const response = await axiosInstance.delete(`${API.VISITORS}/${id}`);
         if (response.data?.ok) {
           toast.success("Visitor & corresponding face template deleted successfully!", {
             id: toastId,

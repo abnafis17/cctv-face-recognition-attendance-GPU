@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import axiosInstance from "@/config/axiosInstance";
+import { API } from "@/constant/API_PATH";
 import toast from "react-hot-toast";
 import type {
   GatepassRecord,
@@ -208,7 +209,7 @@ export default function GatepassHistoryLogPage() {
   const fetchLeaveTypes = useCallback(async () => {
     try {
       const response =
-        await axiosInstance.get<GatepassLeaveTypeOption[]>("/gatepass/types");
+        await axiosInstance.get<GatepassLeaveTypeOption[]>(API.GATEPASS_TYPES);
       const list = Array.isArray(response.data) ? response.data : [];
       setLeaveTypes(list);
     } catch (err) {
@@ -255,7 +256,7 @@ export default function GatepassHistoryLogPage() {
           params.q = debouncedSearch;
         }
 
-        const response = await axiosInstance.get<any[]>("/gatepass", {
+        const response = await axiosInstance.get<any[]>(API.GATEPASS_TABLE, {
           params,
         });
         const list = Array.isArray(response.data) ? response.data : [];

@@ -6,6 +6,7 @@ import ReusableModal from "@/components/reusable/ReusableModal";
 import type { GatepassRecord } from "@/types/gatepass-types";
 import PakizaLogo from "@/assets/images/Pakiza_Apparels.png";
 import axiosInstance from "@/config/axiosInstance";
+import { API } from "@/constant/API_PATH";
 
 interface GatepassReportModalProps {
   open: boolean;
@@ -87,7 +88,7 @@ export default function GatepassReportModal({
         try {
           setLoadingDetails(true);
           const res = await axiosInstance.get(
-            `/gatepass/${record.id}/external-details`,
+            `${API.GATEPASS_TABLE}/${record.id}/external-details`,
           );
 
           const detailRecord = extractErpDetailRecord(res.data);

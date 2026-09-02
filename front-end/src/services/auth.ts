@@ -1,16 +1,11 @@
 import axiosInstance from "@/config/axiosInstance";
+import { AUTH } from "@/constant/API_PATH";
 import {
   setTokens,
   clearAccessToken,
   getRefreshToken,
   setUser,
 } from "@/lib/authStorage";
-
-const AUTH = {
-  LOGIN: "/auth/login",
-  REGISTER: "/auth/register",
-  LOGOUT: "/auth/logout",
-};
 
 export type AuthUser = {
   id: string;

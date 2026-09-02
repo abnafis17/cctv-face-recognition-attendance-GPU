@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import axiosInstance from "@/config/axiosInstance";
+import { API } from "@/constant/API_PATH";
 
 export function useRolePermissions() {
   const [roles, setRoles] = useState<string[]>([]);
@@ -16,7 +17,7 @@ export function useRolePermissions() {
   useEffect(() => {
     async function fetchRoles() {
       try {
-        const res = await axiosInstance.get("/auth/roles");
+        const res = await axiosInstance.get(API.ROLES);
         if (res.data?.ok && Array.isArray(res.data?.results)) {
           setRoles(res.data.results);
           if (res.data.results.length > 0) {
@@ -32,7 +33,7 @@ export function useRolePermissions() {
     }
     async function fetchSystemModules() {
       try {
-        const res = await axiosInstance.get("/auth/modules");
+        const res = await axiosInstance.get(API.MODULES);
         if (res.data?.ok && Array.isArray(res.data?.results)) {
           const list: any[] = [];
           res.data.results.forEach((m: any) => {
@@ -63,7 +64,7 @@ export function useRolePermissions() {
       setLoadingPerms(true);
       try {
         const res = await axiosInstance.get(
-          `/auth/permissions?role=${encodeURIComponent(selectedRole)}`
+          `${API.PERMISSIONS}?role=${encodeURIComponent(selectedRole)}`
         );
         if (res.data?.ok && Array.isArray(res.data?.results)) {
           setPermissions(res.data.results);
@@ -87,7 +88,7 @@ export function useRolePermissions() {
   const handleSave = async () => {
     try {
       setSaving(true);
-      await axiosInstance.post("/auth/permissions", {
+      await axiosInstance.post(API.PERMISSIONS, {
         role: selectedRole,
         permissions: permissions,
       });
@@ -96,7 +97,7 @@ export function useRolePermissions() {
       const raw = localStorage.getItem("userInfo");
       const userInfo = raw ? JSON.parse(raw) : null;
       if (userInfo && userInfo.role === selectedRole) {
-        const meRes = await axiosInstance.get("/auth/me");
+        const meRes = await axiosInstance.get(API.ME);
         const nextUserInfo = {
           ...userInfo,
           ...meRes.data.results,

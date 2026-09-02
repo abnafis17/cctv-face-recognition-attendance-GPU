@@ -60,7 +60,8 @@ import {
 import toast from "react-hot-toast";
 import { useErpEmployees } from "@/hooks/useErpEmployees";
 import { SearchableSelect } from "@/components/reusable/SearchableSelect";
-import axiosInstance, { API } from "@/config/axiosInstance";
+import axiosInstance from "@/config/axiosInstance";
+import { API } from "@/constant/API_PATH";
 import Webcam from "react-webcam";
 import { VirtualKeyboard } from "@/components/reusable/VirtualKeyboard";
 
@@ -520,7 +521,7 @@ export default function AddVisitorPage() {
 
     const toastId = toast.loading("Searching for visitor/employee record...");
     try {
-      const response = await axiosInstance.get(`/visitors/lookup`, {
+      const response = await axiosInstance.get(API.VISITORS_LOOKUP, {
         params: { phone: queryVal, isEmployee: isLookupEmployee },
       });
 
@@ -595,7 +596,7 @@ export default function AddVisitorPage() {
       formData.append("visitorPhoto", file);
 
       const res = await axiosInstance.post(
-        "/visitors/recognize-face",
+        API.VISITORS_RECOGNIZE_FACE,
         formData,
         {
           headers: {
@@ -658,7 +659,7 @@ export default function AddVisitorPage() {
         formData.append("faceEmbedding", JSON.stringify(capturedEmbedding));
       }
 
-      const response = await axiosInstance.post("/visitors", formData, {
+      const response = await axiosInstance.post(API.VISITORS, formData, {
         headers: {
           "Content-Type": "multipart/form-data",
         },

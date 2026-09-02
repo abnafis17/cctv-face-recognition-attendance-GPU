@@ -11,6 +11,7 @@ import { HeaderProvider } from "@/components/layout/HeaderContext";
 import AppHeader from "@/components/layout/AppHeader";
 import { getLandingRoute } from "@/lib/authStorage";
 import axiosInstance from "@/config/axiosInstance";
+import { API } from "@/constant/API_PATH";
 
 function getModuleKeyForPath(pathname: string): string | null {
   if (pathname.startsWith("/cameras")) return "/cameras";
@@ -77,7 +78,7 @@ export default function ProtectedShell({
 
     async function syncProfile() {
       try {
-        const res = await axiosInstance.get("/auth/me");
+        const res = await axiosInstance.get(API.ME);
         if (cancelled) return;
 
         if (res.data?.ok && res.data?.results) {

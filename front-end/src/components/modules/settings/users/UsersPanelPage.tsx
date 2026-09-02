@@ -18,6 +18,7 @@ import {
 import toast from "react-hot-toast";
 
 import axiosInstance from "@/config/axiosInstance";
+import { API } from "@/constant/API_PATH";
 import { TanstackDataTable } from "@/components/reusable/TanstackDataTable";
 import Pagination from "@/components/reusable/Pagination";
 import ReusableModal from "@/components/reusable/ReusableModal";
@@ -61,7 +62,7 @@ export default function UsersPanelPage() {
   useEffect(() => {
     async function fetchRoles() {
       try {
-        const res = await axiosInstance.get("/auth/roles");
+        const res = await axiosInstance.get(API.ROLES);
         if (res.data?.ok && Array.isArray(res.data?.results)) {
           setRoles(res.data.results);
         }
@@ -96,7 +97,7 @@ export default function UsersPanelPage() {
   const fetchUsers = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await axiosInstance.get("/settings/users");
+      const res = await axiosInstance.get(API.SETTINGS_USERS);
       if (res.data?.ok && Array.isArray(res.data?.results)) {
         setUsers(res.data.results);
       }
@@ -144,7 +145,7 @@ export default function UsersPanelPage() {
 
     try {
       setSubmitting(true);
-      const res = await axiosInstance.post("/settings/users", {
+      const res = await axiosInstance.post(API.SETTINGS_USERS, {
         name: formName,
         email: formEmail,
         password: formPassword,
@@ -204,7 +205,7 @@ export default function UsersPanelPage() {
       }
 
       const res = await axiosInstance.patch(
-        `/settings/users/${selectedUser.id}`,
+        `${API.SETTINGS_USERS}/${selectedUser.id}`,
         payload,
       );
 
@@ -251,7 +252,7 @@ export default function UsersPanelPage() {
     try {
       setLoading(true);
       const res = await axiosInstance.delete(
-        `/settings/users/${selectedUser.id}`,
+        `${API.SETTINGS_USERS}/${selectedUser.id}`,
       );
       if (res.data?.ok) {
         toast.success("User deleted successfully!");

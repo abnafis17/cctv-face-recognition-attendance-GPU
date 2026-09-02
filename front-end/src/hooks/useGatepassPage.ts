@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 
-import axiosInstance, { AI_HOST, API } from "@/config/axiosInstance";
+import axiosInstance, { AI_HOST } from "@/config/axiosInstance";
+import { API } from "@/constant/API_PATH";
 import { useAttendanceEvents } from "@/hooks/useAttendanceEvents";
 import { getCompanyIdFromToken } from "@/lib/authStorage";
 import {
@@ -819,7 +820,7 @@ export function useGatepassPage() {
     if (!normalized) return;
 
     try {
-      await axiosInstance.post("/attendance-control/disable", {
+      await axiosInstance.post(API.ATTENDANCE_CONTROL_DISABLE, {
         cameraId: normalized,
       });
     } catch {
@@ -827,7 +828,7 @@ export function useGatepassPage() {
     }
 
     try {
-      await axiosInstance.post(`/cameras/stop/${normalized}`);
+      await axiosInstance.post(`${API.CAMERAS_STOP}/${normalized}`);
     } catch {
       // best effort
     }
@@ -1291,8 +1292,8 @@ export function useGatepassPage() {
         stopLocalGatepassCamera(targetId);
       } else {
         await stopRecognitionCameraApi(targetId);
-        await axiosInstance.post(`/cameras/start/${targetId}`);
-        await axiosInstance.post("/attendance-control/enable", {
+        await axiosInstance.post(`${API.CAMERAS_START}/${targetId}`);
+        await axiosInstance.post(API.ATTENDANCE_CONTROL_ENABLE, {
           cameraId: targetId,
         });
       }

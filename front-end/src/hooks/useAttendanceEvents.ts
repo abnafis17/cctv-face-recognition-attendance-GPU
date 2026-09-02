@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import axiosInstance, { API } from "@/config/axiosInstance";
+import axiosInstance from "@/config/axiosInstance";
+import { API } from "@/constant/API_PATH";
 
 type AttendanceEvent = {
   seq?: number;
@@ -56,7 +57,7 @@ export function useAttendanceEvents(options: UseAttendanceEventsOptions = {}) {
 
     async function syncLatest() {
       try {
-        const resp = await axiosInstance.get((API as any).ATTENDANCE_EVENTS || "/attendance/events", {
+        const resp = await axiosInstance.get(API.ATTENDANCE_EVENTS, {
           params: { afterSeq: 0, limit: 1, waitMs: 0 },
         });
         const latest = Number(resp?.data?.latest_seq || 0) || 0;
@@ -75,7 +76,7 @@ export function useAttendanceEvents(options: UseAttendanceEventsOptions = {}) {
         inFlightRef.current = true;
 
         try {
-          const resp = await axiosInstance.get((API as any).ATTENDANCE_EVENTS || "/attendance/events", {
+          const resp = await axiosInstance.get(API.ATTENDANCE_EVENTS, {
             params: { afterSeq: seqRef.current, limit, waitMs },
           });
           if (cancelled) return;

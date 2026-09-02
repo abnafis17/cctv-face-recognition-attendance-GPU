@@ -2,6 +2,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "@/components/ui/badge";
 import { User, LogOut, Trash2 } from "lucide-react";
 import React, { useState } from "react";
+import { API } from "@/constant/API_PATH";
 
 function SafeImage({
   src,
@@ -374,7 +375,7 @@ export function getVisitorColumns(
       cell: ({ row }) => {
         const isCheckingOut = checkingOutIds.has(row.original.id) || (deletingIds && deletingIds.has(row.original.id));
         const isCheckedIn = row.original.status !== "checked_out";
-        const showDelete = permissions ? permissions["/visitors/delete"] !== false : true;
+        const showDelete = permissions ? permissions[API.VISITORS_DELETE] !== false : true;
 
         if (!isCheckedIn && !showDelete) {
           return renderCell(

@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import axios from "axios";
 import axiosInstance, { erpAxios } from "@/config/axiosInstance";
+import { API } from "@/constant/API_PATH";
 
 function isHttpUrl(value: unknown): boolean {
   const text = String(value ?? "").trim().toLowerCase();
@@ -75,7 +76,7 @@ export function useErpDepartments() {
       let resolvedEmployeeUrl: string | null = null;
 
       try {
-        const erpSettingsRes = await axiosInstance.get<any[]>("/settings/erp", {
+        const erpSettingsRes = await axiosInstance.get<any[]>(API.SETTINGS_ERP, {
           params: { all: true },
           signal: abortRef.current.signal,
         });
