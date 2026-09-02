@@ -60,7 +60,7 @@ export function useHeadcountPage() {
   const [laptopActive, setLaptopActive] = useState(false);
 
   const [dateStr, setDateStr] = useState(dhakaTodayYYYYMMDD());
-  const [headcountType, setHeadcountType] = useState<HeadcountType>("");
+  const [headcountType, setHeadcountType] = useState<HeadcountType>("headcount");
   const [hcRows, setHcRows] = useState<HeadcountCrosscheckRow[]>([]);
   const [otRows, setOtRows] = useState<HeadcountOtRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -289,7 +289,13 @@ export function useHeadcountPage() {
         const response = await axiosInstance.get(API.HEADCOUNT_LIST, {
           params,
         });
-        const data = Array.isArray(response?.data) ? response.data : [];
+        const data = Array.isArray(response?.data)
+          ? response.data
+          : Array.isArray(response?.data?.records)
+          ? response.data.records
+          : Array.isArray(response?.data?.data)
+          ? response.data.data
+          : [];
 
         if (headcountType === "headcount") {
           setOtRows([]);

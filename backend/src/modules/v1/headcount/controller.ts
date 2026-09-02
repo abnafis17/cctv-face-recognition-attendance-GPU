@@ -175,6 +175,15 @@ export async function listHeadcount(req: Request, res: Response) {
     if (selectedSection) employeeFilter.section = selectedSection;
     if (selectedUnit) employeeFilter.unit = selectedUnit;
 
+    const q = String(req.query.q ?? req.query.search ?? "").trim();
+    if (q) {
+      employeeFilter.OR = [
+        { name: { contains: q, mode: "insensitive" } },
+        { empId: { contains: q, mode: "insensitive" } },
+        { id: { contains: q, mode: "insensitive" } },
+      ];
+    }
+
     const [allCompanyEmployees, attRecords, headcountRecords, otRecords] =
       await Promise.all([
         prisma.employee.findMany({
@@ -303,7 +312,7 @@ export async function listHeadcount(req: Request, res: Response) {
       const headcountLastSeen = hc ? hc.lastSeen : null;
 
       let status: HeadcountStatus = "ABSENT";
-      if (inTime && headcountCount > 0) {
+      if (headcountCount > 0) {
         status = "MATCH";
       } else if (inTime && headcountCount === 0) {
         status = "UNMATCH";
@@ -311,6 +320,7 @@ export async function listHeadcount(req: Request, res: Response) {
 
       return {
         id: emp.id,
+        employeeId: emp.empId ?? emp.id,
         empId: emp.empId ?? emp.id,
         name: emp.name,
         department: emp.department ?? "N/A",
@@ -330,14 +340,12 @@ export async function listHeadcount(req: Request, res: Response) {
       };
     });
 
-    return res.json({
-      date: dateStr,
-      totalEmployees: allCompanyEmployees.length,
-      matchedCount: rows.filter((r) => r.status === "MATCH").length,
-      unmatchedCount: rows.filter((r) => r.status === "UNMATCH").length,
-      absentCount: rows.filter((r) => r.status === "ABSENT").length,
-      records: rows,
-    });
+    const statusFilter = String(req.query.status ?? "").trim().toUpperCase();
+    const filteredRows = (statusFilter && statusFilter !== "ALL")
+      ? rows.filter((r) => r.status === statusFilter)
+      : rows;
+
+    return res.json(filteredRows);
   } catch (err: any) {
     console.error("listHeadcount error:", err);
     return res.status(500).json({ error: "Failed to load headcount records" });
