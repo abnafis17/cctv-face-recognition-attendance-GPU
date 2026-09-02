@@ -134,6 +134,15 @@ export async function createAttendance(req: Request, res: Response) {
         },
       });
 
+      pushHeadcountEvent(companyId, {
+        at: new Date().toISOString(),
+        headcountId: row.id,
+        employeeId: employeePublicId(employee),
+        timestamp: row.timestamp.toISOString(),
+        cameraId: cam ? cam.camId || cam.id : normalizedCameraId,
+        status: "OT",
+      });
+
       return res.json({
         ok: true,
         otRequisition: {

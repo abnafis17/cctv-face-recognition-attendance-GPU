@@ -233,6 +233,7 @@ export async function listHeadcount(req: Request, res: Response) {
             employeeId: true,
             notes: true,
             timestamp: true,
+            camera: { select: { id: true, name: true } },
           },
           take: 50000,
         }),
@@ -279,6 +280,38 @@ export async function listHeadcount(req: Request, res: Response) {
           existing.firstSeen = fs;
         }
       }
+    }
+
+    const viewMode = String(req.query.view ?? req.query.type ?? "").trim().toLowerCase();
+    if (viewMode === "ot" || viewMode === "ot-requisition" || viewMode === "ot_requisition") {
+      const otDetailMap = new Map<string, { timestamp: Date; cameraName: string | null }>();
+      for (const ot of otRecords) {
+        if (ot.employeeId) {
+          const camName = (ot as any).camera?.name ?? null;
+          otDetailMap.set(ot.employeeId, { timestamp: ot.timestamp, cameraName: camName });
+        }
+      }
+
+      const otRows = allCompanyEmployees.map((emp) => {
+        const ot = otDetailMap.get(emp.id);
+        return {
+          id: emp.id,
+          employeeId: emp.empId ?? emp.id,
+          empId: emp.empId ?? emp.id,
+          name: emp.name,
+          department: emp.department ?? "N/A",
+          line: emp.line ?? "N/A",
+          section: emp.section ?? "N/A",
+          unit: emp.unit ?? "N/A",
+          cameraName: ot?.cameraName ?? null,
+          headcountCameraName: ot?.cameraName ?? null,
+          headcountTime: toISOStringOrNull(ot?.timestamp ?? null),
+          headcountLastEntryTime: toISOStringOrNull(ot?.timestamp ?? null),
+          timestamp: toISOStringOrNull(ot?.timestamp ?? null),
+        };
+      });
+
+      return res.json(otRows);
     }
 
     const otMap = new Map<string, { hours: number; approved: boolean; status: string }>();
