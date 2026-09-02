@@ -138,88 +138,18 @@ def draw_enroll2_auto_hud(
 
     Signature unchanged from your original:
       (frame_bgr, roi, primary_bbox, hud) -> frame_bgr
-
-    `hud` should include (typical from overlay_state()):
-      - step / instruction / status / message / last_pose / last_quality
-      - collected (stringified dict or "front=3,left=0,...")
-      - target_per_pose (optional)
-      - overlay_roi_faces / overlay_multi_in_roi (optional)
     """
     img = frame_bgr.copy()
-    h, w = img.shape[:2]
     x0, y0, x1, y1 = roi
-
-    # Colors
-    accent = _status_color(hud)
 
     # ROI guide
     ROI_YELLOW = (0, 255, 255)  # BGR yellow
     cv2.rectangle(img, (x0, y0), (x1, y1), ROI_YELLOW, 2)
-    _put_text_shadow(
-        img,
-        "ENROLL AUTO: keep face inside box",
-        (x0, max(26, y0 - 10)),
-        scale=0.7,
-        color=ROI_YELLOW,
-        thick=2,
-        font=cv2.FONT_HERSHEY_DUPLEX,
-    )
 
     # Primary bbox
     if primary_bbox is not None:
         px1, py1, px2, py2 = primary_bbox
         FACE_BLUE = (255, 0, 0)  # BGR blue
-        cv2.rectangle(img, (px1, py1), (px2, py2), FACE_BLUE, 3)
-
-    # -------- Top banner pill --------
-    step = hud.get("step") or hud.get("required") or ""
-    instruction = hud.get("instruction") or ""
-    status = hud.get("status") or ""
-    msg = hud.get("message") or hud.get("msg") or hud.get("last_message") or ""
-
-    banner_text = f"{status.upper() if status else 'ENROLL'}  •  {step.upper() if step else ''}  {('— ' + instruction) if instruction else ''}"
-    bx1, by1 = 12, 12
-    bx2, by2 = min(w - 12, 12 + 980), 58
-    _rounded_rect(img, bx1, by1, bx2, by2, radius=14, color=(0, 0, 0), alpha=0.35)
-    _rounded_rect(img, bx1, by1, bx2, by2, radius=14, color=accent, alpha=0.18)
-    _put_text_shadow(img, banner_text.strip(), (bx1 + 14, by1 + 32), scale=0.78, color=(245, 245, 245), thick=2)
-
-    # -------- Stats box --------
-    last_pose = hud.get("last_pose") or hud.get("pose") or ""
-    last_q = hud.get("last_quality") or hud.get("quality") or ""
-    roi_faces = hud.get("overlay_roi_faces") or hud.get("roi_faces") or ""
-    multi_in_roi = hud.get("overlay_multi_in_roi") or hud.get("multi_in_roi") or ""
-
-    sx1, sy1 = 12, 72
-    sx2, sy2 = 420, 176
-    _rounded_rect(img, sx1, sy1, sx2, sy2, radius=16, color=(0, 0, 0), alpha=0.35)
-
-    y = sy1 + 34
-    _put_text_shadow(img, f"Pose: {last_pose}", (sx1 + 14, y), scale=0.72, color=(245, 245, 245), thick=2)
-    y += 30
-    _put_text_shadow(img, f"Quality: {last_q}", (sx1 + 14, y), scale=0.72, color=(245, 245, 245), thick=2)
-    y += 30
-
-    # Face count hints if provided
-    if roi_faces != "":
-        _put_text_shadow(img, f"Faces in ROI: {roi_faces}", (sx1 + 14, y), scale=0.68, color=(245, 245, 245), thick=2)
-        y += 28
-    if str(multi_in_roi).lower() in ("1", "true", "yes"):
-        _put_text_shadow(img, "Multiple faces detected — show only one face", (sx1 + 14, y), scale=0.62, color=(40, 170, 255), thick=2)
-
-    # -------- Progress line (bottom of banner) --------
-    progress = _format_progress(hud)
-    if progress:
-        _rounded_rect(img, 12, 190, min(w - 12, 12 + 980), 230, radius=14, color=(0, 0, 0), alpha=0.30)
-        _put_text_shadow(img, progress, (26, 218), scale=0.62, color=(245, 245, 245), thick=2)
-
-    # -------- Message line --------
-    if msg:
-        # message box near bottom
-        mx1, my1 = 12, h - 70
-        mx2, my2 = min(w - 12, 12 + 1200), h - 16
-        _rounded_rect(img, mx1, my1, mx2, my2, radius=14, color=(0, 0, 0), alpha=0.35)
-        _rounded_rect(img, mx1, my1, mx2, my2, radius=14, color=accent, alpha=0.14)
-        _put_text_shadow(img, msg, (mx1 + 14, my1 + 36), scale=0.70, color=(245, 245, 245), thick=2)
+        cv2.rectangle(img, (px1, py1), (px2, py2), FACE_BLUE, 2)
 
     return img

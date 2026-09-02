@@ -1,10 +1,9 @@
+// src/hooks/useErpDepartments.ts
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import axios from "axios";
 import axiosInstance, { erpAxios } from "@/config/axiosInstance";
-import { API } from "@/constant/API_PATH";
-import { normalizeHierarchyValue } from "@/lib/employeeHierarchy";
 
 function isHttpUrl(value: unknown): boolean {
   const text = String(value ?? "").trim().toLowerCase();
@@ -52,60 +51,100 @@ function resolveConfiguredErpUrl(input: {
   return new URL(joinUrlPath(prefix, endpoint), `${baseUrl}/`).toString();
 }
 
+export type ErpDepartment = {
+  id: string;
+  name: string;
+};
+
 export function useErpDepartments() {
-  const [departments, setDepartments] = useState<string[]>([]);
+  const [departments, setDepartments] = useState<ErpDepartment[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>("");
+
+  const abortRef = useRef<AbortController | null>(null);
 
   const fetchDepartments = useCallback(async () => {
     setLoading(true);
     setError("");
 
+    if (abortRef.current) abortRef.current.abort();
+    abortRef.current = new AbortController();
+
     try {
       let resolvedUrl: string | null = null;
+      let resolvedEmployeeUrl: string | null = null;
+
       try {
-        const erpSettingsRes = await axiosInstance.get<any[]>(API.SETTINGS_ERP, {
+        const erpSettingsRes = await axiosInstance.get<any[]>("/settings/erp", {
           params: { all: true },
+          signal: abortRef.current.signal,
         });
         const rows = erpSettingsRes.data || [];
-        const match = rows.find((r) => {
+
+        // Try to match "department" urlType
+        const deptMatch = rows.find((r) => {
           const type = String(r.urlType || "").trim().toLowerCase();
           return (
             type === "department" ||
             type === "departments" ||
-            type === "departmentlist" ||
             type === "department_list" ||
-            type === "dept"
+            type === "departmentlist" ||
+            type === "department_info" ||
+            type === "departmentinfo"
           );
         });
-        if (match) {
-          resolvedUrl = resolveConfiguredErpUrl(match);
+
+        if (deptMatch) {
+          resolvedUrl = resolveConfiguredErpUrl(deptMatch);
+        }
+
+        // Also fetch employee match for fallback
+        const empMatch = rows.find((r) => {
+          const type = String(r.urlType || "").trim().toLowerCase();
+          return (
+            type === "employeelist" ||
+            type === "employees" ||
+            type === "employee" ||
+            type === "employee_info" ||
+            type === "employeeinfo" ||
+            type === "employee_list"
+          );
+        });
+        if (empMatch) {
+          resolvedEmployeeUrl = resolveConfiguredErpUrl(empMatch);
         }
       } catch (err) {
-        console.warn("Failed to fetch company-wise ERP department settings:", err);
+        console.warn("Failed to fetch dynamic ERP settings for departments:", err);
+      }
+
+      // Fallback: if department URL is not configured, derive it from the employee URL
+      if (!resolvedUrl && resolvedEmployeeUrl) {
+        resolvedUrl = resolvedEmployeeUrl.replace(/\/GetAllEMployeelists$/i, "/GetAllDepartment");
       }
 
       if (!resolvedUrl) {
-        resolvedUrl = "http://172.20.60.101:7001/api/v2/Employee/GetAllDepartment";
+        setDepartments([]);
+        setLoading(false);
+        setError("ERP department URL not configured. Please configure it in Settings.");
+        return;
       }
 
-      const payload = {
-        pageNumber: 1,
-        pageSize: 500,
-        search: "",
-      };
-
-      const res = await erpAxios.post(resolvedUrl, payload, {
-        headers: {
-          Accept: "*/*",
-          "Content-Type": "application/json",
-          "x-api-version": "2.0",
-        },
-      });
+      const res = await erpAxios.post(
+        resolvedUrl,
+        {},
+        {
+          headers: {
+            Accept: "*/*",
+            "Content-Type": "application/json",
+            "x-api-version": "2.0",
+          },
+          signal: abortRef.current.signal,
+        }
+      );
 
       const rawList =
-        res?.data?.data ??
         res?.data?.results ??
+        res?.data?.data ??
         res?.data?.items ??
         res?.data?.result ??
         res?.data ??
@@ -113,27 +152,19 @@ export function useErpDepartments() {
 
       const list = Array.isArray(rawList) ? rawList : [];
 
-      const depts = list
+      const mapped = list
         .map((item: any) => {
-          if (typeof item === "string") return item.trim();
-          const name =
-            item?.deptName ??
-            item?.DeptName ??
-            item?.departmentName ??
-            item?.DepartmentName ??
-            item?.department ??
-            item?.Department ??
-            item?.dept ??
-            item?.name;
-          return normalizeHierarchyValue(name);
+          const id = item?.id ?? item?.Id ?? item?.deptId ?? item?.DeptId ?? item?.mainDeptId ?? item?.MainDeptId;
+          const name = item?.name ?? item?.Name ?? item?.departmentName ?? item?.DepartmentName ?? item?.deptName ?? item?.DeptName;
+          if (!id || !name) return null;
+          return {
+            id: String(id).trim(),
+            name: String(name).trim(),
+          };
         })
-        .filter(Boolean) as string[];
+        .filter(Boolean) as ErpDepartment[];
 
-      const uniqueDepts = Array.from(new Set(depts)).sort((a, b) =>
-        a.localeCompare(b, undefined, { sensitivity: "base" }),
-      );
-
-      setDepartments(uniqueDepts);
+      setDepartments(mapped);
     } catch (e: any) {
       if (
         e?.name === "CanceledError" ||
@@ -143,12 +174,14 @@ export function useErpDepartments() {
       ) {
         return;
       }
-      console.warn("Failed to fetch ERP departments:", e);
+
       setError(
         e?.response?.data?.message ||
+          e?.response?.data?.error ||
           e?.message ||
-          "Failed to load ERP departments",
+          "Failed to load departments"
       );
+      setDepartments([]);
     } finally {
       setLoading(false);
     }
@@ -156,6 +189,9 @@ export function useErpDepartments() {
 
   useEffect(() => {
     fetchDepartments();
+    return () => {
+      if (abortRef.current) abortRef.current.abort();
+    };
   }, [fetchDepartments]);
 
   return {

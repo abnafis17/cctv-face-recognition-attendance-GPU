@@ -2,7 +2,19 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { ColumnDef } from "@tanstack/react-table";
-import { Plus, Search, SquarePen, Trash2, Shield, Mail, User, Key, Loader2, Eye, EyeOff } from "lucide-react";
+import {
+  Plus,
+  Search,
+  SquarePen,
+  Trash2,
+  Shield,
+  Mail,
+  User,
+  Key,
+  Loader2,
+  Eye,
+  EyeOff,
+} from "lucide-react";
 import toast from "react-hot-toast";
 
 import axiosInstance from "@/config/axiosInstance";
@@ -35,9 +47,30 @@ export default function UsersPanelPage() {
   const { isOpen: isAddOpen, open: openAdd, close: closeAdd } = useModal();
   const { isOpen: isEditOpen, open: openEdit, close: closeEdit } = useModal();
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  
+
   const [selectedUser, setSelectedUser] = useState<UserType | null>(null);
   const [currentUser, setCurrentUser] = useState<any>(null);
+
+  // Dynamic user roles list
+  const [roles, setRoles] = useState<string[]>([
+    "OPERATOR",
+    "ADMIN",
+    "GENERAL_USER",
+  ]);
+
+  useEffect(() => {
+    async function fetchRoles() {
+      try {
+        const res = await axiosInstance.get("/auth/roles");
+        if (res.data?.ok && Array.isArray(res.data?.results)) {
+          setRoles(res.data.results);
+        }
+      } catch (err) {
+        console.error("Failed to load user roles:", err);
+      }
+    }
+    void fetchRoles();
+  }, []);
 
   // Form states
   const [formName, setFormName] = useState("");
@@ -86,7 +119,7 @@ export default function UsersPanelPage() {
       (u) =>
         (u.name && u.name.toLowerCase().includes(term)) ||
         u.email.toLowerCase().includes(term) ||
-        u.role.toLowerCase().includes(term)
+        u.role.toLowerCase().includes(term),
     );
   }, [users, search]);
 
@@ -126,7 +159,9 @@ export default function UsersPanelPage() {
         setFormName("");
         setFormEmail("");
         setFormPassword("");
-        setFormRole("OPERATOR");
+        setFormRole(
+          roles.includes("OPERATOR") ? "OPERATOR" : roles[0] || "OPERATOR",
+        );
         setShowAddPassword(false);
       }
     } catch (err: any) {
@@ -141,7 +176,7 @@ export default function UsersPanelPage() {
     setSelectedUser(user);
     setFormName(user.name || "");
     setFormEmail(user.email);
-    setFormPassword(user.password || "");
+    setFormPassword(user.password || ""); // Pre-populate with actual password
     setFormRole(user.role);
     setShowEditPassword(false);
     openEdit();
@@ -168,15 +203,24 @@ export default function UsersPanelPage() {
         payload.password = formPassword;
       }
 
-      const res = await axiosInstance.patch(`/settings/users/${selectedUser.id}`, payload);
+      const res = await axiosInstance.patch(
+        `/settings/users/${selectedUser.id}`,
+        payload,
+      );
 
       if (res.data?.ok) {
         toast.success("User updated successfully!");
-        
+
+        // If updating currently logged in user role, notify role change to sync permissions
         if (currentUser && selectedUser.id === currentUser.id) {
           const raw = localStorage.getItem("userInfo");
           const info = raw ? JSON.parse(raw) : {};
-          const nextInfo = { ...info, role: formRole, name: formName, email: formEmail };
+          const nextInfo = {
+            ...info,
+            role: formRole,
+            name: formName,
+            email: formEmail,
+          };
           localStorage.setItem("userInfo", JSON.stringify(nextInfo));
           window.dispatchEvent(new Event("userInfoUpdated"));
         }
@@ -206,7 +250,9 @@ export default function UsersPanelPage() {
     if (!selectedUser) return;
     try {
       setLoading(true);
-      const res = await axiosInstance.delete(`/settings/users/${selectedUser.id}`);
+      const res = await axiosInstance.delete(
+        `/settings/users/${selectedUser.id}`,
+      );
       if (res.data?.ok) {
         toast.success("User deleted successfully!");
         fetchUsers();
@@ -243,7 +289,9 @@ export default function UsersPanelPage() {
         cell: ({ row }) => {
           const isMe = currentUser && row.original.id === currentUser.id;
           return (
-            <div className={`px-4 py-3 text-left font-medium text-sm ${isMe ? "text-emerald-950 font-bold" : "text-zinc-850"}`}>
+            <div
+              className={`px-4 py-3 text-left font-medium text-sm ${isMe ? "text-emerald-950 font-bold" : "text-zinc-850"}`}
+            >
               {row.original.name || "-"}
             </div>
           );
@@ -253,13 +301,17 @@ export default function UsersPanelPage() {
       {
         accessorKey: "email",
         header: () => (
-          <div className="w-full px-4 py-3 text-left font-bold">Email Address</div>
+          <div className="w-full px-4 py-3 text-left font-bold">
+            Email Address
+          </div>
         ),
         cell: ({ row }) => {
           const isMe = currentUser && row.original.id === currentUser.id;
           return (
             <div className="px-4 py-3 text-left text-sm flex items-center gap-2">
-              <span className={`font-mono text-xs ${isMe ? "text-emerald-950 font-semibold" : "text-zinc-655"}`}>
+              <span
+                className={`font-mono text-xs ${isMe ? "text-emerald-950 font-semibold" : "text-zinc-650"}`}
+              >
                 {row.original.email}
               </span>
               {isMe && (
@@ -287,12 +339,15 @@ export default function UsersPanelPage() {
           }
           const isMe = currentUser && row.original.id === currentUser.id;
           if (isMe) {
-            badgeClass = "bg-emerald-100/60 text-emerald-800 border-emerald-200/50";
+            badgeClass =
+              "bg-emerald-100/60 text-emerald-800 border-emerald-200/50";
           }
 
           return (
             <div className="px-4 py-3 text-center">
-              <span className={`inline-flex items-center rounded-lg border px-2.5 py-1 text-xs font-semibold uppercase tracking-wider ${badgeClass}`}>
+              <span
+                className={`inline-flex items-center rounded-lg border px-2.5 py-1 text-xs font-semibold uppercase tracking-wider ${badgeClass}`}
+              >
                 {role}
               </span>
             </div>
@@ -316,7 +371,7 @@ export default function UsersPanelPage() {
               >
                 <SquarePen className="h-4 w-4 text-blue-600" />
               </button>
-              
+
               {!isMe && (
                 <button
                   title="Delete User"
@@ -332,12 +387,13 @@ export default function UsersPanelPage() {
         size: 120,
       },
     ],
-    [currentUser, currentPage, limits]
+    [currentUser, currentPage, limits],
   );
 
+  // Dynamic row styling callback for TanstackDataTable
   const getRowClassName = (row: any) => {
     const isMe = currentUser && row.original.id === currentUser.id;
-    return isMe 
+    return isMe
       ? "bg-emerald-50/20 hover:bg-emerald-50/40 text-emerald-950 border-l-4 border-l-emerald-500 font-semibold"
       : "hover:bg-zinc-50/60";
   };
@@ -363,7 +419,9 @@ export default function UsersPanelPage() {
             setFormName("");
             setFormEmail("");
             setFormPassword("");
-            setFormRole("OPERATOR");
+            setFormRole(
+              roles.includes("OPERATOR") ? "OPERATOR" : roles[0] || "OPERATOR",
+            );
             openAdd();
           }}
           className="h-10 rounded-xl bg-violet-600 px-5 text-sm font-semibold text-white hover:bg-violet-700 transition flex items-center justify-center gap-2 shadow-sm cursor-pointer"
@@ -453,7 +511,11 @@ export default function UsersPanelPage() {
                 onClick={() => setShowAddPassword(!showAddPassword)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 focus:outline-none"
               >
-                {showAddPassword ? <EyeOff className="w-4.5 h-4.5" /> : <Eye className="w-4.5 h-4.5" />}
+                {showAddPassword ? (
+                  <EyeOff className="w-4.5 h-4.5" />
+                ) : (
+                  <Eye className="w-4.5 h-4.5" />
+                )}
               </button>
             </div>
           </div>
@@ -467,9 +529,13 @@ export default function UsersPanelPage() {
               onChange={(e) => setFormRole(e.target.value)}
               className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none ring-zinc-900/10 focus:ring-2"
             >
-              <option value="OPERATOR">Operator</option>
-              <option value="ADMIN">Admin</option>
-              <option value="GENERAL_USER">General User</option>
+              {roles.map((r) => (
+                <option key={r} value={r}>
+                  {r
+                    .replace(/_/g, " ")
+                    .replace(/\b\w/g, (c) => c.toUpperCase())}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -551,7 +617,11 @@ export default function UsersPanelPage() {
                 onClick={() => setShowEditPassword(!showEditPassword)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 focus:outline-none"
               >
-                {showEditPassword ? <EyeOff className="w-4.5 h-4.5" /> : <Eye className="w-4.5 h-4.5" />}
+                {showEditPassword ? (
+                  <EyeOff className="w-4.5 h-4.5" />
+                ) : (
+                  <Eye className="w-4.5 h-4.5" />
+                )}
               </button>
             </div>
           </div>
@@ -565,9 +635,13 @@ export default function UsersPanelPage() {
               onChange={(e) => setFormRole(e.target.value)}
               className="h-10 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none ring-zinc-900/10 focus:ring-2"
             >
-              <option value="OPERATOR">Operator</option>
-              <option value="ADMIN">Admin</option>
-              <option value="GENERAL_USER">General User</option>
+              {roles.map((r) => (
+                <option key={r} value={r}>
+                  {r
+                    .replace(/_/g, " ")
+                    .replace(/\b\w/g, (c) => c.toUpperCase())}
+                </option>
+              ))}
             </select>
           </div>
 

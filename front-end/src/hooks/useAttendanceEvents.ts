@@ -18,6 +18,7 @@ type UseAttendanceEventsOptions = {
   waitMs?: number; // default 300000 (server long-poll wait)
   limit?: number; // default 50
   syncLatestOnStart?: boolean; // default true; false starts from seq=0/current ref without sync jump
+  startSeq?: number;
   onEvents?: (events: AttendanceEvent[]) => void;
 };
 
@@ -28,8 +29,14 @@ export function useAttendanceEvents(options: UseAttendanceEventsOptions = {}) {
     waitMs = 300000,
     limit = 50,
     syncLatestOnStart = true,
+    startSeq,
     onEvents,
   } = options;
+
+  const onEventsRef = useRef(onEvents);
+  useEffect(() => {
+    onEventsRef.current = onEvents;
+  }, [onEvents]);
 
   const seqRef = useRef<number>(0);
   const inFlightRef = useRef(false);
@@ -38,6 +45,10 @@ export function useAttendanceEvents(options: UseAttendanceEventsOptions = {}) {
     if (!enabled) return;
     let cancelled = false;
 
+    if (startSeq !== undefined && startSeq > 0) {
+      seqRef.current = startSeq;
+    }
+
     const sleep = (ms: number) =>
       new Promise<void>((resolve) => {
         window.setTimeout(resolve, ms);
@@ -45,7 +56,7 @@ export function useAttendanceEvents(options: UseAttendanceEventsOptions = {}) {
 
     async function syncLatest() {
       try {
-        const resp = await axiosInstance.get(API.ATTENDANCE_EVENTS, {
+        const resp = await axiosInstance.get((API as any).ATTENDANCE_EVENTS || "/attendance/events", {
           params: { afterSeq: 0, limit: 1, waitMs: 0 },
         });
         const latest = Number(resp?.data?.latest_seq || 0) || 0;
@@ -64,7 +75,7 @@ export function useAttendanceEvents(options: UseAttendanceEventsOptions = {}) {
         inFlightRef.current = true;
 
         try {
-          const resp = await axiosInstance.get(API.ATTENDANCE_EVENTS, {
+          const resp = await axiosInstance.get((API as any).ATTENDANCE_EVENTS || "/attendance/events", {
             params: { afterSeq: seqRef.current, limit, waitMs },
           });
           if (cancelled) return;
@@ -79,7 +90,7 @@ export function useAttendanceEvents(options: UseAttendanceEventsOptions = {}) {
           }
           seqRef.current = maxSeq;
 
-          if (events.length) onEvents?.(events);
+          if (events.length) onEventsRef.current?.(events);
         } catch {
           if (!cancelled) await sleep(Math.max(250, pollIntervalMs));
         } finally {
@@ -89,7 +100,9 @@ export function useAttendanceEvents(options: UseAttendanceEventsOptions = {}) {
     }
 
     const first = window.setTimeout(() => {
-      if (syncLatestOnStart) {
+      if (startSeq !== undefined && startSeq > 0) {
+        pollLoop();
+      } else if (syncLatestOnStart) {
         syncLatest().finally(() => pollLoop());
       } else {
         pollLoop();
@@ -100,6 +113,6 @@ export function useAttendanceEvents(options: UseAttendanceEventsOptions = {}) {
       cancelled = true;
       window.clearTimeout(first);
     };
-  }, [enabled, pollIntervalMs, waitMs, limit, onEvents, syncLatestOnStart]);
+  }, [enabled, pollIntervalMs, waitMs, limit, syncLatestOnStart, startSeq]);
 }
 

@@ -43,7 +43,7 @@ class DoorRelayService:
             os.getenv("RELAY_MIN_INTERVAL_S", "0.75")
         )
         self._relay_http_timeout_s = float(
-            os.getenv("RELAY_HTTP_TIMEOUT_S", "0.4")
+            os.getenv("RELAY_HTTP_TIMEOUT_S", "3.0")
         )
 
         self._door_last_fire: Dict[str, float] = {}
@@ -187,7 +187,8 @@ class DoorRelayService:
 
         def _do() -> None:
             try:
-                resp = urllib.request.urlopen(url, timeout=0.4)
+                door_timeout = float(os.getenv("DOOR_HTTP_TIMEOUT_S", "3.0"))
+                resp = urllib.request.urlopen(url, timeout=door_timeout)
                 resp.close()
                 print(
                     f"[DOOR] unlock fired cid={camera_id} emp={emp_id} url={url} "

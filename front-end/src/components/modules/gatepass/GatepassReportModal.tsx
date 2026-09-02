@@ -4,6 +4,7 @@ import React from "react";
 import { Printer, FileText } from "lucide-react";
 import ReusableModal from "@/components/reusable/ReusableModal";
 import type { GatepassRecord } from "@/types/gatepass-types";
+import PakizaLogo from "@/assets/images/Pakiza_Apparels.png";
 import axiosInstance from "@/config/axiosInstance";
 
 interface GatepassReportModalProps {
@@ -21,9 +22,11 @@ function valOrDash(val: unknown): string {
 function extractErpDetailRecord(resData: any): any | null {
   if (!resData || typeof resData !== "object") return null;
 
+  // Un-nest { ok: true, data: ... }
   let root = resData.data !== undefined ? resData.data : resData;
   if (!root || typeof root !== "object") return null;
 
+  // Detect envelope response { statusCode: 200, message: "...", totalCount: 0, data: null }
   if ("totalCount" in root && (root.totalCount === 0 || root.data === null)) {
     return null;
   }
@@ -32,6 +35,7 @@ function extractErpDetailRecord(resData: any): any | null {
     root = root.data;
   }
 
+  // Handle arrays
   if (Array.isArray(root)) {
     if (root.length === 0) return null;
     root = root[0];
@@ -141,7 +145,7 @@ export default function GatepassReportModal({
 
   if (!record) return null;
 
-  const logoSrc = erpDetails?.logoPath || "";
+  const logoSrc = erpDetails?.logoPath || PakizaLogo.src;
 
   const handlePrint = () => {
     const printContent = document.getElementById("gatepass-report-print-area");
@@ -154,6 +158,9 @@ export default function GatepassReportModal({
       "left=50,top=50,width=850,height=900,toolbar=0,scrollbars=1,status=0",
     );
     if (!printWindow) return;
+
+    const logoUrl =
+      erpDetails?.logoPath || window.location.origin + PakizaLogo.src;
 
     const printHeaders = displaySlots
       .map((slot) => {
@@ -241,6 +248,9 @@ export default function GatepassReportModal({
               font-weight: 700;
               color: #312e81;
               text-decoration: underline;
+              text-transform: uppercase;
+              margin-top: 14px;
+              letter-spacing: 0.5px;
             }
             .date-label {
               font-size: 12px;
@@ -252,65 +262,104 @@ export default function GatepassReportModal({
               font-weight: 400;
               color: #09090b;
             }
-            .details-table, .remarks-table, .approval-table {
+            .details-table {
               width: 100%;
               border-collapse: collapse;
               border: 1px solid #a1a1aa;
-              font-size: 12px;
+              font-size: 11px;
             }
-            .details-table td, .remarks-table td, .approval-table td, .approval-table th {
+            .details-table td {
               border: 1px solid #a1a1aa;
-              padding: 8px 10px;
+              padding: 8px 12px;
             }
             .bg-label {
               background-color: #f4f4f5;
               font-weight: 600;
               color: #3f3f46;
             }
-            .approval-table {
+            .remarks-table {
+              width: 100%;
+              border-collapse: collapse;
+              border: 1px solid #a1a1aa;
               font-size: 11px;
+              margin-top: 15px;
+            }
+            .remarks-table td {
+              border: 1px solid #a1a1aa;
+              padding: 10px 12px;
+            }
+            .approval-table {
+              width: 100%;
+              border-collapse: collapse;
+              border: 1px solid #a1a1aa;
+              font-size: 10.5px;
               margin-top: 25px;
+            }
+            .approval-table th, .approval-table td {
+              border: 1px solid #a1a1aa;
+              padding: 8px 6px;
+              text-align: center;
             }
             .approval-header {
               background-color: #fafafa;
               font-weight: 700;
-              text-align: center;
+              color: #27272a;
               text-transform: uppercase;
+              letter-spacing: 0.3px;
+            }
+            .status-approved {
+              color: #059669;
+              font-weight: 700;
+            }
+            .status-rejected {
+              color: #e11d48;
+              font-weight: 700;
+            }
+            .status-pending {
+              color: #d97706;
+              font-weight: 700;
             }
             .approval-cell {
-              text-align: center;
               vertical-align: top;
-              padding: 12px 8px;
+              padding-top: 12px;
+              padding-bottom: 12px;
             }
-            .status-approved { color: #059669; font-weight: 700; }
-            .status-rejected { color: #dc2626; font-weight: 700; }
-            .status-pending { color: #d97706; font-weight: 700; }
-            .font-semibold { font-weight: 600; }
-            .text-xs { font-size: 10px; }
-            .text-muted { color: #71717a; }
-            .mt-1 { margin-top: 4px; }
+            .font-semibold {
+              font-weight: 600;
+              color: #09090b;
+            }
+            .text-xs {
+              font-size: 10px;
+            }
+            .text-muted {
+              color: #71717a;
+            }
+            .mt-1 { margin-top: 3px; }
             .mt-2 { margin-top: 8px; }
           </style>
         </head>
         <body>
           <div class="report-container">
+            <!-- Header Table -->
             <table class="header-table">
               <tr>
                 <td class="logo-cell">
-                  <img src="${logoSrc}" alt="Logo" class="logo-img" />
+                  <img src="${logoUrl}" alt="Pakiza Logo" class="logo-img" />
                 </td>
                 <td class="title-cell">
-                  <h1 class="company-name">${valOrDash(erpDetails?.organization)}</h1>
-                  <p class="company-address">${valOrDash(erpDetails?.organizationAddress)}</p>
+                  <div class="company-name">${valOrDash(erpDetails?.organization)}</div>
+                  <div class="company-address">${valOrDash(erpDetails?.organizationAddress)}</div>
                   <div class="report-title">Gate Pass Report</div>
                 </td>
               </tr>
             </table>
 
+            <!-- Date -->
             <div class="date-label">
               Date: <span class="date-value">${valOrDash(erpDetails?.date_)}</span>
             </div>
 
+            <!-- Details Table -->
             <table class="details-table">
               <tbody>
                 <tr>
@@ -328,8 +377,8 @@ export default function GatepassReportModal({
                 <tr>
                   <td class="bg-label">Doc Name</td>
                   <td>${valOrDash(erpDetails?.docName || "Gate-Pass")}</td>
-                  <td class="bg-label">Title</td>
-                  <td>${valOrDash(erpDetails?.passTitleName || erpDetails?.title)}</td>
+                  <td class="bg-label">Leave Type</td>
+                  <td>${record?.passType === "short leave" ? "Short Leave" : record?.passType === "Long Leave" ? "Long Leave" : valOrDash(record?.passType)}</td>
                 </tr>
                 <tr>
                   <td class="bg-label">Time Start</td>
@@ -337,18 +386,16 @@ export default function GatepassReportModal({
                   <td class="bg-label">Time End</td>
                   <td>${valOrDash(erpDetails?.timeEnd)}</td>
                 </tr>
-              </tbody>
-            </table>
-
-            <table class="remarks-table">
-              <tbody>
                 <tr>
-                  <td class="bg-label" style="width: 18%;">Remarks</td>
-                  <td style="width: 82%;">${valOrDash(erpDetails?.remarks)}</td>
+                  <td class="bg-label">Purpose</td>
+                  <td>${valOrDash(erpDetails?.passTitleName || erpDetails?.title)}</td>
+                  <td class="bg-label">Destination</td>
+                  <td>${valOrDash(erpDetails?.remarks)}</td>
                 </tr>
               </tbody>
             </table>
 
+            <!-- Approval Table -->
             ${
               displaySlots.length > 0
                 ? `<table class="approval-table">
@@ -392,6 +439,7 @@ export default function GatepassReportModal({
       maxWidth="4xl"
     >
       <div className="flex flex-col gap-4">
+        {/* Action Header / Print Button */}
         <div className="flex items-center justify-end pb-2 border-b border-zinc-100">
           <button
             onClick={handlePrint}
@@ -467,19 +515,23 @@ export default function GatepassReportModal({
             </p>
           </div>
         ) : (
+          /* Report Display Container (Only rendered when ERP data exists) */
           <div
             id="gatepass-report-print-area"
             className="w-full bg-white p-6 border border-zinc-200 rounded-lg shadow-xs"
           >
+            {/* Company Header */}
             <div className="flex items-center justify-between border-b-2 border-zinc-100 pb-4 mb-5">
+              {/* Logo */}
               <div className="w-44 flex items-center justify-start select-none">
                 <img
                   src={logoSrc}
-                  alt="Logo"
+                  alt="Pakiza Logo"
                   className="h-12 w-auto object-contain"
                 />
               </div>
 
+              {/* Title / Company Info */}
               <div className="text-center flex-1 mr-44">
                 <h1 className="text-2xl font-bold text-zinc-900 tracking-tight leading-none">
                   {valOrDash(erpDetails?.organization)}
@@ -493,6 +545,7 @@ export default function GatepassReportModal({
               </div>
             </div>
 
+            {/* Date */}
             <div className="text-xs font-semibold text-zinc-700 mb-3">
               Date:{" "}
               <span className="font-normal text-zinc-900">
@@ -500,6 +553,7 @@ export default function GatepassReportModal({
               </span>
             </div>
 
+            {/* Details Grid Table */}
             <table className="w-full border-collapse border border-zinc-400 text-xs">
               <tbody>
                 <tr className="border-b border-zinc-400">
@@ -538,10 +592,10 @@ export default function GatepassReportModal({
                     {valOrDash(erpDetails?.docName || "Gate-Pass")}
                   </td>
                   <td className="bg-zinc-100/80 border-r border-zinc-400 px-3 py-2.5 font-semibold text-zinc-700">
-                    Title
+                    Leave Type
                   </td>
                   <td className="px-3 py-2.5 text-zinc-900 font-medium">
-                    {valOrDash(erpDetails?.passTitleName || erpDetails?.title)}
+                    {record?.passType === "short leave" ? "Short Leave" : record?.passType === "Long Leave" ? "Long Leave" : valOrDash(record?.passType)}
                   </td>
                 </tr>
                 <tr className="border-b border-zinc-400">
@@ -558,24 +612,24 @@ export default function GatepassReportModal({
                     {valOrDash(erpDetails?.timeEnd)}
                   </td>
                 </tr>
+                <tr className="border-b border-zinc-400">
+                  <td className="bg-zinc-100/80 border-r border-zinc-400 px-3 py-2.5 font-semibold text-zinc-700">
+                    Purpose
+                  </td>
+                  <td className="border-r border-zinc-400 px-3 py-2.5 text-zinc-900 font-medium">
+                    {valOrDash(erpDetails?.passTitleName || erpDetails?.title)}
+                  </td>
+                  <td className="bg-zinc-100/80 border-r border-zinc-400 px-3 py-2.5 font-semibold text-zinc-700">
+                    Destination
+                  </td>
+                  <td className="px-3 py-2.5 text-zinc-900 font-medium">
+                    {valOrDash(erpDetails?.remarks)}
+                  </td>
+                </tr>
               </tbody>
             </table>
 
-            <div className="mt-4">
-              <table className="w-full border-collapse border border-zinc-400 text-xs">
-                <tbody>
-                  <tr>
-                    <td className="w-[18%] bg-zinc-100/80 border-r border-zinc-400 px-3 py-3.5 font-semibold text-zinc-700">
-                      Destination
-                    </td>
-                    <td className="w-[82%] px-3 py-3.5 text-zinc-900 font-medium">
-                      {valOrDash(erpDetails?.remarks)}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
+            {/* Approval Workflow Block */}
             {displaySlots.length > 0 && (
               <table className="w-full border-collapse border border-zinc-400 text-[11px] mt-7">
                 <thead>

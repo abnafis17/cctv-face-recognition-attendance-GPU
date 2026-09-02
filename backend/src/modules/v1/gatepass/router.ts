@@ -1,0 +1,18 @@
+import { Router } from "express";
+import {
+  createGatepassRecord,
+  listGatepassRecords,
+  listGatepassTypes,
+  markGatepassReturn,
+  getGatepassExternalDetails,
+} from "./controller";
+
+const router = Router();
+
+router.get("/types", listGatepassTypes);
+router.get("/", listGatepassRecords);
+router.post("/", createGatepassRecord);
+router.post("/mark-return", markGatepassReturn);
+router.get("/:id/external-details", getGatepassExternalDetails);
+
+export default router;

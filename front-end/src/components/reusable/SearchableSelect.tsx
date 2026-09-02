@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, ChevronsUpDown } from "lucide-react";
+import { Check, ChevronsUpDown, Loader2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,7 @@ type ItemBase = {
   value: string;
   label: string;
   keywords?: string; // optional extra search text
+  image?: string; // optional item image
 };
 
 export function SearchableSelect({
@@ -51,41 +52,17 @@ export function SearchableSelect({
   className?: string;
 }) {
   const [open, setOpen] = React.useState(false);
-  const [searchQuery, setSearchQuery] = React.useState("");
+
+  React.useEffect(() => {
+    if (!open) {
+      onSearchChange?.("");
+    }
+  }, [open, onSearchChange]);
 
   const selected = React.useMemo(
     () => items.find((i) => i.value === value),
     [items, value]
   );
-
-  const filteredItems = React.useMemo(() => {
-    // If an external search handler is provided (e.g. server API search), don't filter locally
-    if (onSearchChange) return items;
-
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return items;
-
-    return items.filter((item) => {
-      const label = item.label.toLowerCase();
-      const val = item.value.toLowerCase();
-      const kw = (item.keywords || "").toLowerCase();
-      return label.includes(q) || val.includes(q) || kw.includes(q);
-    });
-  }, [items, searchQuery, onSearchChange]);
-
-  const handleSearchChange = React.useCallback(
-    (q: string) => {
-      setSearchQuery(q);
-      onSearchChange?.(q);
-    },
-    [onSearchChange]
-  );
-
-  React.useEffect(() => {
-    if (!open) {
-      setSearchQuery("");
-    }
-  }, [open]);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -97,37 +74,65 @@ export function SearchableSelect({
           disabled={disabled}
           className={cn("w-full justify-between", className)}
         >
-          <span className="truncate">
-            {selected ? selected.label : placeholder}
-          </span>
+          <div className="flex items-center gap-2 truncate min-w-0">
+            {selected && selected.image && (
+              <img
+                src={selected.image}
+                alt={selected.label}
+                className="h-5 w-5 rounded-full object-cover shrink-0 border border-zinc-200"
+              />
+            )}
+            <span className="truncate">
+              {selected ? selected.label : placeholder}
+            </span>
+          </div>
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-60" />
         </Button>
       </PopoverTrigger>
 
-      <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+      <PopoverContent
+        style={{ width: "var(--radix-popover-trigger-width)" }}
+        className="p-0 shadow-2xl rounded-2xl border border-zinc-200/80 bg-white overflow-hidden"
+        align="start"
+        sideOffset={6}
+        onPointerDownOutside={(e) => {
+          const target = e.target as HTMLElement | null;
+          if (target?.closest?.('[data-virtual-keyboard="true"]')) {
+            e.preventDefault();
+          }
+        }}
+        onFocusOutside={(e) => {
+          const target = e.target as HTMLElement | null;
+          if (target?.closest?.('[data-virtual-keyboard="true"]')) {
+            e.preventDefault();
+          }
+        }}
+      >
         <Command shouldFilter={false}>
           <CommandInput
             placeholder={searchPlaceholder}
-            value={searchQuery}
-            onValueChange={handleSearchChange}
+            onValueChange={(q: string) => onSearchChange?.(q)}
           />
 
-          {loading ? (
-            <div className="px-3 py-2 text-sm text-muted-foreground">
+          {loading && items.length === 0 ? (
+            <div className="px-3 py-2 text-sm text-muted-foreground flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin text-zinc-400" />
               {loadingText}
             </div>
           ) : (
             <>
-              {filteredItems.length === 0 ? (
-                <div className="px-3 py-2 text-sm text-muted-foreground text-center">
-                  {emptyText}
+              {loading && (
+                <div className="px-3 py-1.5 text-xs text-muted-foreground border-b border-zinc-100 flex items-center gap-2 bg-zinc-50/50">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-zinc-400" />
+                  Updating results...
                 </div>
-              ) : null}
+              )}
+              <CommandEmpty>{emptyText}</CommandEmpty>
               <CommandGroup className="max-h-72 overflow-auto">
-                {filteredItems.map((item) => (
+                {items.map((item) => (
                   <CommandItem
-                    key={item.value || item.label}
-                    value={item.value || item.label}
+                    key={item.value}
+                    value={item.value}
                     onSelect={() => {
                       onChange(item.value);
                       setOpen(false);
@@ -135,11 +140,20 @@ export function SearchableSelect({
                   >
                     <Check
                       className={cn(
-                        "mr-2 h-4 w-4",
+                        "mr-2 h-4 w-4 shrink-0",
                         value === item.value ? "opacity-100" : "opacity-0"
                       )}
                     />
-                    <span className="truncate">{item.label}</span>
+                    <div className="flex items-center gap-2 truncate min-w-0">
+                      {item.image && (
+                        <img
+                          src={item.image}
+                          alt={item.label}
+                          className="h-6 w-6 rounded-full object-cover shrink-0 border border-zinc-200"
+                        />
+                      )}
+                      <span className="truncate">{item.label}</span>
+                    </div>
                   </CommandItem>
                 ))}
               </CommandGroup>

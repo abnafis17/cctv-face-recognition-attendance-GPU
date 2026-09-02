@@ -113,6 +113,19 @@ const nextConfig: NextConfig = {
         : []),
     ]),
   },
+
+  webpack: (config, { isServer }) => {
+    if (isServer) {
+      config.externals = [...(config.externals || []), "@vladmandic/face-api"];
+    }
+    config.resolve.fallback = {
+      ...config.resolve.fallback,
+      fs: false,
+      encoding: false,
+      canvas: false,
+    };
+    return config;
+  },
 };
 
 export default nextConfig;

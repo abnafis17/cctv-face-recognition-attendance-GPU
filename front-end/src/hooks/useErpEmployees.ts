@@ -4,7 +4,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import axiosInstance, { erpAxios } from "@/config/axiosInstance";
-import { API } from "@/constant/API_PATH";
 import { ERP_HOST } from "@/constant";
 import { normalizeHierarchyValue } from "@/lib/employeeHierarchy";
 
@@ -61,6 +60,16 @@ export type ErpEmployee = {
   department: string; // e.g. "Business Innovation"
   section: string; // e.g. "WEB-Team"
   line: string; // e.g. "Production Line A"
+  deptId?: string;
+  mainDeptId?: string;
+  deptName?: string;
+  sectionId?: string;
+  sectionName?: string;
+  designationId?: string;
+  designation?: string;
+  unitId?: string;
+  lineId?: string;
+  picUrl?: string;
 };
 
 type ErpEmployeeApiItem = any;
@@ -124,6 +133,17 @@ function mapEmployee(item: ErpEmployeeApiItem): ErpEmployee | null {
   const departmentStr = normalizeHierarchyValue(departmentName);
   const sectionStr = normalizeHierarchyValue(sectionName);
   const lineStr = normalizeHierarchyValue(lineName);
+  
+  const deptIdStr = item?.deptId ?? item?.DeptId ?? item?.departmentId ?? item?.DepartmentId;
+  const mainDeptIdStr = item?.mainDeptId ?? item?.MainDeptId;
+  const deptNameStr = item?.deptName ?? item?.DeptName ?? item?.departmentName ?? item?.DepartmentName ?? item?.department ?? item?.Department;
+  const sectionIdStr = item?.sectionId ?? item?.SectionId;
+  const sectionNameStr = item?.sectionName ?? item?.SectionName ?? item?.section ?? item?.Section;
+  const designationIdStr = item?.designationId ?? item?.DesignationId;
+  const designationStr = item?.designation ?? item?.Designation;
+  const unitIdStr = item?.unitId ?? item?.UnitId;
+  const lineIdStr = item?.lineId ?? item?.LineId;
+  const picUrlStr = item?.picUrl ?? item?.PicUrl ?? item?.empPicUrl ?? item?.EmpPicUrl ?? item?.pic_url ?? item?.picURL;
 
   if (!idStr || !nameStr) return null;
 
@@ -134,6 +154,16 @@ function mapEmployee(item: ErpEmployeeApiItem): ErpEmployee | null {
     department: departmentStr,
     section: sectionStr,
     line: lineStr,
+    deptId: deptIdStr ? String(deptIdStr).trim() : undefined,
+    mainDeptId: mainDeptIdStr ? String(mainDeptIdStr).trim() : undefined,
+    deptName: deptNameStr ? String(deptNameStr).trim() : undefined,
+    sectionId: sectionIdStr ? String(sectionIdStr).trim() : undefined,
+    sectionName: sectionNameStr ? String(sectionNameStr).trim() : undefined,
+    designationId: designationIdStr ? String(designationIdStr).trim() : undefined,
+    designation: designationStr ? String(designationStr).trim() : undefined,
+    unitId: unitIdStr ? String(unitIdStr).trim() : undefined,
+    lineId: lineIdStr ? String(lineIdStr).trim() : undefined,
+    picUrl: picUrlStr ? String(picUrlStr).trim() : undefined,
   };
 }
 
@@ -141,9 +171,15 @@ export function useErpEmployees(options?: {
   debounceMs?: number;
   initialSearch?: string;
   autoFetch?: boolean; // fetch once on mount even if search is empty
+  pageSize?: number;
+  pageNumber?: number;
+  filterByOrg?: boolean;
 }) {
   const debounceMs = options?.debounceMs ?? 350;
   const autoFetch = options?.autoFetch ?? true;
+  const pageSize = options?.pageSize ?? 20;
+  const pageNumber = options?.pageNumber ?? 1;
+  const filterByOrg = options?.filterByOrg ?? false;
 
   const [search, setSearch] = useState(options?.initialSearch ?? "");
   const [employees, setEmployees] = useState<ErpEmployee[]>([]);
@@ -153,7 +189,6 @@ export function useErpEmployees(options?: {
   const abortRef = useRef<AbortController | null>(null);
   const debounceRef = useRef<any>(null);
   const mountedRef = useRef(false);
-  const lastQueryRef = useRef<string | null>(null);
 
   const readOrganizationId = useCallback((): string => {
     if (typeof window === "undefined") return "";
@@ -173,6 +208,23 @@ export function useErpEmployees(options?: {
     }
   }, []);
 
+  const readCompanyName = useCallback((): string => {
+    if (typeof window === "undefined") return "";
+
+    try {
+      const raw = localStorage.getItem("userInfo");
+      if (!raw) return "";
+      const userInfo = JSON.parse(raw);
+      return String(
+        userInfo?.companyName ??
+          userInfo?.company?.companyName ??
+          "",
+      ).trim();
+    } catch {
+      return "";
+    }
+  }, []);
+
   const fetchEmployees = useCallback(async (q: string) => {
     setLoading(true);
     setError("");
@@ -185,7 +237,7 @@ export function useErpEmployees(options?: {
       // 1) Attempt to load company-wise dynamic ERP settings
       let resolvedUrl: string | null = null;
       try {
-        const erpSettingsRes = await axiosInstance.get<any[]>(API.SETTINGS_ERP, {
+        const erpSettingsRes = await axiosInstance.get<any[]>("/settings/erp", {
           params: { all: true },
           signal: abortRef.current.signal,
         });
@@ -209,16 +261,24 @@ export function useErpEmployees(options?: {
         console.warn("Failed to fetch company-wise ERP settings:", err);
       }
 
-      // 2) If no company-wise settings found, fallback to standard ERP API endpoint
+      // 2) If no company-wise settings found, do not fetch
       if (!resolvedUrl) {
-        resolvedUrl = "http://172.20.60.101:7001/api/v2/Employee/GetAllEMployeelists";
+        setEmployees([]);
+        setLoading(false);
+        setError("ERP employee URL not configured for this company. Please configure it in Settings.");
+        return;
       }
 
-      const payload = {
-        pageNumber: 1,
-        pageSize: 100,
+      const payload: any = {
+        pageNumber,
+        pageSize,
         search: q || "",
       };
+
+      if (filterByOrg) {
+        // payload.organizationId = readOrganizationId();
+        // payload.flag = readCompanyName();
+      }
 
       const res = await erpAxios.post(
         resolvedUrl,
@@ -268,18 +328,15 @@ export function useErpEmployees(options?: {
     } finally {
       setLoading(false);
     }
-  }, [readOrganizationId]);
+  }, [readOrganizationId, pageNumber, pageSize, filterByOrg]);
 
   // Debounced search effect
   useEffect(() => {
-    const trimmed = (search || "").trim();
-
-    // On first mount, fetch once immediately
+    // On first mount, optionally fetch once immediately
     if (!mountedRef.current) {
       mountedRef.current = true;
       if (autoFetch) {
-        lastQueryRef.current = trimmed;
-        fetchEmployees(trimmed);
+        fetchEmployees((search || "").trim());
       }
       return;
     }
@@ -287,10 +344,7 @@ export function useErpEmployees(options?: {
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
     debounceRef.current = setTimeout(() => {
-      if (trimmed !== lastQueryRef.current) {
-        lastQueryRef.current = trimmed;
-        fetchEmployees(trimmed);
-      }
+      fetchEmployees((search || "").trim());
     }, debounceMs);
 
     return () => {
@@ -298,10 +352,11 @@ export function useErpEmployees(options?: {
     };
   }, [search, debounceMs, fetchEmployees, autoFetch]);
 
-  // Cleanup on unmount
+  // Cleanup abort on unmount
   useEffect(() => {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
+      if (abortRef.current) abortRef.current.abort();
     };
   }, []);
 
@@ -312,7 +367,6 @@ export function useErpEmployees(options?: {
   }, [employees]);
 
   const refetch = useCallback(() => {
-    lastQueryRef.current = null;
     fetchEmployees((search || "").trim());
   }, [fetchEmployees, search]);
 

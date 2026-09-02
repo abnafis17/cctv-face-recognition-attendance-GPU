@@ -14,6 +14,7 @@ function extractDhakaDatePart(isoString: string): string {
     const parsed = new Date(isoString);
     if (isNaN(parsed.getTime())) return "";
     
+    // Dhaka timezone is UTC+6
     const dhakaTime = new Date(parsed.getTime() + 6 * 60 * 60 * 1000);
     const day = String(dhakaTime.getUTCDate()).padStart(2, "0");
     const month = String(dhakaTime.getUTCMonth() + 1).padStart(2, "0");
@@ -66,11 +67,21 @@ export function getHistoryColumns(
         <div className="w-full px-1 py-2 text-center font-bold">ID</div>
       ),
       cell: ({ row }) => (
-        <div className="px-1 py-2 text-center text-zinc-700">
-          {row.original.employee.employeeCode}
+        <div className="px-1 py-2 text-center">
+          <div className="font-semibold text-zinc-900">
+            {row.original.employee.employeeCode}
+          </div>
+          {row.original.employee.designation && (
+            <div
+              className="truncate text-[11px] text-zinc-500 font-normal mt-0.5 max-w-[130px] mx-auto"
+              title={row.original.employee.designation}
+            >
+              {row.original.employee.designation}
+            </div>
+          )}
         </div>
       ),
-      size: 120,
+      size: 140,
     },
     {
       id: "department",
@@ -101,16 +112,26 @@ export function getHistoryColumns(
       header: () => (
         <div className="w-full px-1 py-2 text-center font-bold">Leave Type</div>
       ),
-      cell: ({ row }) => (
-        <div className="flex justify-center px-1 py-2">
-          <Badge
-            variant="outline"
-            className="rounded-full border-zinc-200 bg-zinc-50 text-zinc-700"
-          >
-            {row.original.type}
-          </Badge>
-        </div>
-      ),
+      cell: ({ row }) => {
+        const pType = row.original.passType ||
+          (row.original.typeId === "Long Leave" || row.original.type === "Long Leave" ? "Long Leave" : "short leave");
+        const isShort = String(pType).toLowerCase() === "short leave";
+        return (
+          <div className="flex justify-center px-1 py-2">
+            <Badge
+              variant="outline"
+              className={cn(
+                "rounded-full font-semibold border-none px-2.5 py-0.5",
+                isShort
+                  ? "bg-amber-100/70 text-amber-800"
+                  : "bg-purple-100/70 text-purple-800"
+              )}
+            >
+              {isShort ? "Short Leave" : "Long Leave"}
+            </Badge>
+          </div>
+        );
+      },
       size: 120,
     },
     {
@@ -124,7 +145,11 @@ export function getHistoryColumns(
         const isShort = String(pType).toLowerCase() === "short leave";
         const purposeText = isShort
           ? (row.original.purpose || row.original.type || "N/A")
-          : "N/A";
+          : (row.original.purpose && row.original.purpose !== "Long Leave"
+            ? row.original.purpose
+            : row.original.type && row.original.type !== "Long Leave"
+              ? row.original.type
+              : "N/A");
         return (
           <div className="px-1 py-2 text-left text-zinc-700 truncate max-w-[200px]" title={purposeText}>
             {purposeText}

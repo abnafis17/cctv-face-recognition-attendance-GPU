@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 """
-Backward-compatible FastAPI entrypoint.
+FastAPI application entrypoint.
 
-Development:
+Run directly from ai/app directory:
+    python api_server.py
+
+Run from ai directory:
     python app/api_server.py
-    # or from repository root:
-    python ai/app/api_server.py
 """
 
 import os
@@ -43,7 +44,7 @@ if load_dotenv is not None:
 # FastAPI application
 # ---------------------------------------------------------------------------
 
-from app.main import app, create_app  # noqa: F401
+from app.main import app
 
 # ---------------------------------------------------------------------------
 # Development server
@@ -52,6 +53,24 @@ from app.main import app, create_app  # noqa: F401
 
 def main() -> None:
     import uvicorn
+    import signal
+    import threading
+    import time
+
+    def _force_exit_watchdog():
+        time.sleep(2.0)
+        print("\n[SERVER] Shutdown forced by timeout watchdog.")
+        os._exit(0)
+
+    def _sig_handler(signum, frame):
+        threading.Thread(target=_force_exit_watchdog, daemon=True).start()
+        sys.exit(0)
+
+    try:
+        signal.signal(signal.SIGINT, _sig_handler)
+        signal.signal(signal.SIGTERM, _sig_handler)
+    except Exception:
+        pass
 
     host = os.getenv(
         "AI_SERVER_HOST",
@@ -73,27 +92,32 @@ def main() -> None:
         "true",
         "yes",
         "on",
+        "true",
     }
     log_level = os.getenv("AI_LOG_LEVEL", os.getenv("LOG_LEVEL", "info")).strip().lower()
 
-    print(f"Starting FastAPI development server on {host}:{port} (reload={reload_flag})")
+    print(f"Starting FastAPI server on {host}:{port} (reload={reload_flag})")
 
-    if reload_flag:
-        uvicorn.run(
-            "app.main:app",
-            host=host,
-            port=port,
-            reload=True,
-            app_dir=str(PROJECT_ROOT),
-            log_level=log_level,
-        )
-    else:
-        uvicorn.run(
-            app,
-            host=host,
-            port=port,
-            log_level=log_level,
-        )
+    try:
+        if reload_flag:
+            uvicorn.run(
+                "app.main:app",
+                host=host,
+                port=port,
+                reload=True,
+                app_dir=str(PROJECT_ROOT),
+                log_level=log_level,
+            )
+        else:
+            uvicorn.run(
+                app,
+                host=host,
+                port=port,
+                log_level=log_level,
+            )
+    except KeyboardInterrupt:
+        print("\n[SERVER] Stopped by Ctrl+C.")
+        os._exit(0)
 
 
 if __name__ == "__main__":

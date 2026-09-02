@@ -36,6 +36,7 @@ interface VisitRecord {
   visitorPassNo: string;
   hostName: string;
   hostDepartment: string;
+  hostPicUrl?: string | null;
 }
 
 interface VisitorReport {
@@ -89,13 +90,17 @@ function formatTime12h(timeStr: string | null | undefined): string {
   return `${hours12Str}:${minutesStr} ${ampm}`;
 }
 
+function dhakaTodayYYYYMMDD() {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Dhaka" });
+}
+
 export default function VisitorWiseVisitPage() {
   const [reportData, setReportData] = useState<VisitorReport[]>([]);
   const [loading, setLoading] = useState(false);
 
   // Filters State
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
+  const [fromDate, setFromDate] = useState(() => dhakaTodayYYYYMMDD());
+  const [toDate, setToDate] = useState(() => dhakaTodayYYYYMMDD());
   const [searchVisitor, setSearchVisitor] = useState("");
   const [activeSearch, setActiveSearch] = useState("");
 
@@ -132,19 +137,19 @@ export default function VisitorWiseVisitPage() {
   };
 
   const handleResetFilters = () => {
-    setFromDate("");
-    setToDate("");
+    setFromDate(dhakaTodayYYYYMMDD());
+    setToDate(dhakaTodayYYYYMMDD());
     setSearchVisitor("");
     setActiveSearch("");
   };
 
-  const toggleVisitor = (contactNumber: string) => {
+  const toggleVisitor = (key: string) => {
     setExpandedVisitors((prev) => {
       const next = new Set(prev);
-      if (next.has(contactNumber)) {
-        next.delete(contactNumber);
+      if (next.has(key)) {
+        next.delete(key);
       } else {
-        next.add(contactNumber);
+        next.add(key);
       }
       return next;
     });
@@ -159,7 +164,7 @@ export default function VisitorWiseVisitPage() {
 
     for (const item of reportData) {
       totalVisits += item.totalVisits;
-      uniqueVisitorSet.add(item.contactNumber);
+      uniqueVisitorSet.add(`${item.contactNumber}_${item.visitorName}`);
       if (item.totalVisits > topVisitorVisits) {
         topVisitorVisits = item.totalVisits;
         topVisitorName = item.visitorName;
@@ -334,7 +339,8 @@ export default function VisitorWiseVisitPage() {
           </div>
         ) : (
           reportData.map((visitor, index) => {
-            const isExpanded = expandedVisitors.has(visitor.contactNumber);
+            const visitorKey = `${visitor.contactNumber}_${visitor.visitorName}`;
+            const isExpanded = expandedVisitors.has(visitorKey);
             
             // Extract unique purposes for badges
             const purposeBadges = Array.from(
@@ -343,12 +349,12 @@ export default function VisitorWiseVisitPage() {
 
             return (
               <div
-                key={visitor.contactNumber}
+                key={visitorKey}
                 className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm transition-all duration-200"
               >
                 {/* Row Header */}
                 <div
-                  onClick={() => toggleVisitor(visitor.contactNumber)}
+                  onClick={() => toggleVisitor(visitorKey)}
                   className={`flex flex-col sm:flex-row sm:items-center sm:justify-between p-4 cursor-pointer select-none transition-colors ${
                     isExpanded
                       ? "bg-[#0c1b33] text-white hover:bg-[#0c1b33]/95"
@@ -498,11 +504,26 @@ export default function VisitorWiseVisitPage() {
                                 </Badge>
                               </td>
                               <td className="py-3 px-3">
-                                <div className="font-medium text-zinc-800 text-[13px]">
-                                  {record.hostName}
-                                </div>
-                                <div className="text-[11px] text-zinc-400 font-normal mt-0.5">
-                                  {record.hostDepartment}
+                                <div className="flex items-center gap-3">
+                                  {record.hostPicUrl ? (
+                                    <img
+                                      src={record.hostPicUrl}
+                                      alt={record.hostName}
+                                      className="h-8 w-8 rounded-full object-cover border border-zinc-200 shrink-0"
+                                    />
+                                  ) : (
+                                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 border border-zinc-200 text-zinc-400">
+                                      <User className="h-4 w-4" />
+                                    </div>
+                                  )}
+                                  <div>
+                                    <div className="font-medium text-zinc-800 text-[13px] leading-tight">
+                                      {record.hostName}
+                                    </div>
+                                    <div className="text-[11px] text-zinc-400 font-normal mt-0.5">
+                                      {record.hostDepartment}
+                                    </div>
+                                  </div>
                                 </div>
                               </td>
                               <td className="py-3 px-3">
