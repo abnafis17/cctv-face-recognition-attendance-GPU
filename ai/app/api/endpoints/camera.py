@@ -115,9 +115,11 @@ def make_dark_placeholder(name: str, status_msg: str = "Connecting to camera str
     ret, jpeg = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
     return jpeg.tobytes()
 
-def mjpeg_recognition_generator(camera_id: str, company_id: str, camera_name: Optional[str] = None):
-    logger.info(f"Client started viewing recognition stream: {camera_id}")
+def mjpeg_recognition_generator(camera_id: str, company_id: str, camera_name: Optional[str] = None, stream_type: Optional[str] = None):
+    logger.info(f"Client started viewing recognition stream: {camera_id} (type: {stream_type})")
     stream = get_stream_for_camera(camera_id, company_id, camera_name=camera_name)
+    if stream_type:
+        stream.stream_type = str(stream_type).strip().lower()
     
     display_name = camera_name or getattr(stream, "camera_name", None) or camera_id
     if display_name == camera_id and getattr(stream, "camera_name", None) and stream.camera_name != camera_id:
@@ -316,11 +318,14 @@ def refresh_templates(x_company_id: Optional[str] = Header(default=None, alias="
 def recognition_stream_by_id(
     camera_id: str,
     company_id: Optional[str] = Query(default=None, alias="companyId"),
-    x_company_id: Optional[str] = Header(default=None, alias="x-company-id")
+    x_company_id: Optional[str] = Header(default=None, alias="x-company-id"),
+    type: Optional[str] = Query(default=None, alias="type"),
+    stream_type: Optional[str] = Query(default=None, alias="stream_type"),
 ):
     comp_id = company_id or x_company_id or DEFAULT_COMPANY_ID
+    st_type = type or stream_type
     return StreamingResponse(
-        mjpeg_recognition_generator(camera_id, comp_id),
+        mjpeg_recognition_generator(camera_id, comp_id, stream_type=st_type),
         media_type="multipart/x-mixed-replace; boundary=frame",
         headers={
             "Cache-Control": "no-cache, no-store, must-revalidate",
@@ -335,11 +340,14 @@ def recognition_stream(
     camera_id: str,
     camera_name: str,
     company_id: Optional[str] = Query(default=None, alias="companyId"),
-    x_company_id: Optional[str] = Header(default=None, alias="x-company-id")
+    x_company_id: Optional[str] = Header(default=None, alias="x-company-id"),
+    type: Optional[str] = Query(default=None, alias="type"),
+    stream_type: Optional[str] = Query(default=None, alias="stream_type"),
 ):
     comp_id = company_id or x_company_id or DEFAULT_COMPANY_ID
+    st_type = type or stream_type
     return StreamingResponse(
-        mjpeg_recognition_generator(camera_id, comp_id, camera_name=camera_name),
+        mjpeg_recognition_generator(camera_id, comp_id, camera_name=camera_name, stream_type=st_type),
         media_type="multipart/x-mixed-replace; boundary=frame",
         headers={
             "Cache-Control": "no-cache, no-store, must-revalidate",

@@ -418,9 +418,7 @@ class LiteCameraStream:
                 top2_score = emp_scores[1][0] if len(emp_scores) > 1 else 0.0
                 margin_gap = top1_score - top2_score
                 
-                # Unified InsightFace buffalo_m Production Qualification:
-                # Requires top1_score >= 0.44 AND margin_gap >= 0.04 AND 2 consecutive confirmation frames
-                is_qualified = (top1_score >= 0.44 and margin_gap >= 0.04)
+                is_qualified = (top1_score >= SIMILARITY_THRESHOLD)
                 
                 if is_qualified:
                     matched_track.name = best_name
@@ -440,10 +438,10 @@ class LiteCameraStream:
                     if is_authorized:
                         self._trigger_door_relay(best_emp_id, best_name, top1_score)
 
-                    # Track consecutive positive matches for attendance qualification
+                    # Track positive matches for instant zero-latency attendance/headcount qualification
                     matched_track.confirm_hits = getattr(matched_track, 'confirm_hits', 0) + 1
                     
-                    if matched_track.confirm_hits >= 2 and is_authorized and self.attendance_enabled:
+                    if matched_track.confirm_hits >= 1 and is_authorized and self.attendance_enabled:
                         matched_track.confirm_hits = 0
                         self._trigger_attendance(best_emp_id, best_name, top1_score)
                 else:
