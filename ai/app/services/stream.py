@@ -44,6 +44,9 @@ GLOBAL_ATTENDANCE_COOLDOWNS: Dict[str, float] = {}
 GLOBAL_DOOR_LOCK = threading.Lock()
 GLOBAL_DOOR_COOLDOWNS: Dict[str, float] = {}
 
+GLOBAL_ERP_LOCK = threading.Lock()
+GLOBAL_ERP_COOLDOWNS: Dict[str, float] = {}
+
 # Compatibility wrapper for camera_rt to bridge LiteCameraStream to EnrollmentAutoService2
 class CameraRuntimeCompat:
     def get_frame(self, camera_id: str):
@@ -718,20 +721,29 @@ class LiteCameraStream:
             ("attendance_two_log", "ERP 3"),
         ]
 
+        # Deduplicate terminal log output per employee recognition (print ONCE per recognition)
+        erp_log_key = f"{cid_header}:{emp_id}:{time_str[:5]}"
+        with GLOBAL_ERP_LOCK:
+            last_erp_print = GLOBAL_ERP_COOLDOWNS.get(erp_log_key, 0.0)
+            should_print = (time.time() - last_erp_print >= 25.0)
+            if should_print:
+                GLOBAL_ERP_COOLDOWNS[erp_log_key] = time.time()
+
         for q_type, name_tag in erp_specs:
             erp = active_erp_map.get(q_type)
             if erp is None:
                 continue
 
             if q_type == "attendance_two":
-                file_payload_log = f"type=attendance_two | employee_id={emp_id} | attendance_date={formatted_date} | time={time_str} | status=Present | source={self.camera_id}"
+                file_payload_log = f"type=attendance_two | employee_id={emp_id} | name={name} | attendance_date={formatted_date} | time={time_str} | status=Present | source={self.camera_id}"
             elif q_type == "attendance_two_log":
-                file_payload_log = f"type=attendance_two_log | employee_id={emp_id} | attendance_date={formatted_date} | time={time_str} | status=present | source={self.camera_id}"
+                file_payload_log = f"type=attendance_two_log | employee_id={emp_id} | name={name} | attendance_date={formatted_date} | time={time_str} | status=present | source={self.camera_id}"
             else:
-                file_payload_log = f"type=attendance | empId={emp_id} | attendanceDate={date_str} | inTime={time_str} | inLocation={self.camera_id}"
+                file_payload_log = f"type=attendance | empId={emp_id} | name={name} | attendanceDate={date_str} | inTime={time_str} | inLocation={self.camera_id}"
 
-            # Print main branch queued log EXACTLY ONCE per ERP type
-            print(f"[{name_tag}] queued ok=True emp={emp_id} date={date_str} in={time_str}", flush=True)
+            # Print main branch queued log ONCE per recognition event with employee name
+            if should_print:
+                print(f"[{name_tag}] queued ok=True emp={emp_id} name={name} date={date_str} in={time_str}", flush=True)
 
             # Asynchronous background ERP push + erp-sync.log write
             endpoint = erp.get("erpAttendanceEndpoint") or erp.get("erp_attendance_endpoint")
