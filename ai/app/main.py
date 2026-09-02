@@ -19,7 +19,7 @@ os.makedirs(PUBLIC_STATIC_DIR, exist_ok=True)
 async def lifespan(app: FastAPI):
     logger.warning("==========================================================================")
     logger.warning("[AI SERVER] CCTV Face Recognition & Attendance Engine ON")
-    logger.warning("[AI SERVER] Models Loaded: InsightFace RetinaFace + MobileFaceNet (buffalo_m CUDA GPU)")
+    logger.warning("[AI SERVER] Models Loaded: InsightFace RetinaFace + ResNet-50 ArcFace (buffalo_l CUDA GPU)")
     logger.warning("[AI SERVER] Services Active: Realtime ERP Attendance Sync & Door Unlock Relay")
     logger.warning("==========================================================================")
     init_models()

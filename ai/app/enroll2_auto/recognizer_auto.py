@@ -83,7 +83,7 @@ class FaceRecognizerAuto:
 
     def __init__(
         self,
-        model_name: str = "buffalo_m",
+        model_name: str = "buffalo_l",
         use_gpu: bool = True,
         min_face_size: int = 40,
         det_size: Tuple[int, int] = (640, 640),

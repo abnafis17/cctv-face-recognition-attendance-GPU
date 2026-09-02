@@ -233,8 +233,8 @@ def run_viewer(url):
 
     # Initialize Face models
     print("Loading Face Detection & Embedding models...")
-    # Matches the production model pack used by the AI Server (buffalo_m/ResNet-50)
-    model_name = os.getenv("INSIGHTFACE_MODEL", "buffalo_m")
+    # Matches the production model pack used by the AI Server (buffalo_l/ResNet-50)
+    model_name = os.getenv("INSIGHTFACE_MODEL", "buffalo_l")
     use_gpu = os.getenv("USE_GPU", "1") == "1"
     print(f"Using detector and embedder model pack: {model_name} (GPU={use_gpu})")
     
