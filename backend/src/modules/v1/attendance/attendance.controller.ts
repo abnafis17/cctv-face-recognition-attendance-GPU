@@ -74,7 +74,7 @@ export async function createAttendance(req: Request, res: Response) {
     }
 
     const confVal = Number(confidence ?? 0);
-    if (confVal > 0 && confVal < 0.44) {
+    if (confVal > 0 && confVal < 0.35) {
       return res.status(400).json({ error: "Rejected: low confidence score" });
     }
 

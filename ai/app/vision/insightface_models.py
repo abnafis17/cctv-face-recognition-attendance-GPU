@@ -87,8 +87,8 @@ class FaceDetector:
         model_name: str = "buffalo_l",
         use_gpu: bool = True,
         det_size: Tuple[int, int] = (640, 640),
-        min_face_size: int = 30,
-        min_det_score: float = 0.35,
+        min_face_size: int = 14,
+        min_det_score: float = 0.20,
     ):
         use_gpu = _env_bool("USE_GPU", use_gpu)
         det_n = _env_int("AI_DET_SIZE", det_size[0])
