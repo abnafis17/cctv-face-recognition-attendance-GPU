@@ -60,7 +60,7 @@ export function useHeadcountPage() {
   const [laptopActive, setLaptopActive] = useState(false);
 
   const [dateStr, setDateStr] = useState(dhakaTodayYYYYMMDD());
-  const [headcountType, setHeadcountType] = useState<HeadcountType>("headcount");
+  const [headcountType, setHeadcountType] = useState<HeadcountType>("");
   const [hcRows, setHcRows] = useState<HeadcountCrosscheckRow[]>([]);
   const [otRows, setOtRows] = useState<HeadcountOtRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -370,8 +370,21 @@ export function useHeadcountPage() {
   );
 
   const filteredHcRows = useMemo(() => {
-    if (statusFilter === "ALL") return hcRows;
-    return hcRows.filter((row) => row.status === statusFilter);
+    const base =
+      statusFilter === "ALL"
+        ? [...hcRows]
+        : hcRows.filter((row) => row.status === statusFilter);
+
+    base.sort((a, b) => {
+      const rank = (s: string) => (s === "MATCH" ? 0 : s === "UNMATCH" ? 1 : 2);
+      const ra = rank(a.status);
+      const rb = rank(b.status);
+      if (ra !== rb) return ra - rb;
+
+      return String(a.name ?? "").localeCompare(String(b.name ?? ""));
+    });
+
+    return base;
   }, [hcRows, statusFilter]);
 
   const dynamicHeadcountRuns = useMemo<HeadcountDynamicRun[]>(

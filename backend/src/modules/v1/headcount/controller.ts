@@ -292,24 +292,26 @@ export async function listHeadcount(req: Request, res: Response) {
         }
       }
 
-      const otRows = allCompanyEmployees.map((emp) => {
-        const ot = otDetailMap.get(emp.id);
-        return {
-          id: emp.id,
-          employeeId: emp.empId ?? emp.id,
-          empId: emp.empId ?? emp.id,
-          name: emp.name,
-          department: emp.department ?? "N/A",
-          line: emp.line ?? "N/A",
-          section: emp.section ?? "N/A",
-          unit: emp.unit ?? "N/A",
-          cameraName: ot?.cameraName ?? null,
-          headcountCameraName: ot?.cameraName ?? null,
-          headcountTime: toISOStringOrNull(ot?.timestamp ?? null),
-          headcountLastEntryTime: toISOStringOrNull(ot?.timestamp ?? null),
-          timestamp: toISOStringOrNull(ot?.timestamp ?? null),
-        };
-      });
+      const otRows = allCompanyEmployees
+        .filter((emp) => otDetailMap.has(emp.id))
+        .map((emp) => {
+          const ot = otDetailMap.get(emp.id)!;
+          return {
+            id: emp.id,
+            employeeId: emp.empId ?? emp.id,
+            empId: emp.empId ?? emp.id,
+            name: emp.name,
+            department: emp.department ?? "N/A",
+            line: emp.line ?? "N/A",
+            section: emp.section ?? "N/A",
+            unit: emp.unit ?? "N/A",
+            cameraName: ot.cameraName ?? null,
+            headcountCameraName: ot.cameraName ?? null,
+            headcountTime: toISOStringOrNull(ot.timestamp),
+            headcountLastEntryTime: toISOStringOrNull(ot.timestamp),
+            timestamp: toISOStringOrNull(ot.timestamp),
+          };
+        });
 
       return res.json(otRows);
     }
