@@ -9,6 +9,7 @@ import {
 import { findCameraByAnyId } from "../../../utils/camera";
 import axios from "axios";
 import { getAttendanceEvents, pushAttendanceEvent } from "./service";
+import { pushHeadcountEvent } from "../../../services/headcountEvents";
 
 const cameraHasAttendanceField = Prisma.dmmf.datamodel.models
   .find((m) => m.name === "Camera")
@@ -188,6 +189,33 @@ export async function createAttendance(req: Request, res: Response) {
       timestamp: row.timestamp.toISOString(),
       cameraId: cam ? cam.camId || cam.id : normalizedCameraId,
     });
+
+    // Create Headcount entry and push real-time Headcount Event so Headcount table updates in real time!
+    try {
+      const hcNotes = JSON.stringify({ firstSeen: parsedTimestamp.toISOString() });
+      const hcRow = await prisma.headcount.create({
+        data: {
+          companyId,
+          employeeId: employee.id,
+          timestamp: parsedTimestamp,
+          cameraId: cam ? cam.id : null,
+          confidence: confidence ?? null,
+          status: "MATCH",
+          notes: hcNotes,
+        },
+      });
+
+      pushHeadcountEvent(companyId, {
+        at: new Date().toISOString(),
+        headcountId: hcRow.id,
+        employeeId: employeePublicId(employee),
+        timestamp: hcRow.timestamp.toISOString(),
+        cameraId: cam ? cam.camId || cam.id : normalizedCameraId,
+        status: "MATCH",
+      });
+    } catch (hcErr) {
+      console.warn("Failed to create headcount record or event:", hcErr);
+    }
 
     res.json({
       ok: true,
