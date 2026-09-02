@@ -145,6 +145,31 @@ export async function createAttendance(req: Request, res: Response) {
       });
     }
 
+    // Deduplicate against duplicate HTTP requests within 10 seconds for the same employee/company
+    const tenSecondsAgo = new Date(parsedTimestamp.getTime() - 10000);
+    const existingRecent = await prisma.attendance.findFirst({
+      where: {
+        employeeId: employee.id,
+        companyId,
+        timestamp: {
+          gte: tenSecondsAgo,
+        },
+      },
+      orderBy: {
+        timestamp: "desc",
+      },
+    });
+
+    if (existingRecent) {
+      return res.json({
+        ok: true,
+        attendance: existingRecent,
+        employeeId: employeePublicId(employee),
+        snapshotPath: snapshotPath ?? null,
+        deduplicated: true,
+      });
+    }
+
     const row = await prisma.attendance.create({
       data: {
         employeeId: employee.id,

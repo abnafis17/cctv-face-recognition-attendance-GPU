@@ -36,5 +36,27 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+import logging
+from fastapi.responses import JSONResponse
+
+class Suppress404AccessLogFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        # Suppress 404 access log lines from external internet scanners
+        if " 404 " in msg or "404 Not Found" in msg:
+            return False
+        return True
+
+logging.getLogger("uvicorn.access").addFilter(Suppress404AccessLogFilter())
+
 # Register API Router
 app.include_router(api_router)
+
+@app.get("/")
+async def root_health():
+    return {"status": "ok", "service": "CCTV Face Recognition & Attendance Engine"}
+
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
+

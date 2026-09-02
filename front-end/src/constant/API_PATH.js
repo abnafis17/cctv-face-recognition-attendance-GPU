@@ -11,6 +11,13 @@ export const API = {
   CAMERAS: "/cameras",
 
   DAILY_ATTENDANCE_LIST: "/attendance/daily",
+  ATTENDANCE_EVENTS: "/attendance/events",
+  ATTENDANCE_CONTROL_STATUS: "/attendance/control/status",
+  ATTENDANCE_CONTROL_START: "/attendance/control/start",
+  ATTENDANCE_CONTROL_STOP: "/attendance/control/stop",
+  ATTENDANCE_CONTROL_ENABLE: "/attendance/control/enable",
+  ATTENDANCE_CONTROL_DISABLE: "/attendance/control/disable",
+  ATTENDANCE_CONTROL_VOICE_EVENTS: "/attendance/control/voice-events",
 
   UNKNOWN_RECOGNITIONS: "/unknown-recognitions",
   GATEPASS_TABLE: "/gatepass",
@@ -20,4 +27,14 @@ export const API = {
   MASTER_DATA_VISITOR_TYPES: "/master-data/visitor-types",
   MASTER_DATA_PURPOSES_OF_VISIT: "/master-data/purposes-of-visit",
   MASTER_DATA_USER_ROLES: "/master-data/user-roles",
+  PRESENCE_CONTROL: "/presence/control",
+  VISITORS: "/visitors",
+  VISITORS_REPORT_EMPLOYEE_WISE: "/visitors/reports/employee-wise",
+  VISITORS_REPORT_VISITOR_WISE: "/visitors/reports/visitor-wise",
+  AUTO_ENROLL_SESSION_STATUS: "/enroll2-auto/session/status",
+  AUTO_ENROLL_SESSION_START: "/enroll2-auto/session/start",
+  AUTO_ENROLL_SESSION_STOP: "/enroll2-auto/session/stop",
+  HEADCOUNT_EVENTS: "/headcount/events",
+  HEADCOUNT_CAMERAS: "/headcount/cameras",
+  HEADCOUNT_LIST: "/headcount/list",
 };

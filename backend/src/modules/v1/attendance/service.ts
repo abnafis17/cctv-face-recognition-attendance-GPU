@@ -55,7 +55,8 @@ export function pushAttendanceEvent(
   companyId: string,
   event: Omit<AttendanceEvent, "seq">
 ): number {
-  const state = getState(companyId);
+  const targetKey = getCompanyKey(companyId);
+  const state = getState(targetKey);
   state.seq += 1;
   const seq = state.seq;
 
@@ -63,8 +64,18 @@ export function pushAttendanceEvent(
   if (MAX_EVENTS > 0 && state.events.length > MAX_EVENTS) {
     state.events = state.events.slice(-MAX_EVENTS);
   }
-
   state.emitter.emit("new", seq);
+
+  if (targetKey !== "__default__") {
+    const defaultState = getState("__default__");
+    defaultState.seq += 1;
+    defaultState.events.push({ seq: defaultState.seq, ...event });
+    if (MAX_EVENTS > 0 && defaultState.events.length > MAX_EVENTS) {
+      defaultState.events = defaultState.events.slice(-MAX_EVENTS);
+    }
+    defaultState.emitter.emit("new", defaultState.seq);
+  }
+
   return seq;
 }
 

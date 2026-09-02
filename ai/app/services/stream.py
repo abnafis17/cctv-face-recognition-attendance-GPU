@@ -17,6 +17,8 @@ finally:
 import time
 import threading
 import requests
+import urllib.parse
+import urllib.request
 import numpy as np
 from typing import Optional, List, Dict
 
@@ -35,6 +37,12 @@ from app.vision.hud import draw_label_card, draw_bounding_box, ACCENT_KNOWN, ACC
 from app.utils import open_capture_with_fallback
 from app.services.model_manager import init_models, get_detector, get_embedder, get_body_detector
 from app.services.gallery import sync_gallery, get_gallery_templates
+
+GLOBAL_ATTENDANCE_LOCK = threading.Lock()
+GLOBAL_ATTENDANCE_COOLDOWNS: Dict[str, float] = {}
+
+GLOBAL_DOOR_LOCK = threading.Lock()
+GLOBAL_DOOR_COOLDOWNS: Dict[str, float] = {}
 
 # Compatibility wrapper for camera_rt to bridge LiteCameraStream to EnrollmentAutoService2
 class CameraRuntimeCompat:
@@ -417,6 +425,9 @@ class LiteCameraStream:
                     matched_track.name = best_name
                     matched_track.emp_id = best_emp_id
                     matched_track.score = top1_score
+                    matched_track.last_known_name = best_name
+                    matched_track.last_known_emp_id = best_emp_id
+                    matched_track.last_known_time = now
                     
                     is_authorized = True
                     has_auth_list = len(self.authorized_employee_ids) > 0
@@ -432,19 +443,33 @@ class LiteCameraStream:
                     matched_track.confirm_hits = getattr(matched_track, 'confirm_hits', 0) + 1
                     
                     if matched_track.confirm_hits >= 2 and is_authorized and self.attendance_enabled:
+                        matched_track.confirm_hits = 0
                         self._trigger_attendance(best_emp_id, best_name, top1_score)
+                else:
+                    # Pose & angle persistence: keep green HUD card for 3.0s if similarity dips when turning head
+                    last_known_ts = getattr(matched_track, 'last_known_time', 0.0)
+                    if now - last_known_ts < 3.0 and getattr(matched_track, 'last_known_emp_id', None):
+                        matched_track.name = getattr(matched_track, 'last_known_name', 'Unknown')
+                        matched_track.emp_id = getattr(matched_track, 'last_known_emp_id', None)
+                        matched_track.score = top1_score
+                    else:
+                        matched_track.name = "Unknown"
+                        matched_track.emp_id = None
+                        matched_track.score = top1_score
+                        matched_track.is_authorized = True
+                        matched_track.confirm_hits = 0
+            else:
+                last_known_ts = getattr(matched_track, 'last_known_time', 0.0)
+                if now - last_known_ts < 3.0 and getattr(matched_track, 'last_known_emp_id', None):
+                    matched_track.name = getattr(matched_track, 'last_known_name', 'Unknown')
+                    matched_track.emp_id = getattr(matched_track, 'last_known_emp_id', None)
+                    matched_track.score = 0.0
                 else:
                     matched_track.name = "Unknown"
                     matched_track.emp_id = None
-                    matched_track.score = top1_score
+                    matched_track.score = -1.0
                     matched_track.is_authorized = True
                     matched_track.confirm_hits = 0
-            else:
-                matched_track.name = "Unknown"
-                matched_track.emp_id = None
-                matched_track.score = -1.0
-                matched_track.is_authorized = True
-                matched_track.confirm_hits = 0
                 
         matched_track.last_recognize_time = now
 
@@ -472,55 +497,159 @@ class LiteCameraStream:
         self._relay_cache_ts = now
         return url
 
-    def _trigger_door_relay(self, emp_id: str, name: str, score: float):
+    def _push_realtime_recognition(self, emp_id: str, name: str, score: float):
         now = time.time()
-        if not hasattr(self, "relay_cooldowns"):
-            self.relay_cooldowns = {}
-        last_relay = self.relay_cooldowns.get(emp_id, 0.0)
-        # 2.0s spam prevention gap per person
-        if now - last_relay < 2.0:
+        emp_id_str = str(emp_id or "").strip()
+        if not emp_id_str:
             return
             
-        self.relay_cooldowns[emp_id] = now
+        emp_key = f"{self.camera_id}:{emp_id_str}"
+        if not hasattr(self, "_rec_history_cooldowns"):
+            self._rec_history_cooldowns = {}
+            
+        last_push = self._rec_history_cooldowns.get(emp_key, 0.0)
+        # 2.5s rate-limit for live Recognition History page table updates
+        if now - last_push < 2.5:
+            return
+            
+        self._rec_history_cooldowns[emp_key] = now
+
+        def _do_post():
+            try:
+                url = f"{BACKEND_BASE_URL}/api/v1/attendance"
+                cid_header = str(self.company_id or os.getenv("BACKEND_COMPANY_ID") or "").strip()
+                if not cid_header:
+                    cid_header = "cmk9dp01a0000vpskicoq1gj0"
+
+                headers = {
+                    "Content-Type": "application/json",
+                    "x-company-id": cid_header
+                }
+                timestamp_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                payload = {
+                    "employeeId": emp_id_str,
+                    "timestamp": timestamp_iso,
+                    "cameraId": self.camera_id,
+                    "confidence": score,
+                    "type": getattr(self, "stream_type", "attendance")
+                }
+                requests.post(url, headers=headers, json=payload, timeout=2.0)
+            except Exception:
+                pass
+
+        threading.Thread(target=_do_post, daemon=True).start()
+
+    def _trigger_door_relay(self, emp_id: str, name: str, score: float):
+        now = time.time()
+        emp_id_str = str(emp_id or "").strip()
+        if not emp_id_str:
+            return
+            
+        emp_key = f"{self.camera_id}:{emp_id_str}"
+        min_gap = max(0.0, float(os.getenv("DOOR_UNLOCK_MIN_GAP", "5.0")))
+        
+        with GLOBAL_DOOR_LOCK:
+            last_fire = GLOBAL_DOOR_COOLDOWNS.get(emp_key, 0.0)
+            if now - last_fire < min_gap:
+                return
+            GLOBAL_DOOR_COOLDOWNS[emp_key] = now
+
         threading.Thread(
-            target=self._send_relay_request,
-            args=(emp_id, name, score),
+            target=self._send_door_unlock_request,
+            args=(emp_id_str, name, score),
             daemon=True
         ).start()
 
-    def _send_relay_request(self, emp_id: str, name: str, score: float):
-        relay_url = self._get_relay_url()
-        sep = "&" if "?" in relay_url else "?"
-        full_url = f"{relay_url}{sep}employee_id={emp_id}"
-        
+    def _send_door_unlock_request(self, emp_id: str, name: str, score: float):
         try:
-            requests.get(full_url, timeout=1.5)
-            print(f"[DOOR RELAY] UNLOCKED | empId={emp_id} ({name}) | URL={relay_url} | STATUS=SUCCESS", flush=True)
-        except Exception:
-            print(f"[DOOR RELAY] UNLOCKED | empId={emp_id} ({name}) | URL={relay_url} | STATUS=SUCCESS", flush=True)
+            relay_silent_url = "http://10.81.100.72/silent"
+            try:
+                res = requests.get(f"{BACKEND_BASE_URL}/api/v1/settings/relay", headers={"x-company-id": self.company_id}, timeout=1.5)
+                if res.status_code == 200:
+                    data = res.json()
+                    if isinstance(data, list) and len(data) > 0:
+                        data = data[0]
+                    if isinstance(data, dict):
+                        relay_silent_url = data.get("relaySilentUrl") or data.get("relay_silent_url") or relay_silent_url
+            except Exception:
+                pass
+
+            emp_pic_url = ""
+            try:
+                emp_res = requests.get(f"{BACKEND_BASE_URL}/api/v1/employees", headers={"x-company-id": self.company_id}, timeout=1.5)
+                if emp_res.status_code == 200:
+                    employees = emp_res.json()
+                    if isinstance(employees, list):
+                        for emp in employees:
+                            if isinstance(emp, dict):
+                                candidate_ids = [
+                                    str(emp.get("empId") or ""),
+                                    str(emp.get("emp_id") or ""),
+                                    str(emp.get("employeeId") or ""),
+                                    str(emp.get("employee_id") or ""),
+                                    str(emp.get("id") or "")
+                                ]
+                                if emp_id in candidate_ids:
+                                    emp_pic_url = str(emp.get("empPicUrl") or emp.get("emp_pic_url") or emp.get("photoUrl") or "").strip()
+                                    if emp_pic_url:
+                                        break
+            except Exception:
+                pass
+
+            if not emp_pic_url:
+                emp_pic_url = f"{emp_id}.jpg"
+
+            # Door Silent Unlock URL matching main branch
+            silent_url = relay_silent_url
+            sep = "&" if "?" in silent_url else "?"
+            silent_url = f"{silent_url}{sep}employee_id={urllib.parse.quote(emp_id, safe='')}"
+            if emp_pic_url:
+                sep = "&" if "?" in silent_url else "?"
+                silent_url = f"{silent_url}{sep}empPicUrl={urllib.parse.quote(emp_pic_url, safe='')}"
+
+            # Execute Door Silent Unlock HTTP GET
+            try:
+                resp = urllib.request.urlopen(silent_url, timeout=3.0)
+                resp.close()
+                print(f"[DOOR] unlock fired cid={self.camera_id} emp={emp_id} url={silent_url} name={name} sim={score:.3f}", flush=True)
+            except Exception as e:
+                print(f"[DOOR] failed cid={self.camera_id} emp={emp_id} url={silent_url} err={e}", flush=True)
+        except Exception as e:
+            print(f"[DOOR] failed cid={self.camera_id} emp={emp_id} err={e}", flush=True)
 
     def _sync_and_log_recognized_persons(self):
         pass
 
     def _trigger_attendance(self, emp_id: str, name: str, score: float):
         now = time.time()
-        last_logged = self.attendance_cooldowns.get(emp_id, 0.0)
-        if now - last_logged >= ATTENDANCE_COOLDOWN_S:
-            self.attendance_cooldowns[emp_id] = now
-            threading.Thread(
-                target=self._submit_attendance_api,
-                args=(emp_id, name, score),
-                daemon=True
-            ).start()
+        emp_key = str(emp_id or "").strip()
+        if not emp_key:
+            return
+            
+        with GLOBAL_ATTENDANCE_LOCK:
+            last_logged = GLOBAL_ATTENDANCE_COOLDOWNS.get(emp_key, 0.0)
+            if now - last_logged < ATTENDANCE_COOLDOWN_S:
+                return
+            GLOBAL_ATTENDANCE_COOLDOWNS[emp_key] = now
+            
+        threading.Thread(
+            target=self._submit_attendance_api,
+            args=(emp_key, name, score),
+            daemon=True
+        ).start()
 
     def _submit_attendance_api(self, emp_id: str, name: str, score: float):
         from app.clients.erp_client import write_erp_log
 
         # 1. Post to backend DB for internal attendance & recognition history
         url = f"{BACKEND_BASE_URL}/api/v1/attendance"
+        cid_header = str(self.company_id or os.getenv("BACKEND_COMPANY_ID") or "").strip()
+        if not cid_header:
+            cid_header = "cmk9dp01a0000vpskicoq1gj0"
+
         headers = {
             "Content-Type": "application/json",
-            "x-company-id": self.company_id
+            "x-company-id": cid_header
         }
         timestamp_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         time_str = time.strftime("%H:%M:%S", time.localtime())
@@ -540,8 +669,8 @@ class LiteCameraStream:
         except Exception:
             pass
 
-        # 2. Fetch all active ERP configurations for this company
-        active_erp_list = []
+        # 2. Fetch all active ERP configurations for this company & map by urlType
+        active_erp_map = {}
         try:
             erp_settings_url = f"{BACKEND_BASE_URL}/api/v1/settings/erp?all=1"
             res_erp = requests.get(erp_settings_url, headers=headers, timeout=1.5)
@@ -550,74 +679,111 @@ class LiteCameraStream:
                 if isinstance(items, list):
                     for item in items:
                         if isinstance(item, dict) and item.get("isActive"):
-                            active_erp_list.append(item)
+                            u_type = str(item.get("urlType") or "attendance").strip().lower()
+                            if u_type not in active_erp_map:
+                                active_erp_map[u_type] = item
         except Exception:
             pass
 
-        if not active_erp_list:
-            active_erp_list = [{"urlType": "attendance", "isActive": True}]
+        if not active_erp_map:
+            active_erp_map["attendance"] = {"urlType": "attendance", "isActive": True}
 
-        # 3. Trigger API push & write logs for each active ERP endpoint
-        for erp in active_erp_list:
-            url_type = str(erp.get("urlType") or "attendance").strip().lower()
-            
-            if url_type == "attendance_two":
-                erp_tag = "[ERP2 PUSH]"
+        # 3. Loop over fixed ERP spec list matching main branch schema
+        erp_specs = [
+            ("attendance", "ERP 1"),
+            ("attendance_two", "ERP 2"),
+            ("attendance_two_log", "ERP 3"),
+        ]
+
+        for q_type, name_tag in erp_specs:
+            erp = active_erp_map.get(q_type)
+            if erp is None:
+                continue
+
+            if q_type == "attendance_two":
                 file_payload_log = f"type=attendance_two | employee_id={emp_id} | attendance_date={formatted_date} | time={time_str} | status=Present | source={self.camera_id}"
-            elif url_type == "attendance_two_log":
-                erp_tag = "[ERP3 PUSH]"
+            elif q_type == "attendance_two_log":
                 file_payload_log = f"type=attendance_two_log | employee_id={emp_id} | attendance_date={formatted_date} | time={time_str} | status=present | source={self.camera_id}"
             else:
-                erp_tag = "[ERP1 PUSH]"
                 file_payload_log = f"type=attendance | empId={emp_id} | attendanceDate={date_str} | inTime={time_str} | inLocation={self.camera_id}"
 
-            # Execute real-time HTTP POST if configured URL is available
+            # Print main branch queued log EXACTLY ONCE per ERP type
+            print(f"[{name_tag}] queued ok=True emp={emp_id} date={date_str} in={time_str}", flush=True)
+
+            # Asynchronous background ERP push + erp-sync.log write
             endpoint = erp.get("erpAttendanceEndpoint") or erp.get("erp_attendance_endpoint")
             base_url = erp.get("erpBaseUrl") or erp.get("erp_base_url")
             prefix = erp.get("erpPrefix") or erp.get("erp_prefix") or ""
-            
-            is_success = False
-            erp_response_str = ""
 
-            if base_url and endpoint:
-                try:
-                    full_url = f"{base_url.rstrip('/')}{prefix}{endpoint}"
-                    if url_type in ("attendance_two", "attendance_two_log"):
-                        status_val = "present" if url_type == "attendance_two_log" else "Present"
-                        erp_payload = {
-                            "employee_id": emp_id,
-                            "attendance_date": formatted_date,
-                            "time": time_str,
-                            "status": status_val,
-                            "source": self.camera_id
-                        }
-                    else:
-                        erp_payload = {
-                            "attendanceDate": date_str,
-                            "empId": emp_id,
-                            "inTime": time_str,
-                            "inLocation": self.camera_id
-                        }
-                    h = {"Content-Type": "application/json", "accept": "*/*"}
-                    if url_type == "attendance":
-                        h["x-api-version"] = "2.0"
-                    r = requests.post(full_url, json=erp_payload, headers=h, timeout=3.0)
-                    is_success = (r.status_code in (200, 201))
-                    erp_response_str = r.text or '{"statusCode": 200, "message": "Success"}'
-                except Exception as e:
-                    is_success = False
-                    erp_response_str = f'{{"error": "{str(e)}"}}'
-            else:
-                is_success = True
+            def _push_worker(u_type=q_type, b_url=base_url, e_point=endpoint, p_fix=prefix, f_log=file_payload_log):
                 erp_response_str = '{"statusCode": 200, "message": "Success"}'
+                is_success = True
+                
+                if b_url and e_point:
+                    try:
+                        full_url = f"{b_url.rstrip('/')}{p_fix}{e_point}"
+                        if u_type in ("attendance_two", "attendance_two_log"):
+                            status_val = "present" if u_type == "attendance_two_log" else "Present"
+                            erp_payload = {
+                                "employee_id": emp_id,
+                                "attendance_date": formatted_date,
+                                "time": time_str,
+                                "status": status_val,
+                                "source": self.camera_id
+                            }
+                        else:
+                            erp_payload = {
+                                "attendanceDate": date_str,
+                                "empId": emp_id,
+                                "inTime": time_str,
+                                "inLocation": self.camera_id
+                            }
+                        h = {"Content-Type": "application/json", "accept": "*/*"}
+                        if u_type == "attendance":
+                            h["x-api-version"] = "2.0"
+                        r = requests.post(full_url, json=erp_payload, headers=h, timeout=5.0)
+                        is_success = (r.status_code in (200, 201))
+                        erp_response_str = r.text or '{"statusCode": 200, "message": "Success"}'
+                    except Exception as ex:
+                        is_success = False
+                        erp_response_str = f'{{"error": "{str(ex)}"}}'
 
-            # Output clean terminal log and write to logs/erp-sync.log
-            if is_success:
-                print(f"{erp_tag} empId={emp_id} ({name}) | attendanceDate={date_str} | inTime={time_str} | STATUS=SUCCESS", flush=True)
-                write_erp_log(f"PUSH REALTIME | {file_payload_log} | STATUS=SUCCESS | erp_response={erp_response_str}")
-            else:
-                print(f"{erp_tag} empId={emp_id} ({name}) | attendanceDate={date_str} | inTime={time_str} | STATUS=FAILED", flush=True)
-                write_erp_log(f"PUSH REALTIME | {file_payload_log} | STATUS=FAILED | erp_response={erp_response_str}")
+                if is_success:
+                    write_erp_log(f"PUSH REALTIME | {f_log} | STATUS=SUCCESS | erp_response={erp_response_str}")
+                else:
+                    write_erp_log(f"PUSH REALTIME | {f_log} | STATUS=FAILED | erp_response={erp_response_str}")
+
+            threading.Thread(target=_push_worker, daemon=True).start()
+
+        # Trigger Relay On HTTP GET once when attendance is confirmed
+        try:
+            relay_on_url = "http://10.81.100.72/on"
+            try:
+                r_res = requests.get(f"{BACKEND_BASE_URL}/api/v1/settings/relay", headers={"x-company-id": self.company_id}, timeout=1.5)
+                if r_res.status_code == 200:
+                    d_data = r_res.json()
+                    if isinstance(d_data, list) and len(d_data) > 0:
+                        d_data = d_data[0]
+                    if isinstance(d_data, dict):
+                        relay_on_url = d_data.get("relayOnUrl") or d_data.get("relay_on_url") or relay_on_url
+            except Exception:
+                pass
+
+            on_url = relay_on_url
+            sep = "&" if "?" in on_url else "?"
+            on_url = f"{on_url}{sep}employee_id={urllib.parse.quote(emp_id, safe='')}"
+
+            def _relay_on_worker():
+                try:
+                    resp = urllib.request.urlopen(on_url, timeout=3.0)
+                    resp.close()
+                    print(f"[RELAY] on cid={self.camera_id} url={on_url}", flush=True)
+                except Exception as ex:
+                    print(f"[RELAY] failed cid={self.camera_id} url={on_url} err={ex}", flush=True)
+
+            threading.Thread(target=_relay_on_worker, daemon=True).start()
+        except Exception:
+            pass
 
     def stop(self):
         self.stopped = True

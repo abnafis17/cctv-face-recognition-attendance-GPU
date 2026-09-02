@@ -44,11 +44,13 @@ export default function RecognitionHistoryPage() {
   }, []);
 
   useEffect(() => {
-    // ✅ avoids "setState inside effect" warning in newer React dev
-    const first = window.setTimeout(() => fetchAttendance(), 0);
+    fetchAttendance();
+    const interval = window.setInterval(() => {
+      fetchAttendance();
+    }, 3000);
 
     return () => {
-      window.clearTimeout(first);
+      window.clearInterval(interval);
     };
   }, [fetchAttendance]);
 
