@@ -42,23 +42,47 @@ export function VisitorPhotoRightPanel({
   const isOutOfBox = liveDetectionStatus === "out_of_box";
   const isError = isMulti || isNoFace || isOutOfBox;
 
-  const boxColor = isOk ? "rgba(34,197,94,0.85)" : isError ? "rgba(239,68,68,0.90)" : "rgba(34,211,238,0.65)";
-  const glowColor = isOk ? "rgba(34,197,94,0.35)" : isError ? "rgba(239,68,68,0.40)" : "rgba(34,211,238,0.25)";
+  const boxColor = isOk
+    ? "rgba(34,197,94,0.85)"
+    : isError
+      ? "rgba(239,68,68,0.90)"
+      : "rgba(34,211,238,0.65)";
+  const glowColor = isOk
+    ? "rgba(34,197,94,0.35)"
+    : isError
+      ? "rgba(239,68,68,0.40)"
+      : "rgba(34,211,238,0.25)";
   const bracketClr = isOk ? "#22c55e" : isError ? "#ef4444" : "#22d3ee";
-  const scanClr = isOk ? "rgba(34,197,94,0.95)" : isError ? "rgba(239,68,68,0.90)" : "rgba(34,211,238,0.95)";
-  const chipBg = isOk ? "rgba(21,128,61,0.85)" : isError ? "rgba(153,27,27,0.85)" : "rgba(0,0,0,0.80)";
-  const chipBorder = isOk ? "rgba(34,197,94,0.50)" : isError ? "rgba(239,68,68,0.50)" : "rgba(34,211,238,0.30)";
+  const scanClr = isOk
+    ? "rgba(34,197,94,0.95)"
+    : isError
+      ? "rgba(239,68,68,0.90)"
+      : "rgba(34,211,238,0.95)";
+  const chipBg = isOk
+    ? "rgba(21,128,61,0.85)"
+    : isError
+      ? "rgba(153,27,27,0.85)"
+      : "rgba(0,0,0,0.80)";
+  const chipBorder = isOk
+    ? "rgba(34,197,94,0.50)"
+    : isError
+      ? "rgba(239,68,68,0.50)"
+      : "rgba(34,211,238,0.30)";
   const dotClr = isOk ? "#22c55e" : isError ? "#ef4444" : "#22d3ee";
 
   const statusMsg = isOk
     ? "Face detected — Ready to capture"
     : isMulti
-      ? "Multiple faces — 1 person only"
+      ? `Multiple faces (${liveDetectionStatus}) — 1 person only`
       : isNoFace
         ? "No face detected — Move closer"
         : isOutOfBox
           ? "Face out of frame — Centre yourself"
           : "Place face inside the box";
+
+  const chipLabel = isMulti
+    ? "Multiple faces — 1 person only"
+    : statusMsg;
 
   const videoConstraints = selectedDeviceId
     ? { deviceId: { exact: selectedDeviceId } }
@@ -100,7 +124,7 @@ export function VisitorPhotoRightPanel({
         )}
 
         {/* Camera Box */}
-        <div className="relative aspect-square w-full rounded-2xl border-2 border-dashed border-zinc-800 bg-slate-950 overflow-hidden flex items-center justify-center shadow-inner">
+        <div className="relative aspect-square w-full rounded-2xl border-2 border-dashed border-zinc-200 bg-slate-950 overflow-hidden flex items-center justify-center shadow-inner">
           {isCameraActive ? (
             <>
               <Webcam
@@ -179,7 +203,7 @@ export function VisitorPhotoRightPanel({
                   }}
                 >
                   <span style={{ display: "inline-block", width: 7, height: 7, borderRadius: "50%", background: dotClr, boxShadow: `0 0 6px 2px ${dotClr}`, animation: "dotBlink 1.4s ease-in-out infinite", flexShrink: 0 }} />
-                  <span style={{ fontSize: 10, fontWeight: 700, color: "#f0fdf4", letterSpacing: "0.05em", textTransform: "uppercase" }}>{statusMsg}</span>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: "#f0fdf4", letterSpacing: "0.05em", textTransform: "uppercase" }}>{chipLabel}</span>
                 </div>
 
                 {/* Error detail badge */}
@@ -196,7 +220,43 @@ export function VisitorPhotoRightPanel({
                 {isOk && (
                   <div style={{ position: "absolute", top: "83%", left: "10%", right: "10%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, background: "rgba(5,46,22,0.88)", backdropFilter: "blur(6px)", border: "1px solid rgba(34,197,94,0.40)", borderRadius: 8, padding: "6px 10px" }}>
                     <CheckCircle style={{ width: 12, height: 12, color: "#86efac", flexShrink: 0 }} />
-                    <span style={{ fontSize: 10, fontWeight: 700, color: "#86efac", letterSpacing: "0.03em" }}>KEEP FACE CENTRED & LOOK STRAIGHT</span>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: "#86efac", letterSpacing: "0.03em" }}>
+                      Face aligned — click <span style={{ color: "#4ade80" }}>Capture Photo</span>
+                    </span>
+                  </div>
+                )}
+
+                {/* Bottom hint (idle only) */}
+                {liveDetectionStatus === "idle" && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "83%",
+                      left: "10%",
+                      right: "10%",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: 2,
+                      background: "rgba(0,0,0,0.78)",
+                      backdropFilter: "blur(6px)",
+                      border: "1px solid rgba(255,255,255,0.08)",
+                      borderRadius: 8,
+                      padding: "6px 10px",
+                      textAlign: "center",
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 600,
+                        color: "rgba(255,255,255,0.45)",
+                        letterSpacing: "0.04em",
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      Keep face centred &amp; look straight
+                    </span>
                   </div>
                 )}
               </div>

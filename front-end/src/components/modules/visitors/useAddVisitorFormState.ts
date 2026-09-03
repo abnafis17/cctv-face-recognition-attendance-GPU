@@ -9,13 +9,38 @@ import { loadFaceApiModels, detectFacesLive, analyzeCapturedImage } from "@/lib/
 import { useErpEmployees } from "@/hooks/useErpEmployees";
 import { useCameraDevices } from "@/hooks/useCameraDevices";
 
-export const fallbackVisitorTypes = ["Guest", "Contractor", "Official", "Interviewee", "Other"];
-export const fallbackPurposes = ["Meeting", "Interview", "Delivery", "Audit", "Maintenance", "Other"];
-export const idProofTypes = ["Employee ID", "NID", "Passport", "Driving License", "Other"];
+export const fallbackVisitorTypes = [
+  "Guest",
+  "Contractor",
+  "Official",
+  "Interviewee",
+  "Other",
+];
+export const fallbackPurposes = [
+  "Meeting",
+  "Interview",
+  "Delivery",
+  "Audit",
+  "Maintenance",
+  "Other",
+];
+export const idProofTypes = [
+  "Employee ID",
+  "NID",
+  "Passport",
+  "Driving License",
+  "Other",
+];
 export const extraGuestsOptions = Array.from({ length: 15 }, (_, i) => String(i + 1));
 
-export function dhakaTodayString() { return new Date().toLocaleDateString("en-GB").split("/").reverse().join("-"); }
-export function dhakaTimeString() { return new Date().toTimeString().split(" ")[0].substring(0, 5); }
+export function dhakaTodayString() {
+  const today = new Date();
+  return today.toLocaleDateString("en-GB").split("/").reverse().join("-");
+}
+export function dhakaTimeString() {
+  const today = new Date();
+  return today.toTimeString().split(" ")[0].substring(0, 5);
+}
 
 export function useAddVisitorFormState() {
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -31,18 +56,24 @@ export function useAddVisitorFormState() {
   const [capturedFile, setCapturedFile] = useState<File | null>(null);
   const [capturedEmbedding, setCapturedEmbedding] = useState<number[] | null>(null);
   const [isCameraActive, setIsCameraActive] = useState(false);
-  const [liveDetectionStatus, setLiveDetectionStatus] = useState<"idle" | "ok" | "no_face" | "multi_face" | "out_of_box">("idle");
-  const [recognitionStatus, setRecognitionStatus] = useState<"idle" | "recognized" | "unrecognized">("idle");
+  const [liveDetectionStatus, setLiveDetectionStatus] = useState<
+    "idle" | "ok" | "no_face" | "multi_face" | "out_of_box"
+  >("idle");
+  const [recognitionStatus, setRecognitionStatus] = useState<
+    "idle" | "scanning" | "recognized" | "unrecognized"
+  >("idle");
   const [recognizedVisitorName, setRecognizedVisitorName] = useState<string | null>(null);
   const [isExtractingFace, setIsExtractingFace] = useState(false);
 
   const [deptSearch, setDeptSearch] = useState("");
   const [hostSearch, setHostSearch] = useState("");
   const [selectedEmployee, setSelectedEmployee] = useState<any | null>(null);
+  const [departmentsList, setDepartmentsList] = useState<string[]>([]);
 
   const webcamRef = useRef<Webcam>(null);
   const liveDetectionRafRef = useRef<number | null>(null);
   const liveDetectionActiveRef = useRef(false);
+  const isRecognizedRef = useRef(false);
 
   const { devices: cameraDevices, selectedDeviceId, setSelectedDeviceId } = useCameraDevices();
 
@@ -60,8 +91,10 @@ export function useAddVisitorFormState() {
   }, [cameraDevices, selectedDeviceId, setSelectedDeviceId]);
 
   useEffect(() => {
-    if (typeof window !== "undefined") setKbEnabled(localStorage.getItem("virtual-keyboard-enabled") !== "false");
-    void loadFaceApiModels();
+    if (typeof window !== "undefined") {
+      setKbEnabled(localStorage.getItem("virtual-keyboard-enabled") !== "false");
+    }
+    void loadFaceApiModels().catch((e) => console.warn("Failed to pre-warm face-api models:", e));
   }, []);
 
   useEffect(() => {
@@ -75,7 +108,9 @@ export function useAddVisitorFormState() {
         if (!active) return;
         setVisitorTypesList((vtRes.data?.items || []).map((x: any) => x.name));
         setPurposesList((povRes.data?.items || []).map((x: any) => x.name));
-      } catch { /* fallback */ }
+      } catch (error) {
+        console.error("Failed to load visitor master data options", error);
+      }
     }
     void loadMasterData();
     return () => { active = false; };
@@ -84,7 +119,12 @@ export function useAddVisitorFormState() {
   const activeVisitorTypes = visitorTypesList.length > 0 ? visitorTypesList : fallbackVisitorTypes;
   const activePurposes = purposesList.length > 0 ? purposesList : fallbackPurposes;
 
-  const { employees: erpEmployees, loading: erpLoading, setSearch: setErpSearch } = useErpEmployees();
+  const { employees: erpEmployees, loading: erpLoading, setSearch: setErpSearch } = useErpEmployees({
+    debounceMs: 350,
+    initialSearch: "",
+    autoFetch: true,
+    filterByOrg: true,
+  });
 
   const form = useForm<VisitorFormValues>({
     resolver: zodResolver(visitorSchema),
@@ -100,13 +140,35 @@ export function useAddVisitorFormState() {
   const selectedDepartment = form.watch("department");
   const selectedHostId = form.watch("hostEmployeeId");
 
-  const departmentsList = useMemo(() => {
-    const set = new Set<string>();
-    erpEmployees.forEach((e) => {
-      if (e.department?.trim()) set.add(e.department.trim());
-    });
-    return Array.from(set).sort();
+  const derivedDepartments = useMemo(() => {
+    const depts = erpEmployees
+      .map((e) => e.department)
+      .filter(Boolean)
+      .map((d) => (d || "").trim());
+    return Array.from(new Set(depts)).sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: "base" })
+    );
   }, [erpEmployees]);
+
+  useEffect(() => {
+    if (erpEmployees.length > 0) {
+      const depts = erpEmployees
+        .map((e) => e.department)
+        .filter(Boolean)
+        .map((d) => (d || "").trim());
+      const uniqueDepts = Array.from(new Set(depts));
+      if (uniqueDepts.length > 0) {
+        setDepartmentsList((prev) => {
+          const combined = Array.from(new Set([...prev, ...uniqueDepts])).sort(
+            (a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })
+          );
+          return combined;
+        });
+      }
+    }
+  }, [erpEmployees]);
+
+  const activeDepartments = departmentsList.length > 0 ? departmentsList : derivedDepartments;
 
   useEffect(() => {
     if (
@@ -121,11 +183,31 @@ export function useAddVisitorFormState() {
     setErpSearch(q);
   }, [hostSearch, deptSearch, selectedDepartment, selectedEmployee, setErpSearch]);
 
+  // Synchronize department change with host clearing (from Jetson-orin-nano logic)
+  useEffect(() => {
+    if (!selectedDepartment || !selectedHostId) return;
+    const currentHost = selectedEmployee && selectedEmployee.employeeId === selectedHostId
+      ? selectedEmployee
+      : erpEmployees.find((e) => e.employeeId === selectedHostId);
+
+    if (currentHost) {
+      if ((currentHost.department || "").toLowerCase() !== selectedDepartment.toLowerCase()) {
+        form.setValue("hostEmployeeId", "");
+        form.setValue("hostEmployeeName", "");
+        form.setValue("hostPicUrl", "");
+        form.setValue("hostDesignationId", "");
+        form.setValue("hostDesignationName", "");
+        setSelectedEmployee(null);
+      }
+    }
+  }, [selectedDepartment, selectedHostId, selectedEmployee, erpEmployees, form]);
+
   const filteredDepartments = useMemo(() => {
+    const list = activeDepartments;
     const q = deptSearch.trim().toLowerCase();
-    if (!q) return departmentsList;
-    return departmentsList.filter((d) => d.toLowerCase().includes(q));
-  }, [departmentsList, deptSearch]);
+    if (!q) return list;
+    return list.filter((d) => d.toLowerCase().includes(q));
+  }, [activeDepartments, deptSearch]);
 
   const departmentOptions = useMemo(() => {
     return filteredDepartments.map((d) => ({ value: d, label: d }));
@@ -163,11 +245,21 @@ export function useAddVisitorFormState() {
     return options;
   }, [filteredHostEmployees, selectedEmployee]);
 
+  const extraGuestValue = form.watch("extraGuest");
+  const extraGuestsCount = extraGuestValue ? parseInt(extraGuestValue, 10) : 0;
+
+  const visitorPassPlaceholder =
+    extraGuestsCount > 0
+      ? `e.g. PASS123, ${Array.from({ length: extraGuestsCount }, (_, i) => `PASS${124 + i}`).join(", ")} (1 self + ${extraGuestsCount} extra guest${extraGuestsCount > 1 ? "s" : ""})`
+      : "Pass / badge number";
+
   const handleDepartmentSelect = useCallback((deptVal: string) => {
     form.setValue("department", deptVal, { shouldValidate: true });
     form.setValue("hostEmployeeId", "");
     form.setValue("hostEmployeeName", "");
     form.setValue("hostPicUrl", "");
+    form.setValue("hostDesignationId", "");
+    form.setValue("hostDesignationName", "");
     setSelectedEmployee(null);
   }, [form]);
 
@@ -177,15 +269,21 @@ export function useAddVisitorFormState() {
       form.setValue("hostEmployeeId", "");
       form.setValue("hostEmployeeName", "");
       form.setValue("hostPicUrl", "");
+      form.setValue("hostDesignationId", "");
+      form.setValue("hostDesignationName", "");
       return;
     }
     const found = erpEmployees.find((e) => e.employeeId === empId) || (selectedEmployee?.employeeId === empId ? selectedEmployee : null);
     if (found) {
       setSelectedEmployee(found);
+      if (found.department) {
+        form.setValue("department", found.department, { shouldValidate: true });
+      }
       form.setValue("hostEmployeeId", found.employeeId, { shouldValidate: true });
       form.setValue("hostEmployeeName", found.employeeName, { shouldValidate: true });
-      if (found.picUrl) form.setValue("hostPicUrl", found.picUrl);
-      if (found.department) form.setValue("department", found.department, { shouldValidate: true });
+      form.setValue("hostPicUrl", found.picUrl || "");
+      form.setValue("hostDesignationId", found.designationId || "");
+      form.setValue("hostDesignationName", found.designation || "");
     }
   }, [erpEmployees, selectedEmployee, form]);
 
@@ -202,54 +300,108 @@ export function useAddVisitorFormState() {
     toast.success("Host and department selection reset");
   }, [form]);
 
-  const runLiveFaceDetection = useCallback(async () => {
-    if (!liveDetectionActiveRef.current) return;
-    const video = webcamRef.current?.video;
-    if (video && video.readyState === 4) {
-      const boxes = await detectFacesLive(video);
-      if (!boxes || boxes.length === 0) {
-        setLiveDetectionStatus("no_face");
-      } else if (boxes.length > 1) {
-        setLiveDetectionStatus("multi_face");
-      } else {
-        const box = boxes[0];
-        const vWidth = video.videoWidth || 640;
-        const vHeight = video.videoHeight || 640;
-        const guideLeft = vWidth * 0.2;
-        const guideRight = vWidth * 0.8;
-        const guideTop = vHeight * 0.18;
-        const guideBottom = vHeight * 0.82;
-        const faceCenterX = box.left + box.width / 2;
-        const faceCenterY = box.top + box.height / 2;
-        const isInBox =
-          faceCenterX >= guideLeft &&
-          faceCenterX <= guideRight &&
-          faceCenterY >= guideTop &&
-          faceCenterY <= guideBottom;
-        setLiveDetectionStatus(isInBox ? "ok" : "out_of_box");
-      }
-    } else {
-      setLiveDetectionStatus("idle");
-    }
-    if (liveDetectionActiveRef.current) {
-      liveDetectionRafRef.current = requestAnimationFrame(runLiveFaceDetection);
-    }
-  }, []);
+  // Exact Jetson-Orin-Nano Live Face Detection Algorithm (Box Zone 18%-82% & 72% Overlap Ratio)
+  const FACE_BOX_TOP = 0.18;
+  const FACE_BOX_BOTTOM = 0.82;
+  const FACE_BOX_LEFT = 0.2;
+  const FACE_BOX_RIGHT = 0.8;
+  const OVERLAP_THRESHOLD = 0.72;
 
   useEffect(() => {
-    if (isCameraActive) {
-      liveDetectionActiveRef.current = true;
-      liveDetectionRafRef.current = requestAnimationFrame(runLiveFaceDetection);
-    } else {
+    if (!isCameraActive) {
       liveDetectionActiveRef.current = false;
-      if (liveDetectionRafRef.current) cancelAnimationFrame(liveDetectionRafRef.current);
+      if (liveDetectionRafRef.current !== null) {
+        cancelAnimationFrame(liveDetectionRafRef.current);
+        liveDetectionRafRef.current = null;
+      }
       setLiveDetectionStatus("idle");
+      return;
     }
-    return () => {
-      liveDetectionActiveRef.current = false;
-      if (liveDetectionRafRef.current) cancelAnimationFrame(liveDetectionRafRef.current);
+
+    let frameSkip = 0;
+    liveDetectionActiveRef.current = true;
+
+    const detectLoop = async () => {
+      if (!liveDetectionActiveRef.current) return;
+
+      frameSkip++;
+      if (frameSkip < 8) {
+        liveDetectionRafRef.current = requestAnimationFrame(detectLoop);
+        return;
+      }
+      frameSkip = 0;
+
+      try {
+        const video = (webcamRef.current as any)?.video as HTMLVideoElement | null;
+        if (!video || video.readyState < 2 || video.videoWidth === 0) {
+          if (liveDetectionActiveRef.current) {
+            liveDetectionRafRef.current = requestAnimationFrame(detectLoop);
+          }
+          return;
+        }
+
+        const detections = await detectFacesLive(video);
+        if (!liveDetectionActiveRef.current) return;
+
+        const vw = video.videoWidth;
+        const vh = video.videoHeight;
+
+        if (!detections || detections.length === 0) {
+          setLiveDetectionStatus("no_face");
+        } else if (detections.length > 1) {
+          setLiveDetectionStatus("multi_face");
+        } else {
+          const box = detections[0];
+          const gTop = FACE_BOX_TOP * vh;
+          const gBottom = FACE_BOX_BOTTOM * vh;
+          const gLeft = FACE_BOX_LEFT * vw;
+          const gRight = FACE_BOX_RIGHT * vw;
+
+          const overlapTop = Math.max(box.top, gTop);
+          const overlapBottom = Math.min(box.bottom, gBottom);
+          const overlapLeft = Math.max(box.left, gLeft);
+          const overlapRight = Math.min(box.right, gRight);
+
+          const overlapW = Math.max(0, overlapRight - overlapLeft);
+          const overlapH = Math.max(0, overlapBottom - overlapTop);
+          const overlapArea = overlapW * overlapH;
+          const faceArea = box.width * box.height;
+          const overlapRatio = faceArea > 0 ? overlapArea / faceArea : 0;
+
+          setLiveDetectionStatus(
+            overlapRatio >= OVERLAP_THRESHOLD ? "ok" : "out_of_box"
+          );
+        }
+      } catch {
+        /* ignore */
+      }
+
+      if (liveDetectionActiveRef.current) {
+        liveDetectionRafRef.current = requestAnimationFrame(detectLoop);
+      }
     };
-  }, [isCameraActive, runLiveFaceDetection]);
+
+    const startTimer = setTimeout(() => {
+      liveDetectionRafRef.current = requestAnimationFrame(detectLoop);
+    }, 600);
+
+    return () => {
+      clearTimeout(startTimer);
+      liveDetectionActiveRef.current = false;
+      if (liveDetectionRafRef.current !== null) {
+        cancelAnimationFrame(liveDetectionRafRef.current);
+        liveDetectionRafRef.current = null;
+      }
+    };
+  }, [isCameraActive]);
+
+  useEffect(() => {
+    if (!isCameraActive) {
+      if (recognitionStatus === "scanning") {
+        setRecognitionStatus("idle");
+      }
+    }
+  }, [isCameraActive, recognitionStatus]);
 
   const handleLookup = useCallback(async () => {
     const queryVal = lookupPhone.trim();
@@ -318,16 +470,6 @@ export function useAddVisitorFormState() {
       const file = new File([blob], "visitor_photo.jpg", { type: "image/jpeg" });
       setCapturedFile(file);
 
-      // Extract client face descriptor if live video is available
-      if (webcamRef.current?.video) {
-        try {
-          const res = await analyzeCapturedImage(webcamRef.current.video);
-          if (res?.descriptor && res.descriptor.length > 0) {
-            setCapturedEmbedding(res.descriptor);
-          }
-        } catch { /* optional client descriptor fallback */ }
-      }
-
       // Perform backend-based face recognition & quality check
       const formData = new FormData();
       formData.append("visitorPhoto", file);
@@ -338,6 +480,7 @@ export function useAddVisitorFormState() {
 
       if (res.data?.recognized && res.data?.visitor) {
         const v = res.data.visitor;
+        isRecognizedRef.current = true;
         setRecognitionStatus("recognized");
         setRecognizedVisitorName(v.visitorName || "Visitor");
         form.setValue("visitorName", v.visitorName || "");
@@ -377,6 +520,7 @@ export function useAddVisitorFormState() {
     setCapturedEmbedding(null); setRecognitionStatus("idle"); setRecognizedVisitorName(null);
     setIsCameraActive(false); setIsPhoneReadOnly(false); setSelectedEmployee(null);
     setHostSearch(""); setDeptSearch("");
+    isRecognizedRef.current = false;
     if (showToast) toast.success("Form cleared");
   }, [form]);
 
@@ -406,12 +550,13 @@ export function useAddVisitorFormState() {
   }, [capturedFile, capturedEmbedding, handleReset]);
 
   return {
-    isSubmitting, kbEnabled, activeVisitorTypes, activePurposes, idProofTypes, extraGuestsOptions,
+    isSubmitting, kbEnabled, setKbEnabled, activeVisitorTypes, activePurposes, idProofTypes, extraGuestsOptions,
     photoPreview, lookupAvatarUrl, isLookupEmployee, setIsLookupEmployee, lookupPhone, setLookupPhone,
     isPhoneReadOnly, isCameraActive, setIsCameraActive, liveDetectionStatus, recognitionStatus, recognizedVisitorName,
     isExtractingFace, webcamRef, cameraDevices, selectedDeviceId, setSelectedDeviceId,
     deptSearch, setDeptSearch, hostSearch, setHostSearch, departmentOptions, hostOptions,
     handleDepartmentSelect, handleHostSelect, handleResetHostAndDepartment, selectedEmployee,
+    visitorPassPlaceholder, extraGuestsCount,
     form, handleLookup, capturePhoto, handleReset, onSubmit, departmentsList, erpEmployees, erpLoading,
   };
 }

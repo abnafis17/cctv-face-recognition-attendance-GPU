@@ -399,6 +399,7 @@ export async function lookupVisitor(req: Request, res: Response) {
           matchedSetting = {
             id: fallbackDto.id || "fallback",
             companyId,
+            isActive: true,
             urlType: fallbackDto.urlType || "employee_info",
             erpBaseUrl: fallbackDto.erpBaseUrl,
             erpPrefix: fallbackDto.erpPrefix,

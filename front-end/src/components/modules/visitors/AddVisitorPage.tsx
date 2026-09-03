@@ -12,13 +12,14 @@ import { VisitorPhotoRightPanel } from "./VisitorPhotoRightPanel";
 
 export default function AddVisitorPage() {
   const {
-    isSubmitting, kbEnabled, activeVisitorTypes, activePurposes, idProofTypes, extraGuestsOptions,
+    isSubmitting, kbEnabled, setKbEnabled, activeVisitorTypes, activePurposes, idProofTypes, extraGuestsOptions,
     photoPreview, lookupAvatarUrl, isLookupEmployee, setIsLookupEmployee, lookupPhone, setLookupPhone,
     isCameraActive, setIsCameraActive, liveDetectionStatus, recognitionStatus, recognizedVisitorName,
     isExtractingFace, webcamRef, cameraDevices, selectedDeviceId, setSelectedDeviceId,
     deptSearch, setDeptSearch, hostSearch, setHostSearch, departmentOptions, hostOptions,
-    handleDepartmentSelect, handleHostSelect, handleResetHostAndDepartment,
-    form, handleLookup, capturePhoto, handleReset, onSubmit, departmentsList, erpEmployees, erpLoading,
+    handleHostSelect, handleResetHostAndDepartment,
+    visitorPassPlaceholder,
+    form, handleLookup, capturePhoto, handleReset, onSubmit, erpLoading,
   } = useAddVisitorFormState();
 
   return (
@@ -26,45 +27,46 @@ export default function AddVisitorPage() {
       {/* Top Banner Header & Face Verification Banners */}
       <VisitorHeaderBanner
         kbEnabled={kbEnabled}
+        setKbEnabled={setKbEnabled}
         recognitionStatus={recognitionStatus}
         recognizedVisitorName={recognizedVisitorName}
       />
 
-      {/* Quick Lookup Bar */}
-      <VisitorQuickLookup
-        lookupPhone={lookupPhone}
-        setLookupPhone={setLookupPhone}
-        isLookupEmployee={isLookupEmployee}
-        setIsLookupEmployee={setIsLookupEmployee}
-        handleLookup={handleLookup}
-      />
-
-      {/* Main Grid: Form Sections (Left) & Visitor Photo (Right) */}
+      {/* Main Grid: Form Sections (Left 3/4) & Visitor Photo (Right 1/4) */}
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-          {/* Left Column (2/3 width): 4 Form Sections */}
-          <div className="lg:col-span-2">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-4">
+          {/* Left Columns (3/4 width) */}
+          <div className="space-y-6 lg:col-span-3">
+            {/* Quick Lookup Bar */}
+            <VisitorQuickLookup
+              lookupPhone={lookupPhone}
+              setLookupPhone={setLookupPhone}
+              isLookupEmployee={isLookupEmployee}
+              setIsLookupEmployee={setIsLookupEmployee}
+              handleLookup={handleLookup}
+            />
+
+            {/* 4 Form Sections */}
             <VisitorFormSections
               form={form}
               lookupAvatarUrl={lookupAvatarUrl}
+              recognitionStatus={recognitionStatus}
               activeVisitorTypes={activeVisitorTypes}
               activePurposes={activePurposes}
               idProofTypes={idProofTypes}
               extraGuestsOptions={extraGuestsOptions}
-              departmentsList={departmentsList}
-              erpEmployees={erpEmployees}
-              erpLoading={erpLoading}
+              visitorPassPlaceholder={visitorPassPlaceholder}
               departmentOptions={departmentOptions}
               hostOptions={hostOptions}
+              erpLoading={erpLoading}
               setDeptSearch={setDeptSearch}
               setHostSearch={setHostSearch}
-              handleDepartmentSelect={handleDepartmentSelect}
               handleHostSelect={handleHostSelect}
               handleResetHostAndDepartment={handleResetHostAndDepartment}
             />
           </div>
 
-          {/* Right Column (1/3 width): Visitor Photo Panel */}
+          {/* Right Column (1/4 width): Visitor Photo Panel */}
           <div className="lg:col-span-1">
             <VisitorPhotoRightPanel
               isCameraActive={isCameraActive}
@@ -85,7 +87,9 @@ export default function AddVisitorPage() {
 
         {/* Footer Actions Bar */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-zinc-200/80 pt-5">
-          <span className="text-xs text-zinc-400">Entry is time-stamped automatically on submission.</span>
+          <span className="text-xs text-zinc-400">
+            Entry is time-stamped automatically on submission.
+          </span>
           <div className="flex w-full sm:w-auto items-center gap-3">
             <Button
               type="button"
@@ -99,7 +103,8 @@ export default function AddVisitorPage() {
               disabled={isSubmitting}
               className="h-11 rounded-xl bg-[#0c1b33] px-6 text-sm font-semibold text-white hover:bg-[#11274c] flex items-center justify-center gap-2 shadow-sm cursor-pointer"
             >
-              <CheckCircle className="h-4 w-4" /> {isSubmitting ? "Submitting..." : "Submit Entry"}
+              <CheckCircle className="h-4 w-4" />{" "}
+              {isSubmitting ? "Submitting..." : "Submit Entry"}
             </Button>
           </div>
         </div>
@@ -109,3 +114,4 @@ export default function AddVisitorPage() {
     </div>
   );
 }
+
