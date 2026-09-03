@@ -656,22 +656,24 @@ class LiteCameraStream:
         name_str = str(name or "").strip()
         stream_type = str(getattr(self, "stream_type", "attendance") or "attendance").lower()
 
-        # Attendance & Recognition History mode requires strict high-accuracy threshold (0.45+) to prevent wrong recognitions
-        is_attendance_mode = stream_type not in ("headcount", "ot", "ot_requisition", "ot-requisition", "otrequisition")
-        min_threshold = 0.45 if is_attendance_mode else SIMILARITY_THRESHOLD
+        # Enforce exact same 0.45 similarity threshold & recognition logic across all modes
+        min_threshold = SIMILARITY_THRESHOLD  # 0.45
 
         if not emp_key or name_str == "Unknown" or float(score or 0.0) < min_threshold:
             return
 
-        # The 30s cooldown rule ONLY applies to standard attendance mode (Attendance & Recognition History).
-        if is_attendance_mode:
-            cooldown_key = f"{self.company_id}:{emp_key}"
-            cooldown_duration = max(30.0, float(ATTENDANCE_COOLDOWN_S))
-            with GLOBAL_ATTENDANCE_LOCK:
-                last_logged = GLOBAL_ATTENDANCE_COOLDOWNS.get(cooldown_key, 0.0)
-                if now - last_logged < cooldown_duration:
-                    return
-                GLOBAL_ATTENDANCE_COOLDOWNS[cooldown_key] = now
+        # Cooldown rule:
+        # - Attendance & Recognition History: 30.0s cooldown
+        # - Headcount & OT Requisition: 5.0s rate-limit cooldown per person (instant recognition while camera is ON)
+        is_attendance_mode = stream_type not in ("headcount", "ot", "ot_requisition", "ot-requisition", "otrequisition")
+        cooldown_duration = max(30.0, float(ATTENDANCE_COOLDOWN_S)) if is_attendance_mode else 5.0
+
+        cooldown_key = f"{self.company_id}:{stream_type}:{emp_key}"
+        with GLOBAL_ATTENDANCE_LOCK:
+            last_logged = GLOBAL_ATTENDANCE_COOLDOWNS.get(cooldown_key, 0.0)
+            if now - last_logged < cooldown_duration:
+                return
+            GLOBAL_ATTENDANCE_COOLDOWNS[cooldown_key] = now
             
         threading.Thread(
             target=self._submit_attendance_api,
