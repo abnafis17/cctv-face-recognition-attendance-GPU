@@ -1,9 +1,9 @@
 import { Router } from "express";
 import {
   headcountEvents,
-  listHeadcount,
   listHeadcountCameras,
 } from "./controller";
+import { listHeadcount } from "../../../controllers/attendance.headcount.controller";
 
 const router = Router();
 
