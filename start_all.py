@@ -2,19 +2,20 @@
 from __future__ import annotations
 
 """
-Unified Production Process Supervisor for NVIDIA Jetson Orin Nano Developer Kit.
+Unified Process Supervisor for CCTV Face Recognition Attendance System.
 
-Runs the optimized, production-compiled builds of:
-  1. Backend (Compiled Node.js / Prisma)   -> Dynamic Port (Default 3001)
-  2. AI Service (FastAPI / CUDA / PyTorch) -> Dynamic Port (Default 8000)
-  3. Frontend (Next.js Standalone Build)   -> Dynamic Port (Default 3000)
+Starts all 3 core microservices simultaneously:
+  1. Backend API (Node.js / Express / Prisma)   -> Default Port 3001
+  2. AI Service Server (FastAPI / PyTorch / OpenCV) -> Default Port 8000
+  3. Frontend Web App (Next.js Dashboard)         -> Default Port 3000
 
 Usage:
-  ./start_all.sh                 # Start all 3 servers in production mode
-  python3 start_all.py           # Start all 3 servers in production mode
-  python3 start_all.py --build   # Build and start all 3 servers
-  python3 start_all.py --dev     # Start all 3 servers in dev mode
-  python3 start_all.py --dry-run # Check environment and ports only
+  python start_all.py           # Start all 3 servers in dev mode
+  python start_all.py --dev     # Start all 3 servers in dev mode
+  python start_all.py --prod    # Start all 3 servers in production mode
+  python start_all.py --build   # Build production artifacts then start
+  python start_all.py --dry-run # Check environment and ports only
+  ./start_all.sh                 # Linux / Jetson launcher shell script
 """
 
 import argparse
@@ -23,14 +24,25 @@ import signal
 import socket
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
-from typing import Dict, List, Optional
 
 ROOT_DIR = Path(__file__).resolve().parent
 BACKEND_DIR = ROOT_DIR / "backend"
 AI_DIR = ROOT_DIR / "ai"
 FRONTEND_DIR = ROOT_DIR / "front-end"
+
+IS_WINDOWS = sys.platform == "win32"
+
+# ANSI Colors for clean terminal logging
+COLOR_CYAN = "\033[96m"
+COLOR_GREEN = "\033[92m"
+COLOR_YELLOW = "\033[93m"
+COLOR_MAGENTA = "\033[95m"
+COLOR_RED = "\033[91m"
+COLOR_BOLD = "\033[1m"
+COLOR_RESET = "\033[0m"
 
 
 def read_env_var(env_path: Path, key: str, default: str) -> str:
@@ -58,11 +70,34 @@ def is_port_in_use(port: int, host: str = "127.0.0.1") -> bool:
 
 
 def free_port(port: int) -> None:
-    try:
-        subprocess.run(["fuser", "-k", f"{port}/tcp"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        time.sleep(0.3)
-    except Exception:
-        pass
+    if IS_WINDOWS:
+        try:
+            cmd = f"netstat -ano | findstr LISTENING | findstr :{port}"
+            out = subprocess.check_output(cmd, shell=True, text=True, errors="ignore")
+            for line in out.strip().splitlines():
+                parts = line.strip().split()
+                if parts:
+                    pid = parts[-1]
+                    if pid.isdigit() and int(pid) > 0:
+                        subprocess.run(
+                            f"taskkill /F /PID {pid}",
+                            shell=True,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                        )
+            time.sleep(0.5)
+        except Exception:
+            pass
+    else:
+        try:
+            subprocess.run(
+                ["fuser", "-k", f"{port}/tcp"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            time.sleep(0.3)
+        except Exception:
+            pass
 
 
 def wait_for_port(port: int, host: str = "127.0.0.1", timeout: float = 25.0) -> bool:
@@ -85,175 +120,284 @@ def get_local_ip() -> str:
         return "127.0.0.1"
 
 
+def get_npm_command() -> str:
+    return "npm.cmd" if IS_WINDOWS else "npm"
+
+
 def get_python_executable() -> str:
-    venv_py = AI_DIR / "venv" / "bin" / "python"
-    if venv_py.is_file() and os.access(venv_py, os.X_OK):
-        return str(venv_py)
+    win_paths = [
+        AI_DIR / ".venv" / "Scripts" / "python.exe",
+        AI_DIR / "venv" / "Scripts" / "python.exe",
+        ROOT_DIR / ".venv" / "Scripts" / "python.exe",
+        ROOT_DIR / "venv" / "Scripts" / "python.exe",
+    ]
+    nix_paths = [
+        AI_DIR / ".venv" / "bin" / "python",
+        AI_DIR / "venv" / "bin" / "python",
+        ROOT_DIR / ".venv" / "bin" / "python",
+        ROOT_DIR / "venv" / "bin" / "python",
+    ]
+    paths = win_paths if IS_WINDOWS else nix_paths
+    for p in paths:
+        if p.is_file():
+            return str(p)
     return sys.executable
+
+
+def kill_process_tree(pid: int) -> None:
+    if IS_WINDOWS:
+        try:
+            subprocess.run(
+                f"taskkill /F /T /PID {pid}",
+                shell=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            pass
+    else:
+        try:
+            os.killpg(os.getpgid(pid), signal.SIGTERM)
+        except Exception:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except Exception:
+                pass
 
 
 class ProcessSupervisor:
     def __init__(
         self,
-        dev_mode: bool = False,
+        dev_mode: bool = True,
         build_first: bool = False,
         skip_ai: bool = False,
+        skip_backend: bool = False,
         skip_frontend: bool = False,
     ) -> None:
         self.dev_mode = dev_mode
         self.build_first = build_first
         self.skip_ai = skip_ai
+        self.skip_backend = skip_backend
         self.skip_frontend = skip_frontend
         self.processes: dict[str, subprocess.Popen] = {}
         self.is_stopping = False
 
-        # Dynamically load ports from respective .env files
         self.backend_port = int(read_env_var(BACKEND_DIR / ".env", "PORT", "3001"))
-        self.ai_port = int(read_env_var(AI_DIR / ".env", "AI_SERVER_PORT", read_env_var(AI_DIR / ".env", "PORT", "8000")))
-        self.frontend_port = 3000
+        self.ai_port = int(
+            read_env_var(
+                AI_DIR / ".env",
+                "AI_SERVER_PORT",
+                read_env_var(AI_DIR / ".env", "PORT", "8000"),
+            )
+        )
+        self.frontend_port = int(read_env_var(FRONTEND_DIR / ".env", "PORT", "3000"))
 
     def build_artifacts(self) -> bool:
-        print("\n========================================================")
-        print(" [BUILD] Compiling Production Artifacts for Jetson...")
-        print("========================================================")
+        npm_cmd = get_npm_command()
+        print(f"\n{COLOR_CYAN}{COLOR_BOLD}========================================================{COLOR_RESET}")
+        print(f"{COLOR_CYAN} [BUILD] Compiling Production Artifacts...{COLOR_RESET}")
+        print(f"{COLOR_CYAN}{COLOR_BOLD}========================================================{COLOR_RESET}")
 
-        # 1. Backend build
-        print("--> Building Backend (TypeScript -> JavaScript)...")
-        res = subprocess.run(["npm", "run", "build"], cwd=str(BACKEND_DIR))
-        if res.returncode != 0:
-            print("[ERROR] Backend build failed!")
-            return False
-
-        # 2. Frontend build
-        if not self.skip_frontend:
-            print("--> Building Frontend (Next.js Standalone)...")
-            res = subprocess.run(["npm", "run", "build"], cwd=str(FRONTEND_DIR))
+        if not self.skip_backend:
+            print(f"{COLOR_YELLOW}--> Building Backend (TypeScript -> JavaScript)...{COLOR_RESET}")
+            res = subprocess.run([npm_cmd, "run", "build"], cwd=str(BACKEND_DIR))
             if res.returncode != 0:
-                print("[ERROR] Frontend build failed!")
+                print(f"{COLOR_RED}[ERROR] Backend build failed!{COLOR_RESET}")
                 return False
 
-        print("[OK] Production builds completed successfully.\n")
+        if not self.skip_frontend:
+            print(f"{COLOR_YELLOW}--> Building Frontend (Next.js)...{COLOR_RESET}")
+            res = subprocess.run([npm_cmd, "run", "build"], cwd=str(FRONTEND_DIR))
+            if res.returncode != 0:
+                print(f"{COLOR_RED}[ERROR] Frontend build failed!{COLOR_RESET}")
+                return False
+
+        print(f"{COLOR_GREEN}[OK] Production builds completed successfully.{COLOR_RESET}\n")
         return True
 
     def preflight_check(self) -> bool:
-        print("\n========================================================")
-        print(" [JETSON ORIN NANO] Full-Stack Supervisor Preflight")
-        print("========================================================")
+        print(f"\n{COLOR_BOLD}========================================================{COLOR_RESET}")
+        print(f"{COLOR_BOLD} CCTV Attendance Pro - Microservices Supervisor{COLOR_RESET}")
+        print(f"{COLOR_BOLD}========================================================{COLOR_RESET}")
         print(f" Working Directory : {ROOT_DIR}")
-        print(f" Execution Mode    : {'Development' if self.dev_mode else 'Production (Built Versions)'}")
+        print(f" Operating System  : {'Windows' if IS_WINDOWS else 'Linux/Unix'}")
+        print(f" Execution Mode    : {'Development (Live Reload)' if self.dev_mode else 'Production (Compiled)'}")
         print(f" Python Executable : {get_python_executable()}")
-        print(f" Detected Ports    : Backend={self.backend_port}, AI={self.ai_port}, Frontend={self.frontend_port}")
+        print(
+            f" Ports Configured  : Backend={self.backend_port}, AI={self.ai_port}, Frontend={self.frontend_port}"
+        )
 
-        # Check build artifacts in production mode
         if not self.dev_mode:
             backend_dist = BACKEND_DIR / "dist" / "index.js"
-            if not backend_dist.is_file():
-                print(" [INFO] Backend build not found (dist/index.js missing). Building now...")
-                self.build_artifacts()
+            if not backend_dist.is_file() and not self.skip_backend:
+                print(f"{COLOR_YELLOW} [INFO] Backend dist/index.js missing. Triggering build...{COLOR_RESET}")
+                if not self.build_artifacts():
+                    return False
 
-            frontend_standalone = FRONTEND_DIR / ".next"
-            if not frontend_standalone.is_dir() and not self.skip_frontend:
-                print(" [INFO] Frontend build not found (.next missing). Building now...")
-                self.build_artifacts()
+            frontend_next = FRONTEND_DIR / ".next"
+            if not frontend_next.is_dir() and not self.skip_frontend:
+                print(f"{COLOR_YELLOW} [INFO] Frontend .next directory missing. Triggering build...{COLOR_RESET}")
+                if not self.build_artifacts():
+                    return False
 
-        ports = [
-            (self.backend_port, "Backend"),
-            (self.ai_port, "AI Service"),
-            (self.frontend_port, "Frontend"),
-        ]
+        ports = []
+        if not self.skip_backend:
+            ports.append((self.backend_port, "Backend API"))
+        if not self.skip_ai:
+            ports.append((self.ai_port, "AI Engine"))
+        if not self.skip_frontend:
+            ports.append((self.frontend_port, "Frontend Dashboard"))
+
         all_clear = True
         for port, name in ports:
             if is_port_in_use(port):
-                print(f" [WARNING] Port {port} ({name}) is in use! Clearing stale process...")
+                print(f"{COLOR_YELLOW} [WARNING] Port {port} ({name}) is in use! Clearing process...{COLOR_RESET}")
                 free_port(port)
                 if is_port_in_use(port):
-                    print(f" [ERROR] Could not free port {port} ({name}).")
+                    print(f"{COLOR_RED} [ERROR] Could not free port {port} ({name}).{COLOR_RESET}")
                     all_clear = False
                 else:
-                    print(f" [OK] Port {port} ({name}) has been freed successfully.")
+                    print(f"{COLOR_GREEN} [OK] Port {port} ({name}) freed successfully.{COLOR_RESET}")
             else:
-                print(f" [OK] Port {port} ({name}) is available.")
+                print(f"{COLOR_GREEN} [OK] Port {port} ({name}) is available.{COLOR_RESET}")
 
         return all_clear
 
+    def _stream_output(self, proc: subprocess.Popen, name: str, color: str) -> None:
+        prefix = f"{color}[{name}]{COLOR_RESET} "
+        try:
+            if proc.stdout:
+                for line in iter(proc.stdout.readline, ""):
+                    if line:
+                        sys.stdout.write(f"{prefix}{line}")
+                        sys.stdout.flush()
+        except Exception:
+            pass
+
     def start_backend(self) -> None:
-        print(f"\n--> [1/3] Starting Backend Production Server (Port {self.backend_port})...")
+        if self.skip_backend:
+            print(f"\n--> [1/3] Skipping Backend Service")
+            return
+
+        print(f"\n--> [1/3] Starting Backend Server (Port {self.backend_port})...")
+        npm_cmd = get_npm_command()
         env = os.environ.copy()
         env["NODE_OPTIONS"] = "--max-old-space-size=256"
         env["PORT"] = str(self.backend_port)
 
-        cmd = (
-            ["npm", "run", "dev"]
-            if self.dev_mode
-            else ["node", "--max-old-space-size=256", "dist/index.js"]
+        backend_dist = BACKEND_DIR / "dist" / "index.js"
+        if self.dev_mode or not backend_dist.is_file():
+            cmd = [npm_cmd, "run", "dev"]
+        else:
+            cmd = ["node", "--max-old-space-size=256", "dist/index.js"]
+
+        p = subprocess.Popen(
+            cmd,
+            cwd=str(BACKEND_DIR),
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
         )
-        p = subprocess.Popen(cmd, cwd=str(BACKEND_DIR), env=env)
         self.processes["backend"] = p
 
-        if wait_for_port(self.backend_port, timeout=15.0):
-            print(f" [OK] Backend Service is ready on http://127.0.0.1:{self.backend_port}")
+        t = threading.Thread(target=self._stream_output, args=(p, "BACKEND", COLOR_CYAN), daemon=True)
+        t.start()
+
+        if wait_for_port(self.backend_port, timeout=20.0):
+            print(f"{COLOR_GREEN} [OK] Backend Service ready on http://127.0.0.1:{self.backend_port}{COLOR_RESET}")
         else:
-            print(f" [WARNING] Backend did not bind to port {self.backend_port} within 15s. Continuing...")
+            print(f"{COLOR_YELLOW} [INFO] Backend server process launched (port {self.backend_port}){COLOR_RESET}")
 
     def start_ai(self) -> None:
         if self.skip_ai:
-            print("\n--> [2/3] Skipping AI Service (--no-ai specified)")
+            print(f"\n--> [2/3] Skipping AI Service")
             return
 
-        print(f"\n--> [2/3] Starting AI Production Server (Port {self.ai_port})...")
+        print(f"\n--> [2/3] Starting AI Stream Engine (Port {self.ai_port})...")
         py_bin = get_python_executable()
-        cmd = [py_bin, "run.py"] if not self.dev_mode else [py_bin, "app/api_server.py"]
 
-        p = subprocess.Popen(cmd, cwd=str(AI_DIR))
+        lite_ai = AI_DIR / "lite_ai_server.py"
+        run_py = AI_DIR / "run.py"
+
+        if lite_ai.is_file():
+            cmd = [py_bin, "lite_ai_server.py"]
+        elif run_py.is_file():
+            cmd = [py_bin, "run.py"]
+        else:
+            cmd = [py_bin, "app/api_server.py"]
+
+        env = os.environ.copy()
+        env["PYTHONUNBUFFERED"] = "1"
+
+        p = subprocess.Popen(
+            cmd,
+            cwd=str(AI_DIR),
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
         self.processes["ai"] = p
 
+        t = threading.Thread(target=self._stream_output, args=(p, "AI-ENGINE", COLOR_MAGENTA), daemon=True)
+        t.start()
+
         if wait_for_port(self.ai_port, timeout=25.0):
-            print(f" [OK] AI Service is ready on http://127.0.0.1:{self.ai_port}")
+            print(f"{COLOR_GREEN} [OK] AI Engine ready on http://127.0.0.1:{self.ai_port}{COLOR_RESET}")
         else:
-            print(f" [WARNING] AI service did not bind to port {self.ai_port} within 25s. Continuing...")
+            print(f"{COLOR_YELLOW} [INFO] AI Engine process launched (port {self.ai_port}){COLOR_RESET}")
 
     def start_frontend(self) -> None:
         if self.skip_frontend:
-            print("\n--> [3/3] Skipping Frontend Service (--no-frontend specified)")
+            print(f"\n--> [3/3] Skipping Frontend Service")
             return
 
-        print(f"\n--> [3/3] Starting Frontend Production Server (Port {self.frontend_port})...")
+        print(f"\n--> [3/3] Starting Frontend Web App (Port {self.frontend_port})...")
+        npm_cmd = get_npm_command()
         env = os.environ.copy()
         env["NODE_OPTIONS"] = "--max-old-space-size=512"
         env["PORT"] = str(self.frontend_port)
 
-        cmd = ["npm", "run", "dev"] if self.dev_mode else ["npm", "run", "start:jetson"]
-        p = subprocess.Popen(cmd, cwd=str(FRONTEND_DIR), env=env)
+        frontend_next = FRONTEND_DIR / ".next"
+        if self.dev_mode or not frontend_next.is_dir():
+            cmd = [npm_cmd, "run", "dev"]
+        else:
+            cmd = [npm_cmd, "run", "start"]
+
+        p = subprocess.Popen(
+            cmd,
+            cwd=str(FRONTEND_DIR),
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
         self.processes["frontend"] = p
 
-        if wait_for_port(self.frontend_port, timeout=20.0):
-            print(f" [OK] Frontend Service is ready on http://127.0.0.1:{self.frontend_port}")
+        t = threading.Thread(target=self._stream_output, args=(p, "FRONTEND", COLOR_GREEN), daemon=True)
+        t.start()
+
+        if wait_for_port(self.frontend_port, timeout=25.0):
+            print(f"{COLOR_GREEN} [OK] Frontend Dashboard ready on http://127.0.0.1:{self.frontend_port}{COLOR_RESET}")
         else:
-            print(f" [WARNING] Frontend did not bind to port {self.frontend_port} within 20s. Continuing...")
+            print(f"{COLOR_YELLOW} [INFO] Frontend process launched (port {self.frontend_port}){COLOR_RESET}")
 
     def stop_all(self, sig=None, frame=None) -> None:
         if self.is_stopping:
             return
         self.is_stopping = True
-        print("\n\n[SUPERVISOR] Received stop signal. Shutting down all processes gracefully...")
+        print(f"\n\n{COLOR_YELLOW}[SUPERVISOR] Shutting down all microservices cleanly...{COLOR_RESET}")
 
         for name, proc in list(self.processes.items()):
             if proc.poll() is None:
-                print(f" [STOPPING] Sending SIGINT to {name} (PID: {proc.pid})...")
-                proc.send_signal(signal.SIGINT)
+                print(f" [STOPPING] Terminating {name} (PID: {proc.pid})...")
+                kill_process_tree(proc.pid)
 
-        # Wait up to 5 seconds for clean exit
-        deadline = time.time() + 5.0
-        for name, proc in self.processes.items():
-            remaining = max(0.1, deadline - time.time())
-            try:
-                proc.wait(timeout=remaining)
-                print(f" [STOPPED] {name} exited cleanly.")
-            except subprocess.TimeoutExpired:
-                print(f" [FORCE KILL] {name} did not terminate in time. Killing...")
-                proc.kill()
-
-        print("[SUPERVISOR] All processes terminated cleanly. Goodbye!\n")
+        print(f"{COLOR_GREEN}[SUPERVISOR] All microservices terminated successfully. Bye!{COLOR_RESET}\n")
         sys.exit(0)
 
     def run(self) -> None:
@@ -264,48 +408,52 @@ class ProcessSupervisor:
             if not self.build_artifacts():
                 sys.exit(1)
 
-        self.preflight_check()
+        if not self.preflight_check():
+            print(f"{COLOR_YELLOW} Preflight check warnings logged. Proceeding with launch...{COLOR_RESET}")
+
         self.start_backend()
         self.start_ai()
         self.start_frontend()
 
         local_ip = get_local_ip()
-        print("\n========================================================")
-        print(" All Services are Running in Production Mode!")
-        print(f"  - Backend (API) : http://localhost:{self.backend_port}/api/v1 (or http://{local_ip}:{self.backend_port}/api/v1)")
-        print(f"  - AI Server     : http://localhost:{self.ai_port}/docs (or http://{local_ip}:{self.ai_port}/docs)")
-        print(f"  - Frontend (UI) : http://localhost:{self.frontend_port} (or http://{local_ip}:{self.frontend_port})")
-        print(f"\n [TIP] For smoothest multi-camera viewing without Jetson browser overhead,")
-        print(f"       open http://{local_ip}:{self.frontend_port} from your laptop / client PC browser.")
-        print(" Press Ctrl+C to terminate all services gracefully.")
-        print("========================================================\n")
+        print(f"\n{COLOR_GREEN}{COLOR_BOLD}========================================================{COLOR_RESET}")
+        print(f"{COLOR_GREEN}{COLOR_BOLD} All Microservices Started & Running!{COLOR_RESET}")
+        print(f"  - Frontend App   : {COLOR_BOLD}http://localhost:{self.frontend_port}{COLOR_RESET}  (LAN: http://{local_ip}:{self.frontend_port})")
+        print(f"  - Backend API    : {COLOR_BOLD}http://localhost:{self.backend_port}/api/v1{COLOR_RESET} (LAN: http://{local_ip}:{self.backend_port}/api/v1)")
+        print(f"  - AI Stream Server: {COLOR_BOLD}http://localhost:{self.ai_port}/docs{COLOR_RESET}  (LAN: http://{local_ip}:{self.ai_port}/docs)")
+        print(f"\n {COLOR_YELLOW}Press Ctrl+C in this terminal to stop all servers.{COLOR_RESET}")
+        print(f"{COLOR_GREEN}{COLOR_BOLD}========================================================{COLOR_RESET}\n")
 
         try:
             while not self.is_stopping:
                 for name, proc in list(self.processes.items()):
                     ret = proc.poll()
-                    if ret is not None:
-                        print(f"[ALERT] Process {name} exited unexpectedly with code {ret}!")
-                        self.stop_all()
+                    if ret is not None and not self.is_stopping:
+                        print(f"\n{COLOR_RED}[ALERT] Process {name} exited with code {ret}!{COLOR_RESET}")
                 time.sleep(1.0)
         except KeyboardInterrupt:
             self.stop_all()
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Full-stack launcher for Jetson Orin Nano")
-    parser.add_argument("--dev", action="store_true", help="Run services in dev mode")
-    parser.add_argument("--build", action="store_true", help="Rebuild backend and frontend before starting")
-    parser.add_argument("--no-ai", action="store_true", help="Do not start AI service")
-    parser.add_argument("--no-frontend", action="store_true", help="Do not start Frontend service")
+    parser = argparse.ArgumentParser(description="Full-Stack Microservices Launcher for CCTV Attendance System")
+    parser.add_argument("--dev", action="store_true", default=True, help="Run services in dev mode (Default)")
+    parser.add_argument("--prod", action="store_true", help="Run services in production built mode")
+    parser.add_argument("--build", action="store_true", help="Build frontend and backend artifacts before launching")
+    parser.add_argument("--no-ai", action="store_true", help="Skip starting AI server")
+    parser.add_argument("--no-backend", action="store_true", help="Skip starting Backend server")
+    parser.add_argument("--no-frontend", action="store_true", help="Skip starting Frontend server")
     parser.add_argument("--dry-run", action="store_true", help="Check ports and environment only")
 
     args = parser.parse_args()
 
+    dev_mode = not args.prod
+
     supervisor = ProcessSupervisor(
-        dev_mode=args.dev,
+        dev_mode=dev_mode,
         build_first=args.build,
         skip_ai=args.no_ai,
+        skip_backend=args.no_backend,
         skip_frontend=args.no_frontend,
     )
 
