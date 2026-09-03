@@ -199,7 +199,6 @@ def mjpeg_enroll_generator(camera_id: str, camera_name: Optional[str] = None):
     display_name = camera_name or getattr(stream, "camera_name", None) or "Laptop Camera"
     enroll_fps = float(os.getenv("MJPEG_STREAM_FPS_ENROLL", os.getenv("ENROLL_STREAM_FPS", "10.0")))
     gui_period = 1.0 / enroll_fps
-    placeholder_bytes = make_dark_placeholder(display_name)
     
     try:
         from app.enroll2_auto.hud import draw_enroll2_auto_hud
@@ -212,7 +211,12 @@ def mjpeg_enroll_generator(camera_id: str, camera_name: Optional[str] = None):
                 break
             t_start = time.time()
             update_active_time(camera_id)
-            
+
+            st = enroller.overlay_state()
+            is_re_enroll = bool(st.get("re_enroll") or st.get("reEnroll") or ("re-enroll" in str(st.get("message") or "").lower()))
+            status_text = "Starting re-enrollment..." if is_re_enroll else "Starting enrollment..."
+            placeholder_bytes = make_dark_placeholder(display_name, status_msg=status_text)
+
             frame = stream.latest_raw_frame
             if frame is None:
                 yield (b'--frame\r\n'

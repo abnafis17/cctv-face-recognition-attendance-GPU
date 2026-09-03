@@ -265,8 +265,23 @@ class LiteCameraStream:
                     self.cap.release()
                 except Exception:
                     pass
+    def stop(self):
+        self.stopped = True
+        self.latest_raw_frame = None
+        self.latest_frame_time = 0.0
+        with self.jpeg_lock:
+            self._cached_raw_jpeg = None
+            self._cached_raw_frame_time = 0.0
+            self._cached_annotated_jpeg = None
+            self._cached_annotated_frame_time = 0.0
+        with self.cap_lock:
+            if self.cap:
+                try:
+                    self.cap.release()
+                except Exception:
+                    pass
                 self.cap = None
-        logger.info(f"[INGEST] Ingestion thread stopped for camera: {self.camera_id}")
+        logger.info(f"[CAMERA] Cleaned up stale frames and stopped stream for camera: {self.camera_id}")
 
     def _refresh_authorized_employees(self):
         now = time.time()

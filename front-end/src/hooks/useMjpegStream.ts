@@ -107,6 +107,9 @@ export function useMjpegStream({
   // When enabled, increment streamAttempt to bypass any browser/HTTP caching for a clean start.
   useEffect(() => {
     if (enabled) {
+      setStreamHasFrame(false);
+      streamHasFrameRef.current = false;
+      setAttemptNonce(Date.now());
       setStreamAttempt((a) => a + 1);
       return;
     }
@@ -116,6 +119,7 @@ export function useMjpegStream({
     lastFrameAtRef.current = 0;
     setStreamRetries(0);
     setStreamHasFrame(false);
+    streamHasFrameRef.current = false;
   }, [enabled]);
 
   useEffect(() => {
