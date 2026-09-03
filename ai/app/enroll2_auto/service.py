@@ -9,7 +9,11 @@ from typing import Dict, List, Optional, Tuple, Any
 import numpy as np
 import cv2
 
-from ..runtimes.camera_runtime import CameraRuntime
+try:
+    from app.services.stream import CameraRuntimeCompat as CameraRuntime
+except Exception:
+    class CameraRuntime:
+        def get_frame(self, camera_id: str): ...
 from .recognizer_auto import FaceRecognizerAuto as FaceRecognizer
 from ..clients.backend_client import BackendClient
 from app.services.gallery import sync_gallery
