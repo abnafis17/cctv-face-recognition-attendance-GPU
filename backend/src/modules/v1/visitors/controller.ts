@@ -183,57 +183,46 @@ export async function createVisitorRecord(req: Request, res: Response) {
       }
     }
 
-    // 1. Manage Face Template mapping to the latest visitorId
-    const existingTemplate = await prisma.visitorFaceTemplate.findFirst({
-      where: {
-        companyId,
-        visitor: {
-          contactNumber: payload.contactNumber,
-          visitorName: {
-            equals: payload.visitorName,
-            mode: "insensitive",
-          },
-        },
-      },
-    });
-
-    if (existingTemplate) {
-      // Update existing template: map to the new visitorId, and update face embedding / photo if new ones are available
-      await prisma.visitorFaceTemplate.update({
-        where: { id: existingTemplate.id },
-        data: {
-          visitorId: visitor.id,
-          embedding: (finalEmbedding && finalEmbedding.length > 0) ? finalEmbedding : undefined,
-          photoUrl: visitorPhoto ?? existingTemplate.photoUrl,
-          updatedAt: new Date(),
-        },
-      });
-    } else if (finalEmbedding && finalEmbedding.length > 0) {
-      // Create new template mapped to visitorId for the new visitor
-      await prisma.visitorFaceTemplate.create({
-        data: {
-          visitorId: visitor.id,
-          companyId,
-          modelName: "face-api",
-          embedding: finalEmbedding,
-          photoUrl: visitorPhoto ?? null,
-        },
-      });
-    }
-
-    // 2. Update all past visitor records for this phone number and name with the latest high-quality photo
-    if (visitorPhoto) {
-      await prisma.visitor.updateMany({
+    if (finalEmbedding && finalEmbedding.length > 0) {
+      // Check if a face template already exists for a visitor with this contact number
+      const existingTemplate = await prisma.visitorFaceTemplate.findFirst({
         where: {
           companyId,
-          contactNumber: payload.contactNumber,
-          visitorName: {
-            equals: payload.visitorName,
-            mode: "insensitive",
+          visitor: {
+            contactNumber: payload.contactNumber,
           },
         },
-        data: { visitorPhoto },
       });
+
+      if (existingTemplate) {
+        // Update existing face template with the new high-quality photo & embedding
+        await prisma.visitorFaceTemplate.update({
+          where: { id: existingTemplate.id },
+          data: {
+            embedding: finalEmbedding,
+            photoUrl: visitorPhoto ?? existingTemplate.photoUrl,
+            updatedAt: new Date(),
+          },
+        });
+      } else {
+        await prisma.visitorFaceTemplate.create({
+          data: {
+            visitorId: visitor.id,
+            companyId,
+            modelName: "face-api",
+            embedding: finalEmbedding,
+            photoUrl: visitorPhoto ?? null,
+          },
+        });
+      }
+
+      // Update all past visitor records for this phone number with the latest high-quality photo
+      if (visitorPhoto) {
+        await prisma.visitor.updateMany({
+          where: { companyId, contactNumber: payload.contactNumber },
+          data: { visitorPhoto },
+        });
+      }
     }
 
     const result = {
@@ -410,7 +399,6 @@ export async function lookupVisitor(req: Request, res: Response) {
           matchedSetting = {
             id: fallbackDto.id || "fallback",
             companyId,
-            isActive: true,
             urlType: fallbackDto.urlType || "employee_info",
             erpBaseUrl: fallbackDto.erpBaseUrl,
             erpPrefix: fallbackDto.erpPrefix,
@@ -658,10 +646,8 @@ export async function getEmployeeWiseReport(req: Request, res: Response) {
       const visitorMap = new Map<string, any>();
       for (const visit of visits) {
         const contact = visit.contactNumber;
-        const nameKey = String(visit.visitorName || "").trim().toLowerCase();
-        const groupKey = `${contact}_${nameKey}`;
-        if (!visitorMap.has(groupKey)) {
-          visitorMap.set(groupKey, {
+        if (!visitorMap.has(contact)) {
+          visitorMap.set(contact, {
             visitorName: visit.visitorName,
             contactNumber: visit.contactNumber,
             companyAddress: visit.companyAddress,
@@ -673,7 +659,7 @@ export async function getEmployeeWiseReport(req: Request, res: Response) {
           });
         }
 
-        const vData = visitorMap.get(groupKey);
+        const vData = visitorMap.get(contact);
         vData.visitCount += 1;
         if (!vData.visitorPhoto && visit.visitorPhoto) {
           vData.visitorPhoto = visit.visitorPhoto;
@@ -771,16 +757,13 @@ export async function getVisitorWiseReport(req: Request, res: Response) {
       return res.json([]);
     }
 
-    // Group visitor records by contactNumber and name
+    // Group visitor records by contactNumber
     const visitorMap = new Map<string, any>();
 
     for (const visit of visitors) {
       const contact = visit.contactNumber;
-      const nameKey = String(visit.visitorName || "").trim().toLowerCase();
-      const groupKey = `${contact}_${nameKey}`;
-      
-      if (!visitorMap.has(groupKey)) {
-        visitorMap.set(groupKey, {
+      if (!visitorMap.has(contact)) {
+        visitorMap.set(contact, {
           visitorName: visit.visitorName,
           contactNumber: visit.contactNumber,
           companyAddress: visit.companyAddress,
@@ -792,7 +775,7 @@ export async function getVisitorWiseReport(req: Request, res: Response) {
         });
       }
 
-      const vData = visitorMap.get(groupKey);
+      const vData = visitorMap.get(contact);
       vData.totalVisits += 1;
       
       if (!vData.visitorPhoto && visit.visitorPhoto) {
