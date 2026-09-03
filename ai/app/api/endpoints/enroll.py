@@ -12,6 +12,7 @@ class Enroll2AutoStartPayload(BaseModel):
     employeeId: str
     name: str
     cameraId: str
+    reEnroll: Optional[bool] = False
 
 @router.post("/enroll2/auto/session/start")
 def enroll2_auto_session_start(
@@ -21,6 +22,7 @@ def enroll2_auto_session_start(
     employee_id = payload.employeeId.strip()
     name = payload.name.strip()
     camera_id = payload.cameraId.strip()
+    re_enroll = bool(payload.reEnroll)
 
     if not employee_id or not name or not camera_id:
         return {"ok": False, "error": "employeeId, name, cameraId are required"}
@@ -33,6 +35,7 @@ def enroll2_auto_session_start(
         name=name,
         camera_id=camera_id,
         company_id=x_company_id,
+        re_enroll=re_enroll,
     )
     return {"ok": True, "session": s.__dict__}
 

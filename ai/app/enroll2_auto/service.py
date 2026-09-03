@@ -194,6 +194,7 @@ class EnrollmentAutoService2:
         name: str,
         camera_id: str,
         company_id: Optional[str] = None,
+        re_enroll: bool = False,
     ) -> Enroll2AutoSession:
         if company_id:
             self.client.set_company_id(company_id)
@@ -218,6 +219,7 @@ class EnrollmentAutoService2:
                 instruction=_instruction_text(self.cfg.steps[0]),
                 collected={s: 0 for s in self.cfg.steps},
             )
+            setattr(self._session, "re_enroll", bool(re_enroll))
             self._embs = {s: [] for s in self.cfg.steps}
             self._run = True
 

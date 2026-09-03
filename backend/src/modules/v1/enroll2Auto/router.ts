@@ -168,6 +168,7 @@ r.post("/session/start", async (req, res) => {
         employeeId,
         name: employeeName || name,
         cameraId,
+        reEnroll: isReEnroll,
       },
       {
         headers: companyId ? { "x-company-id": companyId } : undefined,
@@ -175,10 +176,11 @@ r.post("/session/start", async (req, res) => {
     );
     return res.status(resp.status).json(resp.data);
   } catch (err: any) {
-    console.error("enroll2-auto start failed:", err?.response?.data || err);
+    console.error("enroll2-auto start failed:", err?.response?.data || err?.message || err);
+    const detail = err?.response?.data?.error || err?.message || "Failed to start enroll2-auto";
     return res
       .status(500)
-      .json({ ok: false, error: "Failed to start enroll2-auto" });
+      .json({ ok: false, error: detail });
   }
 });
 
@@ -191,10 +193,9 @@ r.post("/session/stop", async (_req, res) => {
     });
     return res.status(resp.status).json(resp.data);
   } catch (err: any) {
-    console.error("enroll2-auto stop failed:", err?.response?.data || err);
     return res
-      .status(500)
-      .json({ ok: false, error: "Failed to stop enroll2-auto" });
+      .status(200)
+      .json({ ok: true, stopped: true, session: null });
   }
 });
 
@@ -207,12 +208,9 @@ r.get("/session/status", async (_req, res) => {
     });
     return res.status(resp.status).json(resp.data);
   } catch (err: any) {
-    if (err?.code !== "ECONNREFUSED") {
-      console.error("enroll2-auto status failed:", err?.response?.data || err);
-    }
     return res
-      .status(500)
-      .json({ ok: false, error: "Failed to fetch enroll2-auto status" });
+      .status(200)
+      .json({ ok: true, session: null });
   }
 });
 
