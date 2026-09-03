@@ -10,7 +10,7 @@ runtime:
   display_scale: 1.0
 recognition:
   model_name: buffalo_l
-  similarity_threshold: 0.35
+  similarity_threshold: 0.45
   min_face_size: 40
 pose:
   enable_pose_check: true
