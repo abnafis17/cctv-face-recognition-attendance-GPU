@@ -12,6 +12,7 @@ import cv2
 from ..runtimes.camera_runtime import CameraRuntime
 from .recognizer_auto import FaceRecognizerAuto as FaceRecognizer
 from ..clients.backend_client import BackendClient
+from app.services.gallery import sync_gallery
 
 # new utils used by auto enrollment
 from .utils_auto import (
@@ -662,6 +663,10 @@ class EnrollmentAutoService2:
 
         try:
             self.client.save_employee_embeddings(employee_id, embeddings, replace=True)
+            try:
+                sync_gallery(self.client._company_id)
+            except Exception as exc:
+                print(f"[Enroll2Auto] sync_gallery failed: {exc}")
             if self.attendance_rt:
                 try:
                     self.attendance_rt.reload_gallery(self.client._company_id)
