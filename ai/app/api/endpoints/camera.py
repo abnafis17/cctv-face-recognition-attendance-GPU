@@ -387,3 +387,20 @@ def camera_enroll2_auto_stream(camera_id: str):
             "Connection": "keep-alive"
         }
     )
+
+@router.post("/camera/stop-all")
+def stop_all_cameras():
+    from app.services.stream_manager import streams, streams_lock, stop_camera_stream
+    count = 0
+    with streams_lock:
+        cids = list(streams.keys())
+    for cid in cids:
+        if stop_camera_stream(cid):
+            count += 1
+    logger.info(f"[CAMERA_CONTROL] Stopped all active camera streams. Count={count}")
+    return {"ok": True, "stoppedCount": count}
+
+@router.post("/camera/stop/{camera_id}")
+def stop_camera_by_id(camera_id: str):
+    stopped = stop_camera_stream(camera_id)
+    return {"ok": True, "cameraId": camera_id, "stopped": stopped}
