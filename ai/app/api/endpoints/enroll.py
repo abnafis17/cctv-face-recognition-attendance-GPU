@@ -19,25 +19,28 @@ def enroll2_auto_session_start(
     payload: Enroll2AutoStartPayload,
     x_company_id: Optional[str] = Header(default=None, alias="x-company-id"),
 ):
-    employee_id = payload.employeeId.strip()
-    name = payload.name.strip()
-    camera_id = payload.cameraId.strip()
-    re_enroll = bool(payload.reEnroll)
+    try:
+        employee_id = payload.employeeId.strip()
+        name = payload.name.strip()
+        camera_id = payload.cameraId.strip()
+        re_enroll = bool(payload.reEnroll)
 
-    if not employee_id or not name or not camera_id:
-        return {"ok": False, "error": "employeeId, name, cameraId are required"}
+        if not employee_id or not name or not camera_id:
+            return {"ok": False, "error": "employeeId, name, cameraId are required"}
 
-    enroller = get_enroller2_auto(camera_rt_compat)
-    enroller.client.set_company_id(x_company_id or DEFAULT_COMPANY_ID)
+        enroller = get_enroller2_auto(camera_rt_compat)
+        enroller.client.set_company_id(x_company_id or DEFAULT_COMPANY_ID)
 
-    s = enroller.start(
-        employee_id=employee_id,
-        name=name,
-        camera_id=camera_id,
-        company_id=x_company_id,
-        re_enroll=re_enroll,
-    )
-    return {"ok": True, "session": s.__dict__}
+        s = enroller.start(
+            employee_id=employee_id,
+            name=name,
+            camera_id=camera_id,
+            company_id=x_company_id,
+            re_enroll=re_enroll,
+        )
+        return {"ok": True, "session": s.__dict__}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 @router.get("/enroll2/auto/session/status")
 def enroll2_auto_session_status():

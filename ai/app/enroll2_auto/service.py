@@ -198,7 +198,10 @@ class EnrollmentAutoService2:
     ) -> Enroll2AutoSession:
         if company_id:
             self.client.set_company_id(company_id)
-        self.client.upsert_employee(name, employee_id)
+        try:
+            self.client.upsert_employee(name, employee_id)
+        except Exception as exc:
+            print(f"[Enroll2Auto] upsert_employee non-fatal warning: {exc}")
 
         if camera_id:
             try:
