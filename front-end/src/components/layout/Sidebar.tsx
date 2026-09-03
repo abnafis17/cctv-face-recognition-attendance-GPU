@@ -1,140 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
 import {
-  UserPlus,
   Video,
-  Activity,
-  Users,
-  CalendarClock,
-  LogOut,
-  Building2,
-  Cctv,
-  History,
-  UserX,
-  ListVideo,
   Menu,
   X,
-  Settings,
-  Link2,
   ChevronDown,
   ChevronUp,
-  Database,
+  LogOut,
   ChevronLeft,
   ChevronRight,
-  // New relevant icons:
-  ScanFace,
-  IdCard,
-  UserSearch,
-  ClipboardList,
-  PieChart,
-  BarChart3,
-  ShieldCheck,
 } from "lucide-react";
-import * as LucideIcons from "lucide-react";
-import { useEffect, useState } from "react";
-import { clearAccessToken, getAccessToken } from "@/lib/authStorage";
+import { useState } from "react";
 import { cn } from "@/lib/utils";
-import axiosInstance from "@/config/axiosInstance";
-
-function getIconForRoute(route: string | null | undefined, label: string) {
-  if (route === "/cameras") return LucideIcons.Cctv;
-  if (route === "/camera-list") return LucideIcons.ListVideo;
-  if (route === "/enroll") return LucideIcons.ScanFace;
-  if (route === "/employees") return LucideIcons.Users;
-  if (route === "/daily-attendance") return LucideIcons.CalendarClock;
-  if (route === "/headcount") return LucideIcons.Activity;
-  if (route === "/presence") return LucideIcons.Video;
-  if (route === "/bounding-box") return LucideIcons.Activity;
-  if (route === "/attendance") return LucideIcons.History;
-  if (route === "/unknown-recognition") return LucideIcons.UserX;
-  if (route === "/gatepass") return LucideIcons.ScanFace;
-  if (route === "/gatepass/history") return LucideIcons.ClipboardList;
-  if (route === "/visitors/add") return LucideIcons.UserPlus;
-  if (route === "/visitors") return LucideIcons.ClipboardList;
-  if (route === "/visitors/employee-wise-visit") return LucideIcons.BarChart3;
-  if (route === "/visitors/visitor-wise-visit") return LucideIcons.PieChart;
-  if (route === "/master-data") return LucideIcons.Database;
-  if (route === "/settings/urls") return LucideIcons.Link2;
-  if (route === "/settings/users") return LucideIcons.Users;
-  if (route === "/settings") return LucideIcons.Settings;
-  if (route === "/permissions") return LucideIcons.ShieldCheck;
-
-  if (label === "Gate Pass") return LucideIcons.IdCard;
-  if (label === "Visitor") return LucideIcons.UserSearch;
-  if (label === "Settings" || label === "Setting") return LucideIcons.Settings;
-
-  return LucideIcons.ShieldAlert;
-}
-
-interface SubNavItem {
-  href: string;
-  label: string;
-  icon: any;
-}
-
-interface NavItem {
-  href?: string;
-  label: string;
-  icon: any;
-  subItems?: SubNavItem[];
-}
-
-const staticNav: NavItem[] = [
-  { href: "/cameras", label: "Cameras (Live)", icon: Cctv },
-  { href: "/camera-list", label: "Camera List", icon: ListVideo },
-  { href: "/enroll", label: "Enrollment (Auto)", icon: ScanFace },
-  { href: "/employees", label: "Employees", icon: Users },
-  { href: "/daily-attendance", label: "Daily Attendance", icon: CalendarClock },
-  { href: "/headcount", label: "Headcount (Realtime)", icon: Activity },
-  { href: "/presence", label: "Presence Monitor", icon: Video },
-  { href: "/bounding-box", label: "Bounding Box Config", icon: Activity },
-  { href: "/attendance", label: "Recognition History", icon: History },
-  { href: "/unknown-recognition", label: "Unknown History", icon: UserX },
-  {
-    label: "Gate Pass",
-    icon: IdCard,
-    subItems: [
-      { href: "/gatepass", label: "Gate Pass Form", icon: ScanFace },
-      { href: "/gatepass/history", label: "Gate Pass Log", icon: ClipboardList },
-    ],
-  },
-  {
-    label: "Visitor",
-    icon: UserSearch,
-    subItems: [
-      { href: "/visitors/add", label: "Add Visitor", icon: UserPlus },
-      { href: "/visitors", label: "Visitor List", icon: ClipboardList },
-      { href: "/visitors/employee-wise-visit", label: "Employee Wise Visit", icon: BarChart3 },
-      { href: "/visitors/visitor-wise-visit", label: "Visitor Wise Visit", icon: PieChart },
-    ],
-  },
-  { href: "/master-data", label: "Master Data", icon: Database },
-  {
-    label: "Settings",
-    icon: Settings,
-    subItems: [
-      { href: "/settings/urls", label: "URLs", icon: Link2 },
-      { href: "/settings/users", label: "Users", icon: Users },
-    ],
-  },
-  { href: "/permissions", label: "Permissions", icon: ShieldCheck },
-];
-
-function isActive(pathname: string, href: string) {
-  if (href === "/dashboard") return pathname === "/dashboard";
-  if (href === "/visitors") return pathname === "/visitors";
-  if (href === "/gatepass") return pathname === "/gatepass";
-  return pathname === href || pathname.startsWith(href + "/");
-}
-
-type SidebarIdentity = {
-  companyName: string;
-  email: string;
-};
-
-
+import { staticNav, isActive } from "./sidebarConfig";
+import { useSidebarState } from "./useSidebarState";
 
 function SidebarContent({
   compact = false,
@@ -147,107 +27,22 @@ function SidebarContent({
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
 }) {
-  const pathname = usePathname();
-  const router = useRouter();
-  const [identity, setIdentity] = useState<SidebarIdentity>({
-    companyName: "",
-    email: "",
-  });
-
-
-  const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({});
-  const [permissions, setPermissions] = useState<Record<string, boolean>>({});
-  const [dynamicNav, setDynamicNav] = useState<NavItem[]>([]);
-
-  useEffect(() => {
-    if (pathname.startsWith("/visitors")) {
-      setOpenMenus((prev) => ({ ...prev, Visitor: true }));
-    }
-    if (pathname.startsWith("/gatepass")) {
-      setOpenMenus((prev) => ({ ...prev, "Gate Pass": true }));
-    }
-    if (pathname.startsWith("/settings")) {
-      setOpenMenus((prev) => ({ ...prev, Settings: true }));
-    }
-  }, [pathname]);
-
-  useEffect(() => {
-    function loadUserInfo() {
-      try {
-        const raw = localStorage.getItem("userInfo");
-        const userInfo = raw ? JSON.parse(raw) : null;
-        if (userInfo?.permissions) {
-          setPermissions(userInfo.permissions);
-        }
-        const companyName = String(
-          userInfo?.companyName ?? userInfo?.company?.companyName ?? "Company Account"
-        ).trim();
-        const email = String(userInfo?.email ?? "Not available").trim();
-        setIdentity({ companyName, email });
-      } catch (err) {
-        console.error("Failed to load user info in sidebar:", err);
-      }
-    }
-    loadUserInfo();
-
-    window.addEventListener("userInfoUpdated", loadUserInfo);
-    return () => {
-      window.removeEventListener("userInfoUpdated", loadUserInfo);
-    };
-  }, []);
-
-  useEffect(() => {
-    async function fetchModules() {
-      try {
-        const res = await axiosInstance.get("/auth/modules");
-        if (res.data?.ok && Array.isArray(res.data?.results)) {
-          const mapped: NavItem[] = res.data.results.map((m: any) => ({
-            href: m.route || undefined,
-            label: m.name,
-            icon: getIconForRoute(m.route, m.name),
-            subItems: m.subModules && m.subModules.length > 0
-              ? (() => {
-                  const filtered = m.subModules.filter((sub: any) => sub.route && !sub.route.startsWith("/employees/"));
-                  return filtered.length > 0
-                    ? filtered.map((sub: any) => ({
-                        href: sub.route,
-                        label: sub.name,
-                        icon: getIconForRoute(sub.route, sub.name)
-                      }))
-                    : undefined;
-                })()
-              : undefined
-          }));
-          setDynamicNav(mapped);
-        }
-      } catch (err) {
-        console.error("Failed to load dynamic nav modules:", err);
-      }
-    }
-    fetchModules();
-  }, []);
-
-  const currentNav = dynamicNav.length > 0 ? dynamicNav : staticNav;
-
-  const toggleMenu = (label: string) => {
-    setOpenMenus((prev) => ({
-      ...prev,
-      [label]: !prev[label],
-    }));
-  };
-
-  function onLogout() {
-    clearAccessToken();
-    router.replace("/login");
-    onNavigate?.();
-  }
+  const {
+    pathname,
+    identity,
+    openMenus,
+    permissions,
+    currentNav,
+    toggleMenu,
+    onLogout,
+  } = useSidebarState(onNavigate);
 
   return (
     <>
       <div
         className={cn(
           "shrink-0 border-b border-zinc-150 bg-[#f8fafc]",
-          compact ? "p-4 flex items-center justify-center" : "px-5 py-4 flex items-center justify-between gap-3",
+          compact ? "p-4 flex items-center justify-center" : "px-5 py-4 flex items-center justify-between gap-3"
         )}
       >
         {!compact ? (
@@ -265,7 +60,7 @@ function SidebarContent({
                 </div>
               </div>
             </div>
-            
+
             {onToggleCollapse && (
               <button
                 type="button"
@@ -294,9 +89,8 @@ function SidebarContent({
       <nav
         className={cn(
           "flex-1 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] bg-white",
-          compact ? "px-2 py-3" : "px-3 py-4",
+          compact ? "px-2 py-3" : "px-3 py-4"
         )}
-        style={{ WebkitOverflowScrolling: "touch" }}
       >
         {!compact && (
           <div className="mb-2 px-2 text-[11px] font-bold uppercase tracking-[0.18em] text-zinc-400">
@@ -313,274 +107,160 @@ function SidebarContent({
                 );
                 return allowedSub.length > 0;
               }
-              if (n.href) {
-                return permissions[n.href] !== false;
-              }
+              if (n.href) return permissions[n.href] !== false;
               return true;
             })
             .map((n) => {
-            const hasSubItems = !!n.subItems && n.subItems.length > 0;
-
-            if (hasSubItems) {
-              const isOpen = openMenus[n.label] ?? false;
+              const hasSubItems = !!n.subItems && n.subItems.length > 0;
               const Icon = n.icon;
 
-              return (
-                <div key={n.label} className="space-y-1">
-                  <button
-                    onClick={() => toggleMenu(n.label)}
-                    title={compact ? n.label : undefined}
-                    className={cn(
-                      "group flex w-full items-center justify-between rounded-lg transition-all duration-200 cursor-pointer text-left border-l-2 border-l-transparent",
-                      compact ? "justify-center px-2 py-3" : "px-3 py-2.5",
-                      "text-zinc-655 hover:bg-zinc-50 hover:text-zinc-900",
-                    )}
-                  >
-                    <div className="flex items-center gap-3">
-                      <Icon
-                        className={cn(
-                          compact ? "h-5 w-5" : "h-4 w-4",
-                          "text-zinc-450 group-hover:text-zinc-750 transition-colors",
-                        )}
-                      />
-                      {!compact && <span className="truncate text-sm font-medium">{n.label}</span>}
-                    </div>
-                    {!compact && (
-                      isOpen ? (
-                        <ChevronUp className="h-4 w-4 text-zinc-455 group-hover:text-zinc-755 transition-colors" />
-                      ) : (
-                        <ChevronDown className="h-4 w-4 text-zinc-455 group-hover:text-zinc-755 transition-colors" />
-                      )
-                    )}
-                  </button>
-
-                  {isOpen && (
-                    <div
+              if (hasSubItems) {
+                const isOpen = openMenus[n.label] ?? false;
+                return (
+                  <div key={n.label} className="space-y-1">
+                    <button
+                      onClick={() => toggleMenu(n.label)}
+                      title={compact ? n.label : undefined}
                       className={cn(
-                        "space-y-1 relative transition-all duration-200",
-                        !compact && "ml-5 pl-3 border-l border-zinc-100"
+                        "group flex w-full items-center justify-between rounded-lg transition-all duration-200 cursor-pointer text-left border-l-2 border-l-transparent",
+                        compact ? "justify-center px-2 py-3" : "px-3 py-2.5",
+                        "text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900"
                       )}
                     >
-                      {n.subItems!
-                        .filter((sub) => permissions[sub.href] !== false)
-                        .map((sub) => {
-                        const subActive = isActive(pathname, sub.href);
-                        const SubIcon = sub.icon;
+                      <div className="flex items-center gap-3">
+                        <Icon className={cn(compact ? "h-5 w-5" : "h-4 w-4", "text-zinc-450")} />
+                        {!compact && <span className="truncate text-sm font-medium">{n.label}</span>}
+                      </div>
+                      {!compact &&
+                        (isOpen ? (
+                          <ChevronUp className="h-4 w-4 text-zinc-450" />
+                        ) : (
+                          <ChevronDown className="h-4 w-4 text-zinc-450" />
+                        ))}
+                    </button>
 
-                        return (
-                          <Link
-                            key={sub.href}
-                            href={sub.href}
-                            onClick={onNavigate}
-                            title={compact ? sub.label : undefined}
-                            className={cn(
-                              "group flex items-center rounded-lg transition-all duration-200 border-l-2",
-                              compact ? "justify-center px-2 py-2 border-l-transparent" : "gap-3 px-3 py-2",
-                              subActive
-                                ? "bg-violet-50 text-violet-700 border-l-violet-600 font-semibold"
-                                : "text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900 border-l-transparent",
-                            )}
-                          >
-                            <SubIcon
-                              className={cn(
-                                compact ? "h-4 w-4" : "h-4 w-4",
-                                subActive
-                                  ? "text-violet-600"
-                                  : "text-zinc-400 group-hover:text-zinc-750",
-                              )}
-                            />
-                            {!compact && (
-                              <span className="truncate text-sm">{sub.label}</span>
-                            )}
-                          </Link>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            }
+                    {isOpen && (
+                      <div
+                        className={cn(
+                          "space-y-1 relative transition-all duration-200",
+                          !compact && "ml-5 pl-3 border-l border-zinc-100"
+                        )}
+                      >
+                        {n.subItems!
+                          .filter((sub) => permissions[sub.href] !== false)
+                          .map((sub) => {
+                            const subActive = isActive(pathname, sub.href);
+                            const SubIcon = sub.icon;
+                            return (
+                              <Link
+                                key={sub.href}
+                                href={sub.href}
+                                onClick={onNavigate}
+                                title={compact ? sub.label : undefined}
+                                className={cn(
+                                  "group flex items-center rounded-lg transition-all duration-200 border-l-2",
+                                  compact
+                                    ? "justify-center px-2 py-2 border-l-transparent"
+                                    : "gap-3 px-3 py-2",
+                                  subActive
+                                    ? "bg-violet-50 text-violet-700 border-l-violet-600 font-semibold"
+                                    : "text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900 border-l-transparent"
+                                )}
+                              >
+                                <SubIcon className={cn("h-4 w-4", subActive ? "text-violet-600" : "text-zinc-400")} />
+                                {!compact && <span className="truncate text-sm">{sub.label}</span>}
+                              </Link>
+                            );
+                          })}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
 
-            const active = n.href ? isActive(pathname, n.href) : false;
-            const Icon = n.icon;
-
-            return (
-              <Link
-                key={n.href || "#"}
-                href={n.href || "#"}
-                onClick={onNavigate}
-                title={compact ? n.label : undefined}
-                className={cn(
-                  "group flex items-center rounded-lg transition-all duration-200 border-l-2",
-                  compact ? "justify-center px-2 py-3 border-l-transparent" : "gap-3 px-3 py-2.5",
-                  active
-                    ? "bg-violet-50 text-violet-700 border-l-violet-600 font-bold shadow-xs"
-                    : "text-zinc-650 hover:bg-zinc-50 hover:text-zinc-900 border-l-transparent",
-                )}
-              >
-                <Icon
+              const active = n.href ? isActive(pathname, n.href) : false;
+              return (
+                <Link
+                  key={n.href || "#"}
+                  href={n.href || "#"}
+                  onClick={onNavigate}
+                  title={compact ? n.label : undefined}
                   className={cn(
-                    compact ? "h-5 w-5" : "h-4 w-4",
+                    "group flex items-center rounded-lg transition-all duration-200 border-l-2",
+                    compact ? "justify-center px-2 py-3 border-l-transparent" : "gap-3 px-3 py-2.5",
                     active
-                      ? "text-violet-600"
-                      : "text-zinc-450 group-hover:text-zinc-750",
+                      ? "bg-violet-50 text-violet-700 border-l-violet-600 font-bold shadow-xs"
+                      : "text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900 border-l-transparent"
                   )}
-                />
-                {compact ? (
-                  <span className="sr-only">{n.label}</span>
-                ) : (
-                  <span className="truncate text-sm font-medium">{n.label}</span>
-                )}
-              </Link>
-            );
-          })}
+                >
+                  <Icon className={cn(compact ? "h-5 w-5" : "h-4 w-4", active ? "text-violet-600" : "text-zinc-450")} />
+                  {!compact && <span className="truncate text-sm font-medium">{n.label}</span>}
+                </Link>
+              );
+            })}
         </div>
       </nav>
 
-      <div
-        className={cn(
-          "shrink-0 border-t border-zinc-150 bg-[#f8fafc]",
-          compact ? "px-2 pb-3 pt-3" : "p-3",
-        )}
-      >
+      <div className={cn("shrink-0 border-t border-zinc-150 bg-[#f8fafc]", compact ? "px-2 pb-3 pt-3" : "p-3")}>
         {!compact && identity.companyName && (
-          <div className="mb-3 px-2 text-[11px] font-bold text-zinc-500 uppercase tracking-wider truncate text-center" title={identity.companyName}>
+          <div className="mb-3 px-2 text-[11px] font-bold text-zinc-500 uppercase tracking-wider truncate text-center">
             {identity.companyName}
           </div>
         )}
-
         <button
           onClick={onLogout}
-          title={compact ? "Logout" : undefined}
           className={cn(
-            "flex w-full items-center rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-sm font-semibold text-zinc-655 hover:bg-zinc-50 hover:text-zinc-800 transition cursor-pointer",
-            compact
-              ? "justify-center"
-              : "justify-center gap-2 active:scale-[0.99] shadow-xs",
+            "flex w-full items-center justify-center gap-2 rounded-xl text-rose-600 hover:bg-rose-50 border border-rose-100 font-semibold text-xs transition cursor-pointer py-2"
           )}
         >
           <LogOut className="h-4 w-4" />
-          {compact ? <span className="sr-only">Logout</span> : "Logout"}
+          {!compact && <span>Sign Out</span>}
         </button>
-
-        {!compact && (
-          <div className="mt-3 px-1 text-center text-[10px] text-zinc-400">
-            (c) {new Date().getFullYear()} Pakiza Software Ltd
-          </div>
-        )}
       </div>
     </>
   );
 }
 
-export default function Sidebar() {
-  const pathname = usePathname();
+export function Sidebar() {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [isCollapsed, setIsCollapsed] = useState(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("sidebar-collapsed") === "true";
-    }
-    return false;
-  });
-
-  const toggleCollapse = () => {
-    setIsCollapsed((prev) => {
-      const next = !prev;
-      localStorage.setItem("sidebar-collapsed", String(next));
-      return next;
-    });
-  };
-
-  useEffect(() => {
-    if (pathname === "/visitors/add") {
-      setIsCollapsed(true);
-    } else {
-      if (typeof window !== "undefined") {
-        setIsCollapsed(localStorage.getItem("sidebar-collapsed") === "true");
-      }
-    }
-  }, [pathname]);
-
-  useEffect(() => {
-    setMobileOpen(false);
-  }, [pathname]);
-
-  useEffect(() => {
-    const handleToggle = () => setMobileOpen((prev) => !prev);
-    window.addEventListener("toggleSidebar", handleToggle);
-    return () => window.removeEventListener("toggleSidebar", handleToggle);
-  }, []);
-
-  useEffect(() => {
-    if (!mobileOpen) return;
-
-    const previousOverflow = document.body.style.overflow;
-    const previousTouchAction = document.body.style.touchAction;
-
-    document.body.style.overflow = "hidden";
-    document.body.style.touchAction = "none";
-
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      document.body.style.touchAction = previousTouchAction;
-    };
-  }, [mobileOpen]);
-
-  useEffect(() => {
-    if (!mobileOpen) return;
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setMobileOpen(false);
-    };
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [mobileOpen]);
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
   return (
     <>
-
-      <div
-        className={cn(
-          "fixed inset-0 z-50 md:hidden",
-          mobileOpen ? "pointer-events-auto" : "pointer-events-none",
-        )}
-        aria-hidden={!mobileOpen}
-      >
+      <div className="md:hidden fixed top-3 left-3 z-40">
         <button
-          aria-label="Close sidebar"
-          onClick={() => setMobileOpen(false)}
-          className={cn(
-            "absolute inset-0 bg-zinc-950/25 backdrop-blur-[1px] transition-opacity duration-200",
-            mobileOpen ? "opacity-100" : "opacity-0",
-          )}
-        />
-
-        <aside
-          id="mobile-sidebar"
-          className={cn(
-            "ui-readable absolute inset-y-0 left-0 flex w-[85vw] max-w-[330px] flex-col bg-white pt-[env(safe-area-inset-top)] text-zinc-800 shadow-[5px_0_30px_rgba(0,0,0,0.12)] transition-transform duration-300 ease-out border-r border-zinc-150",
-            mobileOpen ? "translate-x-0" : "-translate-x-full",
-          )}
+          type="button"
+          onClick={() => setMobileOpen(true)}
+          className="flex h-10 w-10 items-center justify-center rounded-xl bg-white border border-zinc-200 shadow-md text-zinc-700"
         >
-          <SidebarContent onNavigate={() => setMobileOpen(false)} />
-          <div className="h-[calc(env(safe-area-inset-bottom)+0.75rem)] shrink-0" />
-        </aside>
+          <Menu className="h-5 w-5" />
+        </button>
       </div>
 
-      {/* Togglable Desktop Sidebar */}
-      <aside className={cn(
-        "ui-readable hidden h-dvh flex-col bg-slate-50 p-3 md:flex transition-all duration-350 ease-in-out shrink-0",
-        isCollapsed ? "w-20" : "w-72"
-      )}>
-        <div className="flex flex-col h-full bg-white rounded-2xl border border-zinc-200/80 shadow-[0_8px_30px_rgb(0,0,0,0.04),_0_1px_3px_rgba(0,0,0,0.02)] overflow-hidden">
-          <SidebarContent 
-            compact={isCollapsed} 
-            isCollapsed={isCollapsed} 
-            onToggleCollapse={toggleCollapse} 
-          />
+      {mobileOpen && (
+        <div className="fixed inset-0 z-50 md:hidden flex">
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-xs" onClick={() => setMobileOpen(false)} />
+          <div className="relative flex w-72 flex-col bg-white shadow-2xl z-10 h-full">
+            <SidebarContent onNavigate={() => setMobileOpen(false)} />
+          </div>
         </div>
+      )}
+
+      <aside
+        className={cn(
+          "hidden md:flex flex-col border-r border-zinc-200/80 bg-white transition-all duration-300 h-screen sticky top-0 shrink-0",
+          isCollapsed ? "w-16" : "w-64"
+        )}
+      >
+        <SidebarContent
+          compact={isCollapsed}
+          isCollapsed={isCollapsed}
+          onToggleCollapse={() => setIsCollapsed(!isCollapsed)}
+        />
       </aside>
     </>
   );
 }
+
+export default Sidebar;
+

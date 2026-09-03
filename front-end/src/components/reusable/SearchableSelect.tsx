@@ -1,29 +1,17 @@
-// src/components/common/SearchableSelect.tsx
 "use client";
 
 import * as React from "react";
 import { Check, ChevronsUpDown, Loader2 } from "lucide-react";
-
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-} from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from "@/components/ui/command";
 
 type ItemBase = {
   value: string;
   label: string;
-  keywords?: string; // optional extra search text
-  image?: string; // optional item image
+  keywords?: string;
+  image?: string;
 };
 
 export function SearchableSelect({
@@ -52,17 +40,32 @@ export function SearchableSelect({
   className?: string;
 }) {
   const [open, setOpen] = React.useState(false);
+  const [localQuery, setLocalQuery] = React.useState("");
 
   React.useEffect(() => {
     if (!open) {
+      setLocalQuery("");
       onSearchChange?.("");
     }
   }, [open, onSearchChange]);
 
-  const selected = React.useMemo(
-    () => items.find((i) => i.value === value),
-    [items, value]
-  );
+  const handleQueryChange = (q: string) => {
+    setLocalQuery(q);
+    onSearchChange?.(q);
+  };
+
+  const selected = React.useMemo(() => items.find((i) => i.value === value), [items, value]);
+
+  const displayedItems = React.useMemo(() => {
+    const q = localQuery.trim().toLowerCase();
+    if (!q) return items;
+    return items.filter(
+      (item) =>
+        item.label.toLowerCase().includes(q) ||
+        (item.keywords || "").toLowerCase().includes(q) ||
+        item.value.toLowerCase().includes(q)
+    );
+  }, [items, localQuery]);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -76,15 +79,10 @@ export function SearchableSelect({
         >
           <div className="flex items-center gap-2 truncate min-w-0">
             {selected && selected.image && (
-              <img
-                src={selected.image}
-                alt={selected.label}
-                className="h-5 w-5 rounded-full object-cover shrink-0 border border-zinc-200"
-              />
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img src={selected.image} alt={selected.label} className="h-5 w-5 rounded-full object-cover shrink-0 border border-zinc-200" />
             )}
-            <span className="truncate">
-              {selected ? selected.label : placeholder}
-            </span>
+            <span className="truncate">{selected ? selected.label : placeholder}</span>
           </div>
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-60" />
         </Button>
@@ -97,24 +95,21 @@ export function SearchableSelect({
         sideOffset={6}
         onPointerDownOutside={(e) => {
           const target = e.target as HTMLElement | null;
-          if (target?.closest?.('[data-virtual-keyboard="true"]')) {
-            e.preventDefault();
-          }
+          if (target?.closest?.('[data-virtual-keyboard="true"]')) e.preventDefault();
         }}
         onFocusOutside={(e) => {
           const target = e.target as HTMLElement | null;
-          if (target?.closest?.('[data-virtual-keyboard="true"]')) {
-            e.preventDefault();
-          }
+          if (target?.closest?.('[data-virtual-keyboard="true"]')) e.preventDefault();
         }}
       >
         <Command shouldFilter={false}>
           <CommandInput
             placeholder={searchPlaceholder}
-            onValueChange={(q: string) => onSearchChange?.(q)}
+            value={localQuery}
+            onValueChange={handleQueryChange}
           />
 
-          {loading && items.length === 0 ? (
+          {loading && displayedItems.length === 0 ? (
             <div className="px-3 py-2 text-sm text-muted-foreground flex items-center gap-2">
               <Loader2 className="h-4 w-4 animate-spin text-zinc-400" />
               {loadingText}
@@ -127,9 +122,9 @@ export function SearchableSelect({
                   Updating results...
                 </div>
               )}
-              <CommandEmpty>{emptyText}</CommandEmpty>
+              {displayedItems.length === 0 && <CommandEmpty>{emptyText}</CommandEmpty>}
               <CommandGroup className="max-h-72 overflow-auto">
-                {items.map((item) => (
+                {displayedItems.map((item) => (
                   <CommandItem
                     key={item.value}
                     value={item.value}
@@ -138,19 +133,11 @@ export function SearchableSelect({
                       setOpen(false);
                     }}
                   >
-                    <Check
-                      className={cn(
-                        "mr-2 h-4 w-4 shrink-0",
-                        value === item.value ? "opacity-100" : "opacity-0"
-                      )}
-                    />
+                    <Check className={cn("mr-2 h-4 w-4 shrink-0", value === item.value ? "opacity-100" : "opacity-0")} />
                     <div className="flex items-center gap-2 truncate min-w-0">
                       {item.image && (
-                        <img
-                          src={item.image}
-                          alt={item.label}
-                          className="h-6 w-6 rounded-full object-cover shrink-0 border border-zinc-200"
-                        />
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img src={item.image} alt={item.label} className="h-6 w-6 rounded-full object-cover shrink-0 border border-zinc-200" />
                       )}
                       <span className="truncate">{item.label}</span>
                     </div>
