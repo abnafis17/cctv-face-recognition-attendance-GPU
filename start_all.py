@@ -281,15 +281,16 @@ class ProcessSupervisor:
 
         print(f"\n--> [1/3] Starting Backend Server (Port {self.backend_port})...")
         npm_cmd = get_npm_command()
+        backend_mem = os.getenv("BACKEND_NODE_MAX_MEM", "1024")
         env = os.environ.copy()
-        env["NODE_OPTIONS"] = "--max-old-space-size=256"
+        env["NODE_OPTIONS"] = f"--max-old-space-size={backend_mem}"
         env["PORT"] = str(self.backend_port)
 
         backend_dist = BACKEND_DIR / "dist" / "index.js"
         if self.dev_mode or not backend_dist.is_file():
             cmd = [npm_cmd, "run", "dev"]
         else:
-            cmd = ["node", "--max-old-space-size=256", "dist/index.js"]
+            cmd = ["node", f"--max-old-space-size={backend_mem}", "dist/index.js"]
 
         p = subprocess.Popen(
             cmd,
@@ -357,8 +358,9 @@ class ProcessSupervisor:
 
         print(f"\n--> [3/3] Starting Frontend Web App (Port {self.frontend_port})...")
         npm_cmd = get_npm_command()
+        frontend_mem = os.getenv("FRONTEND_NODE_MAX_MEM", "2048")
         env = os.environ.copy()
-        env["NODE_OPTIONS"] = "--max-old-space-size=512"
+        env["NODE_OPTIONS"] = f"--max-old-space-size={frontend_mem}"
         env["PORT"] = str(self.frontend_port)
 
         frontend_next = FRONTEND_DIR / ".next"
