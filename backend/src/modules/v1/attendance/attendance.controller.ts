@@ -197,31 +197,33 @@ export async function createAttendance(req: Request, res: Response) {
       });
     }
 
-    // Create Headcount entry and push real-time Headcount Event so Headcount table updates in real time!
-    try {
-      const hcNotes = JSON.stringify({ firstSeen: parsedTimestamp.toISOString() });
-      const hcRow = await prisma.headcount.create({
-        data: {
-          companyId,
-          employeeId: employee.id,
-          timestamp: parsedTimestamp,
-          cameraId: cam ? cam.id : null,
-          confidence: confidence ?? null,
-          status: "MATCH",
-          notes: hcNotes,
-        },
-      });
+    // ONLY create Headcount entry and push real-time Headcount Event if eventType is "headcount"!
+    if (eventType === "headcount") {
+      try {
+        const hcNotes = JSON.stringify({ firstSeen: parsedTimestamp.toISOString() });
+        const hcRow = await prisma.headcount.create({
+          data: {
+            companyId,
+            employeeId: employee.id,
+            timestamp: parsedTimestamp,
+            cameraId: cam ? cam.id : null,
+            confidence: confidence ?? null,
+            status: "MATCH",
+            notes: hcNotes,
+          },
+        });
 
-      pushHeadcountEvent(companyId, {
-        at: new Date().toISOString(),
-        headcountId: hcRow.id,
-        employeeId: employeePublicId(employee),
-        timestamp: hcRow.timestamp.toISOString(),
-        cameraId: cam ? cam.camId || cam.id : normalizedCameraId,
-        status: "MATCH",
-      });
-    } catch (hcErr) {
-      console.warn("Failed to create headcount record or event:", hcErr);
+        pushHeadcountEvent(companyId, {
+          at: new Date().toISOString(),
+          headcountId: hcRow.id,
+          employeeId: employeePublicId(employee),
+          timestamp: hcRow.timestamp.toISOString(),
+          cameraId: cam ? cam.camId || cam.id : normalizedCameraId,
+          status: "MATCH",
+        });
+      } catch (hcErr) {
+        console.warn("Failed to create headcount record or event:", hcErr);
+      }
     }
 
     res.json({
