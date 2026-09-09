@@ -64,7 +64,7 @@ const PresenceMonitorCard: React.FC<PresenceMonitorCardProps> = ({
 
     return () => {
       try {
-        img.src = "about:blank";
+        img.removeAttribute("src");
       } catch {}
     };
   }, [imgKey, shouldRenderStream]);

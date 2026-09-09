@@ -37,6 +37,7 @@ from app.vision.hud import draw_label_card, draw_bounding_box, ACCENT_KNOWN, ACC
 from app.utils import open_capture_with_fallback
 from app.services.model_manager import init_models, get_detector, get_embedder, get_body_detector
 from app.services.gallery import sync_gallery, get_gallery_templates
+from app.presence.runtime import PresenceRuntime
 
 GLOBAL_ATTENDANCE_LOCK = threading.Lock()
 GLOBAL_ATTENDANCE_COOLDOWNS: Dict[str, float] = {}
@@ -118,6 +119,7 @@ class LiteCameraStream:
         
         # Body Tracker
         self.body_tracker = BodyTracker(recheck_interval=4.0)
+        self.presence_runtime = PresenceRuntime()
         self.attendance_enabled = True
         self.stream_type = "attendance"
         
@@ -154,45 +156,59 @@ class LiteCameraStream:
         return None
 
     def get_latest_annotated_jpeg(self) -> Optional[bytes]:
+        with self.jpeg_lock:
+            if self._cached_annotated_jpeg is not None:
+                return self._cached_annotated_jpeg
+
         frame = self.latest_raw_frame
         if frame is None:
             return None
             
         frame_time = self.latest_frame_time
+        annotated = frame.copy()
         
-        with self.jpeg_lock:
-            if self._cached_annotated_frame_time == frame_time and self._cached_annotated_jpeg is not None:
-                return self._cached_annotated_jpeg
-                
-            annotated = frame.copy()
-            with self.body_tracker.lock:
-                tracks_copy = list(self.body_tracker.tracks)
-                
-            now = time.time()
-            for track in tracks_copy:
-                face_bbox = getattr(track, 'last_face_bbox', None)
-                last_time = getattr(track, 'last_face_time', 0.0)
-                
-                # Expire face boxes instantly if face is not actively detected in current frame (350ms window)
-                if not face_bbox or (now - last_time > 0.35):
-                    continue
-                    
-                x1, y1, x2, y2 = face_bbox
-                recognized_known = (track.name != "Unknown")
-                is_authorized = getattr(track, 'is_authorized', True)
-                known = recognized_known and is_authorized
-                
-                if recognized_known:
-                    label = track.name
-                else:
-                    label = "Unknown"
-                    
-                color = ACCENT_KNOWN if known else ACCENT_UNKNOWN
-                cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
-                draw_label_card(annotated, label, x1, max(38, y1 - 14), known, scale=0.65)
-                
+        if self.stream_type == "presence":
+            try:
+                annotated, _ = self.presence_runtime.process_frame(frame, self.camera_id)
+            except Exception:
+                pass
             ret_jpeg, jpeg_bytes = cv2.imencode(".jpg", annotated, [int(cv2.IMWRITE_JPEG_QUALITY), MJPEG_RECOGNITION_JPEG_QUALITY])
             if ret_jpeg:
+                with self.jpeg_lock:
+                    self._cached_annotated_jpeg = jpeg_bytes.tobytes()
+                    self._cached_annotated_frame_time = frame_time
+                    return self._cached_annotated_jpeg
+            return None
+
+        with self.body_tracker.lock:
+            tracks_copy = list(self.body_tracker.tracks)
+            
+        now = time.time()
+        for track in tracks_copy:
+            face_bbox = getattr(track, 'last_face_bbox', None)
+            last_time = getattr(track, 'last_face_time', 0.0)
+            
+            # Expire face boxes instantly if face is not actively detected in current frame (350ms window)
+            if not face_bbox or (now - last_time > 0.35):
+                continue
+                
+            x1, y1, x2, y2 = face_bbox
+            recognized_known = (track.name != "Unknown")
+            is_authorized = getattr(track, 'is_authorized', True)
+            known = recognized_known and is_authorized
+            
+            if recognized_known:
+                label = track.name
+            else:
+                label = "Unknown"
+                
+            color = ACCENT_KNOWN if known else ACCENT_UNKNOWN
+            cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
+            draw_label_card(annotated, label, x1, max(38, y1 - 14), known, scale=0.65)
+            
+        ret_jpeg, jpeg_bytes = cv2.imencode(".jpg", annotated, [int(cv2.IMWRITE_JPEG_QUALITY), MJPEG_RECOGNITION_JPEG_QUALITY])
+        if ret_jpeg:
+            with self.jpeg_lock:
                 self._cached_annotated_jpeg = jpeg_bytes.tobytes()
                 self._cached_annotated_frame_time = frame_time
                 return self._cached_annotated_jpeg
@@ -337,6 +353,20 @@ class LiteCameraStream:
                     
                 if now - last_ai_time >= ai_period:
                     last_ai_time = now
+                    
+                    if self.stream_type == "presence":
+                        try:
+                            annotated, stats = self.presence_runtime.process_frame(frame, self.camera_id)
+                            ret_jpeg, jpeg_bytes = cv2.imencode(".jpg", annotated, [int(cv2.IMWRITE_JPEG_QUALITY), MJPEG_RECOGNITION_JPEG_QUALITY])
+                            if ret_jpeg:
+                                with self.jpeg_lock:
+                                    self._cached_annotated_jpeg = jpeg_bytes.tobytes()
+                                    self._cached_annotated_frame_time = self.latest_frame_time
+                        except Exception as e:
+                            logger.error(f"[PRESENCE] Error processing presence frame for {self.camera_id}: {e}")
+                        time.sleep(0.002)
+                        continue
+
                     self._refresh_authorized_employees()
                     
                     h, w = frame.shape[:2]
