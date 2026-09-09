@@ -141,7 +141,21 @@ export function useEmployeeTableState() {
   }, [fetchEmployees, selectedPerson]);
 
   const handleEdit = useCallback((employee: Employee) => { setSelectedUser(employee); open(); }, [open]);
-  const handleReEnroll = useCallback((employee: Employee) => { router.push(`/enroll?empId=${employee.empId || ""}`); }, [router]);
+  const handleReEnroll = useCallback(
+    (employee: Employee) => {
+      const params = new URLSearchParams();
+      const empId = employee.empId || "";
+      if (empId) params.set("employeeId", empId);
+      if (employee.name) params.set("name", employee.name);
+      if (employee.unit) params.set("unit", employee.unit);
+      if (employee.department) params.set("department", employee.department);
+      if (employee.section) params.set("section", employee.section);
+      if (employee.line) params.set("line", employee.line);
+      params.set("reEnroll", "true");
+      router.push(`/enroll?${params.toString()}`);
+    },
+    [router]
+  );
 
   return {
     isOpen, loading, search, setSearch, hierarchyFilters, setHierarchyFilters, selectedUser, setSelectedUser,
