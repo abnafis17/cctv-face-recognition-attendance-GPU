@@ -115,6 +115,46 @@ def make_dark_placeholder(name: str, status_msg: str = "Connecting to camera str
     ret, jpeg = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
     return jpeg.tobytes()
 
+def mjpeg_presence_generator(camera_id: str, company_id: str, camera_name: Optional[str] = None):
+    logger.info(f"Client started viewing presence stream: {camera_id}")
+    stream = get_stream_for_camera(camera_id, company_id, camera_name=camera_name)
+    stream.presence_enabled = True
+    
+    display_name = camera_name or getattr(stream, "camera_name", None) or camera_id
+    if display_name == camera_id and getattr(stream, "camera_name", None) and stream.camera_name != camera_id:
+        display_name = stream.camera_name
+
+    gui_period = 1.0 / MJPEG_STREAM_FPS_RECOGNITION
+    placeholder_bytes = make_dark_placeholder(display_name)
+    
+    stream.active_viewers += 1
+    try:
+        while True:
+            if stream.stopped:
+                logger.info(f"Stream stopped, exiting presence generator: {camera_id}")
+                break
+            t_start = time.time()
+            update_active_time(camera_id)
+            
+            jpeg_bytes = stream.get_presence_jpeg()
+            if jpeg_bytes is None:
+                yield (b'--frame\n'
+                       b'Content-Type: image/jpeg\n\n' + placeholder_bytes + b'\n')
+            else:
+                yield (b'--frame\n'
+                       b'Content-Type: image/jpeg\n\n' + jpeg_bytes + b'\n')
+            
+            t_spent = time.time() - t_start
+            t_sleep = gui_period - t_spent
+            if t_sleep > 0:
+                time.sleep(t_sleep)
+                
+    except Exception as e:
+        logger.info(f"Client error in presence stream: {camera_id} ({e})")
+    finally:
+        stream.active_viewers = max(0, stream.active_viewers - 1)
+        logger.info(f"Client stopped viewing presence stream: {camera_id}")
+
 def mjpeg_recognition_generator(camera_id: str, company_id: str, camera_name: Optional[str] = None, stream_type: Optional[str] = None):
     logger.info(f"Client started viewing recognition stream: {camera_id} (type: {stream_type})")
     stream = get_stream_for_camera(camera_id, company_id, camera_name=camera_name)

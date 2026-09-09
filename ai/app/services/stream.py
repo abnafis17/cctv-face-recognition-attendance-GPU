@@ -105,6 +105,8 @@ class LiteCameraStream:
         self._cached_raw_frame_time = 0.0
         self._cached_annotated_jpeg = None
         self._cached_annotated_frame_time = 0.0
+        self._cached_presence_jpeg = None
+        self._cached_presence_frame_time = 0.0
         
         # Track cooldowns for marking attendance
         self.attendance_cooldowns = {} # emp_id -> last_log_time
@@ -117,10 +119,11 @@ class LiteCameraStream:
         self.authorized_employee_ids = set()
         self.last_authorized_fetch = 0.0
         
-        # Body Tracker
+        # Body Tracker & Presence Runtime
         self.body_tracker = BodyTracker(recheck_interval=4.0)
         self.presence_runtime = PresenceRuntime()
         self.attendance_enabled = True
+        self.presence_enabled = False
         self.stream_type = "attendance"
         
         # Start Ingest thread (continuously drains RTSP frames to prevent OpenCV buffer build-up/latency)
@@ -155,60 +158,69 @@ class LiteCameraStream:
                 return self._cached_raw_jpeg
         return None
 
-    def get_latest_annotated_jpeg(self) -> Optional[bytes]:
-        with self.jpeg_lock:
-            if self._cached_annotated_jpeg is not None:
-                return self._cached_annotated_jpeg
-
+    def get_presence_jpeg(self) -> Optional[bytes]:
         frame = self.latest_raw_frame
         if frame is None:
             return None
             
         frame_time = self.latest_frame_time
-        annotated = frame.copy()
         
-        if self.stream_type == "presence":
+        with self.jpeg_lock:
+            if self._cached_presence_frame_time == frame_time and self._cached_presence_jpeg is not None:
+                return self._cached_presence_jpeg
+
+            annotated = frame.copy()
             try:
                 annotated, _ = self.presence_runtime.process_frame(frame, self.camera_id)
             except Exception:
                 pass
             ret_jpeg, jpeg_bytes = cv2.imencode(".jpg", annotated, [int(cv2.IMWRITE_JPEG_QUALITY), MJPEG_RECOGNITION_JPEG_QUALITY])
             if ret_jpeg:
-                with self.jpeg_lock:
-                    self._cached_annotated_jpeg = jpeg_bytes.tobytes()
-                    self._cached_annotated_frame_time = frame_time
-                    return self._cached_annotated_jpeg
-            return None
+                self._cached_presence_jpeg = jpeg_bytes.tobytes()
+                self._cached_presence_frame_time = frame_time
+                return self._cached_presence_jpeg
+        return None
 
-        with self.body_tracker.lock:
-            tracks_copy = list(self.body_tracker.tracks)
+    def get_latest_annotated_jpeg(self) -> Optional[bytes]:
+        frame = self.latest_raw_frame
+        if frame is None:
+            return None
             
-        now = time.time()
-        for track in tracks_copy:
-            face_bbox = getattr(track, 'last_face_bbox', None)
-            last_time = getattr(track, 'last_face_time', 0.0)
-            
-            # Expire face boxes instantly if face is not actively detected in current frame (350ms window)
-            if not face_bbox or (now - last_time > 0.35):
-                continue
+        frame_time = self.latest_frame_time
+        
+        with self.jpeg_lock:
+            if self._cached_annotated_frame_time == frame_time and self._cached_annotated_jpeg is not None:
+                return self._cached_annotated_jpeg
+
+            annotated = frame.copy()
+            with self.body_tracker.lock:
+                tracks_copy = list(self.body_tracker.tracks)
                 
-            x1, y1, x2, y2 = face_bbox
-            recognized_known = (track.name != "Unknown")
-            is_authorized = getattr(track, 'is_authorized', True)
-            known = recognized_known and is_authorized
-            
-            if recognized_known:
-                label = track.name
-            else:
-                label = "Unknown"
+            now = time.time()
+            for track in tracks_copy:
+                face_bbox = getattr(track, 'last_face_bbox', None)
+                last_time = getattr(track, 'last_face_time', 0.0)
                 
-            color = ACCENT_KNOWN if known else ACCENT_UNKNOWN
-            cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
-            draw_label_card(annotated, label, x1, max(38, y1 - 14), known, scale=0.65)
-            
-        ret_jpeg, jpeg_bytes = cv2.imencode(".jpg", annotated, [int(cv2.IMWRITE_JPEG_QUALITY), MJPEG_RECOGNITION_JPEG_QUALITY])
-        if ret_jpeg:
-            with self.jpeg_lock:
+                # Expire face boxes instantly if face is not actively detected in current frame (350ms window)
+                if not face_bbox or (now - last_time > 0.35):
+                    continue
+                    
+                x1, y1, x2, y2 = face_bbox
+                recognized_known = (track.name != "Unknown")
+                is_authorized = getattr(track, 'is_authorized', True)
+                known = recognized_known and is_authorized
+                
+                if recognized_known:
+                    label = track.name
+                else:
+                    label = "Unknown"
+                    
+                color = ACCENT_KNOWN if known else ACCENT_UNKNOWN
+                cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
+                draw_label_card(annotated, label, x1, max(38, y1 - 14), known, scale=0.65)
+                
+            ret_jpeg, jpeg_bytes = cv2.imencode(".jpg", annotated, [int(cv2.IMWRITE_JPEG_QUALITY), MJPEG_RECOGNITION_JPEG_QUALITY])
+            if ret_jpeg:
                 self._cached_annotated_jpeg = jpeg_bytes.tobytes()
                 self._cached_annotated_frame_time = frame_time
                 return self._cached_annotated_jpeg
@@ -354,16 +366,18 @@ class LiteCameraStream:
                 if now - last_ai_time >= ai_period:
                     last_ai_time = now
                     
-                    if self.stream_type == "presence":
+                    if getattr(self, "presence_enabled", False):
                         try:
-                            annotated, stats = self.presence_runtime.process_frame(frame, self.camera_id)
-                            ret_jpeg, jpeg_bytes = cv2.imencode(".jpg", annotated, [int(cv2.IMWRITE_JPEG_QUALITY), MJPEG_RECOGNITION_JPEG_QUALITY])
-                            if ret_jpeg:
+                            annotated_p, _ = self.presence_runtime.process_frame(frame, self.camera_id)
+                            ret_p, jpeg_p = cv2.imencode(".jpg", annotated_p, [int(cv2.IMWRITE_JPEG_QUALITY), MJPEG_RECOGNITION_JPEG_QUALITY])
+                            if ret_p:
                                 with self.jpeg_lock:
-                                    self._cached_annotated_jpeg = jpeg_bytes.tobytes()
-                                    self._cached_annotated_frame_time = self.latest_frame_time
+                                    self._cached_presence_jpeg = jpeg_p.tobytes()
+                                    self._cached_presence_frame_time = self.latest_frame_time
                         except Exception as e:
                             logger.error(f"[PRESENCE] Error processing presence frame for {self.camera_id}: {e}")
+
+                    if not getattr(self, "attendance_enabled", True):
                         time.sleep(0.002)
                         continue
 

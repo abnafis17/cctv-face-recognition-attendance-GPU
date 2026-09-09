@@ -7,9 +7,8 @@ from app.core.logging import logger
 from app.services.stream_manager import (
     get_stream_for_camera,
     get_stream_by_id,
-    stop_camera_stream,
 )
-from app.api.endpoints.camera import mjpeg_recognition_generator
+from app.api.endpoints.camera import mjpeg_presence_generator
 
 router = APIRouter()
 
@@ -26,8 +25,7 @@ def presence_start(
     logger.info(f"Received presence start request: {camera_id} -> {rtsp_url}")
 
     stream = get_stream_for_camera(camera_id, comp_id, rtsp_url=rtsp_url, camera_name=camera_name)
-    stream.stream_type = "presence"
-    stream.attendance_enabled = False
+    stream.presence_enabled = True
 
     return {
         "ok": True,
@@ -43,10 +41,12 @@ def presence_stop(
     camera_id: str,
 ):
     logger.info(f"Received presence stop request: {camera_id}")
-    stopped = stop_camera_stream(camera_id)
+    stream = get_stream_by_id(camera_id)
+    if stream:
+        stream.presence_enabled = False
     return {
         "ok": True,
-        "stoppedNow": stopped,
+        "stoppedNow": True,
         "camera_id": camera_id,
     }
 
@@ -62,15 +62,15 @@ def presence_status(
     if not stream and auto_start:
         stream = get_stream_for_camera(camera_id, comp_id)
         if stream:
-            stream.stream_type = "presence"
+            stream.presence_enabled = True
 
-    is_running = bool(stream and not stream.stopped)
+    is_running = bool(stream and not stream.stopped and getattr(stream, "presence_enabled", False))
     return {
         "ok": True,
         "running": is_running,
         "stats": {
             "camera_id": camera_id,
-            "stream_type": getattr(stream, "stream_type", "presence") if stream else "presence",
+            "presence_enabled": getattr(stream, "presence_enabled", False) if stream else False,
         },
     }
 
@@ -82,7 +82,7 @@ def presence_stream(
 ):
     comp_id = company_id or x_company_id or DEFAULT_COMPANY_ID
     return StreamingResponse(
-        mjpeg_recognition_generator(camera_id, comp_id, stream_type="presence"),
+        mjpeg_presence_generator(camera_id, comp_id),
         media_type="multipart/x-mixed-replace; boundary=frame",
         headers={
             "Cache-Control": "no-cache, no-store, must-revalidate",
@@ -101,7 +101,7 @@ def presence_stream_with_name(
 ):
     comp_id = company_id or x_company_id or DEFAULT_COMPANY_ID
     return StreamingResponse(
-        mjpeg_recognition_generator(camera_id, comp_id, camera_name=camera_name, stream_type="presence"),
+        mjpeg_presence_generator(camera_id, comp_id, camera_name=camera_name),
         media_type="multipart/x-mixed-replace; boundary=frame",
         headers={
             "Cache-Control": "no-cache, no-store, must-revalidate",
