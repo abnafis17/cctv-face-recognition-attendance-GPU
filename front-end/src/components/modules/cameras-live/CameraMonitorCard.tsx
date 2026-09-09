@@ -94,11 +94,8 @@ const CameraMonitorCard: React.FC<Props> = ({
 
     return () => {
       try {
-        // Avoid `src=""` (can request current document in some browsers).
-        img.src = "about:blank";
-      } catch {
-        // ignore
-      }
+        img.removeAttribute("src");
+      } catch {}
     };
   }, [imgKey, shouldRenderStream]);
 

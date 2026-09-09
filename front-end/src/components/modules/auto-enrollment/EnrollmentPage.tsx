@@ -20,10 +20,16 @@ export default function EnrollmentPage() {
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const initialEmployeeId = String(searchParams.get("employeeId") ?? "").trim();
+  const initialEmployeeId = String(
+    searchParams.get("employeeId") ?? searchParams.get("empId") ?? ""
+  ).trim();
   const initialName = String(searchParams.get("name") ?? "").trim();
+  const initialUnit = String(searchParams.get("unit") ?? "").trim();
+  const initialDepartment = String(searchParams.get("department") ?? "").trim();
+  const initialSection = String(searchParams.get("section") ?? "").trim();
+  const initialLine = String(searchParams.get("line") ?? "").trim();
   const reEnroll = ["1", "true", "yes", "on"].includes(
-    String(searchParams.get("reEnroll") ?? "")
+    String(searchParams.get("reEnroll") ?? searchParams.get("re_enroll") ?? "")
       .trim()
       .toLowerCase(),
   );
@@ -94,6 +100,10 @@ export default function EnrollmentPage() {
         loadCameras={loadCameras}
         initialEmployeeId={initialEmployeeId}
         initialName={initialName}
+        initialUnit={initialUnit}
+        initialDepartment={initialDepartment}
+        initialSection={initialSection}
+        initialLine={initialLine}
         reEnroll={reEnroll}
       />
     </div>
