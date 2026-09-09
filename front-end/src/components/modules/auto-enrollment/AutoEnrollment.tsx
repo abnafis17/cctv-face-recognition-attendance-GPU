@@ -94,7 +94,7 @@ export default function AutoEnrollment({
   const { employees, loading: erpLoading, error: erpError, setSearch: setErpSearch } = useErpEmployees({
     debounceMs: 350,
     initialSearch: "",
-    pageSize: 20,
+    pageSize: 100,
     pageNumber: 1,
   });
 
@@ -104,6 +104,40 @@ export default function AutoEnrollment({
   const [employeeSearch, setEmployeeSearch] = useState("");
   const { departments: erpDepartments } = useErpDepartments();
   const lockEmployeeIdentity = reEnroll && !!initialEmployeeId;
+
+  const handleSearchChange = useCallback(
+    (q: string) => {
+      setEmployeeSearch(q);
+      if (q) {
+        setErpSearch(q);
+      } else if (departmentFilter) {
+        const selectedDeptObj = erpDepartments.find(
+          (d) => d.id === departmentFilter || d.name === departmentFilter
+        );
+        setErpSearch(selectedDeptObj?.name || departmentFilter);
+      } else {
+        setErpSearch("");
+      }
+    },
+    [departmentFilter, erpDepartments, setErpSearch]
+  );
+
+  const handleDepartmentChange = useCallback(
+    (deptVal: string) => {
+      setDepartmentFilter(deptVal);
+      setSelectedErpEmployeeId("");
+      if (deptVal) {
+        const selectedDeptObj = erpDepartments.find(
+          (d) => d.id === deptVal || d.name === deptVal
+        );
+        const targetName = selectedDeptObj?.name || deptVal;
+        setErpSearch(targetName);
+      } else {
+        setErpSearch(employeeSearch || "");
+      }
+    },
+    [erpDepartments, employeeSearch, setErpSearch]
+  );
 
   const onPickEmployee = useCallback(
     (empId: string) => {
@@ -134,19 +168,62 @@ export default function AutoEnrollment({
     setSelectedEmployee(null);
     setEmployeeSearch("");
     setErpSearch("");
+    setDepartmentFilter("");
     container.setEmployeeId("");
     container.setName("");
+    container.setUnit("");
+    container.setDepartment("");
+    container.setSection("");
+    container.setLine("");
+    container.setDeptId("");
+    container.setSectionId("");
+    container.setDesignationId("");
+    container.setDesignation("");
+    container.setUnitId("");
+    container.setLineId("");
+    container.setEmpPicUrl("");
   }, [container, setErpSearch]);
 
-  const erpItems = useMemo(
-    () =>
-      employees.map((e) => ({
-        value: e.employeeId,
-        label: `${e.employeeName} (${e.employeeId})`,
-        keywords: `${e.employeeName} ${e.employeeId} ${e.unit} ${e.department} ${e.section} ${e.line}`,
-      })),
-    [employees]
-  );
+  const filteredEmployees = useMemo(() => {
+    let list = employees;
+    if (departmentFilter) {
+      const selectedDeptObj = erpDepartments.find(
+        (d) => d.id === departmentFilter || d.name === departmentFilter
+      );
+      const targetName = (selectedDeptObj?.name || departmentFilter).toLowerCase().trim();
+      const targetId = (selectedDeptObj?.id || departmentFilter).toLowerCase().trim();
+
+      list = list.filter((e) => {
+        const empDeptName = (e.department || e.deptName || "").toLowerCase().trim();
+        const empDeptId = (e.deptId || e.mainDeptId || "").toLowerCase().trim();
+        return (
+          empDeptName === targetName ||
+          (targetId && empDeptId === targetId) ||
+          (targetName && empDeptName.includes(targetName)) ||
+          (targetName && targetName.includes(empDeptName))
+        );
+      });
+    }
+    return list;
+  }, [employees, departmentFilter, erpDepartments]);
+
+  const erpItems = useMemo(() => {
+    const options = filteredEmployees.map((e) => ({
+      value: e.employeeId,
+      label: `${e.employeeName} (${e.employeeId})`,
+      keywords: `${e.employeeName} ${e.employeeId} ${e.unit} ${e.department} ${e.section} ${e.line}`,
+    }));
+
+    if (selectedEmployee && !options.some((o) => o.value === selectedEmployee.employeeId)) {
+      options.unshift({
+        value: selectedEmployee.employeeId,
+        label: `${selectedEmployee.employeeName} (${selectedEmployee.employeeId})`,
+        keywords: `${selectedEmployee.employeeName} ${selectedEmployee.employeeId} ${selectedEmployee.unit} ${selectedEmployee.department} ${selectedEmployee.section} ${selectedEmployee.line}`,
+      });
+    }
+
+    return options;
+  }, [filteredEmployees, selectedEmployee]);
 
   return (
     <div className="flex flex-col gap-4 w-full">
@@ -160,7 +237,7 @@ export default function AutoEnrollment({
           selectedErpEmployeeId={selectedErpEmployeeId}
           setSelectedErpEmployeeId={setSelectedErpEmployeeId}
           departmentFilter={departmentFilter}
-          setDepartmentFilter={setDepartmentFilter}
+          setDepartmentFilter={handleDepartmentChange}
           departmentsList={erpDepartments}
           erpLoading={erpLoading}
           unit={container.unit}
@@ -174,7 +251,7 @@ export default function AutoEnrollment({
           erpItems={erpItems}
           erpError={erpError}
           erpSearch={employeeSearch}
-          setErpSearch={setEmployeeSearch}
+          setErpSearch={handleSearchChange}
           onPickEmployee={onPickEmployee}
           employeeId={container.employeeId}
           setEmployeeId={container.setEmployeeId}

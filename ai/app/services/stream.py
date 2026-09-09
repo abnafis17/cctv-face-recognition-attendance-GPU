@@ -37,6 +37,7 @@ from app.vision.hud import draw_label_card, draw_bounding_box, ACCENT_KNOWN, ACC
 from app.utils import open_capture_with_fallback
 from app.services.model_manager import init_models, get_detector, get_embedder, get_body_detector
 from app.services.gallery import sync_gallery, get_gallery_templates
+from app.presence.runtime import PresenceRuntime
 
 GLOBAL_ATTENDANCE_LOCK = threading.Lock()
 GLOBAL_ATTENDANCE_COOLDOWNS: Dict[str, float] = {}
@@ -104,6 +105,8 @@ class LiteCameraStream:
         self._cached_raw_frame_time = 0.0
         self._cached_annotated_jpeg = None
         self._cached_annotated_frame_time = 0.0
+        self._cached_presence_jpeg = None
+        self._cached_presence_frame_time = 0.0
         
         # Track cooldowns for marking attendance
         self.attendance_cooldowns = {} # emp_id -> last_log_time
@@ -116,9 +119,11 @@ class LiteCameraStream:
         self.authorized_employee_ids = set()
         self.last_authorized_fetch = 0.0
         
-        # Body Tracker
+        # Body Tracker & Presence Runtime
         self.body_tracker = BodyTracker(recheck_interval=4.0)
+        self.presence_runtime = PresenceRuntime()
         self.attendance_enabled = True
+        self.presence_enabled = False
         self.stream_type = "attendance"
         
         # Start Ingest thread (continuously drains RTSP frames to prevent OpenCV buffer build-up/latency)
@@ -153,6 +158,29 @@ class LiteCameraStream:
                 return self._cached_raw_jpeg
         return None
 
+    def get_presence_jpeg(self) -> Optional[bytes]:
+        frame = self.latest_raw_frame
+        if frame is None:
+            return None
+            
+        frame_time = self.latest_frame_time
+        
+        with self.jpeg_lock:
+            if self._cached_presence_frame_time == frame_time and self._cached_presence_jpeg is not None:
+                return self._cached_presence_jpeg
+
+            annotated = frame.copy()
+            try:
+                annotated, _ = self.presence_runtime.process_frame(frame, self.camera_id)
+            except Exception:
+                pass
+            ret_jpeg, jpeg_bytes = cv2.imencode(".jpg", annotated, [int(cv2.IMWRITE_JPEG_QUALITY), MJPEG_RECOGNITION_JPEG_QUALITY])
+            if ret_jpeg:
+                self._cached_presence_jpeg = jpeg_bytes.tobytes()
+                self._cached_presence_frame_time = frame_time
+                return self._cached_presence_jpeg
+        return None
+
     def get_latest_annotated_jpeg(self) -> Optional[bytes]:
         frame = self.latest_raw_frame
         if frame is None:
@@ -163,7 +191,7 @@ class LiteCameraStream:
         with self.jpeg_lock:
             if self._cached_annotated_frame_time == frame_time and self._cached_annotated_jpeg is not None:
                 return self._cached_annotated_jpeg
-                
+
             annotated = frame.copy()
             with self.body_tracker.lock:
                 tracks_copy = list(self.body_tracker.tracks)
@@ -337,6 +365,22 @@ class LiteCameraStream:
                     
                 if now - last_ai_time >= ai_period:
                     last_ai_time = now
+                    
+                    if getattr(self, "presence_enabled", False):
+                        try:
+                            annotated_p, _ = self.presence_runtime.process_frame(frame, self.camera_id)
+                            ret_p, jpeg_p = cv2.imencode(".jpg", annotated_p, [int(cv2.IMWRITE_JPEG_QUALITY), MJPEG_RECOGNITION_JPEG_QUALITY])
+                            if ret_p:
+                                with self.jpeg_lock:
+                                    self._cached_presence_jpeg = jpeg_p.tobytes()
+                                    self._cached_presence_frame_time = self.latest_frame_time
+                        except Exception as e:
+                            logger.error(f"[PRESENCE] Error processing presence frame for {self.camera_id}: {e}")
+
+                    if not getattr(self, "attendance_enabled", True):
+                        time.sleep(0.002)
+                        continue
+
                     self._refresh_authorized_employees()
                     
                     h, w = frame.shape[:2]

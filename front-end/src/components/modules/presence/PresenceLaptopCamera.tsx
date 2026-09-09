@@ -124,7 +124,7 @@ const PresenceLaptopCamera: React.FC<PresenceLaptopCameraProps> = ({
 
     return () => {
       try {
-        img.src = "about:blank";
+        img.removeAttribute("src");
       } catch {}
     };
   }, [imgKey, shouldRenderStream]);
