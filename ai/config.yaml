@@ -9,7 +9,7 @@ runtime:
   detect_every_n_frames: 2
   display_scale: 1.0
 recognition:
-  model_name: buffalo_l
+  model_name: buffalo_s
   similarity_threshold: 0.45
   min_face_size: 40
 pose:

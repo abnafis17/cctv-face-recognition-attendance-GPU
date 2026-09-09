@@ -233,8 +233,8 @@ def run_viewer(url):
 
     # Initialize Face models
     print("Loading Face Detection & Embedding models...")
-    # Matches the production model pack used by the AI Server (buffalo_l/ResNet-50)
-    model_name = os.getenv("INSIGHTFACE_MODEL", "buffalo_l")
+    # Matches the production model pack used by the AI Server (buffalo_s)
+    model_name = os.getenv("INSIGHTFACE_MODEL", "buffalo_s")
     use_gpu = os.getenv("USE_GPU", "1") == "1"
     print(f"Using detector and embedder model pack: {model_name} (GPU={use_gpu})")
     
@@ -243,7 +243,7 @@ def run_viewer(url):
     body_detector = UniversalBodyDetector()
     body_tracker = BodyTracker(recheck_interval=4.0)
     
-    similarity_threshold = float(os.getenv("SIMILARITY_THRESHOLD", "0.35"))
+    similarity_threshold = float(os.getenv("SIMILARITY_THRESHOLD", "0.45"))
     print(f"Similarity Threshold set to: {similarity_threshold}")
 
     # Start the async frame grabber

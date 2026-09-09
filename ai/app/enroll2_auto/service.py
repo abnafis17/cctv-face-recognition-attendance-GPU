@@ -124,7 +124,7 @@ class EnrollmentAutoService2:
         self,
         camera_rt: CameraRuntime,
         attendance_rt: Optional[Any] = None,
-        model_name: str = "buffalo_l",
+        model_name: str = "buffalo_s",
         min_face_size: int = 40,
     ):
         self.camera_rt = camera_rt

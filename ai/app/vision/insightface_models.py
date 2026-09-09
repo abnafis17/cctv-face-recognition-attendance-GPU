@@ -84,7 +84,7 @@ class FaceDetector:
     def __init__(
         self,
         *,
-        model_name: str = "buffalo_l",
+        model_name: str = "buffalo_s",
         use_gpu: bool = True,
         det_size: Tuple[int, int] = (640, 640),
         min_face_size: int = 14,
@@ -144,8 +144,8 @@ class FaceDetector:
             if best_fallback is None or score > best_fallback.det_score:
                 best_fallback = det
 
-        fallback_floor = float(os.getenv("FALLBACK_DET_SCORE", "0.0"))  # 0.0 disables fallback
-        if not out and best_fallback is not None and best_fallback.det_score >= fallback_floor:
+        fallback_floor = float(os.getenv("FALLBACK_DET_SCORE", "0.0"))  # <= 0.0 disables fallback
+        if fallback_floor > 0.0 and not out and best_fallback is not None and best_fallback.det_score >= fallback_floor:
             out.append(best_fallback)
 
         return out
@@ -156,7 +156,7 @@ class FaceEmbedder:
     Recognition-only embedder (ArcFace ONNX from the same InsightFace model pack).
     """
 
-    def __init__(self, *, model_name: str = "buffalo_l", use_gpu: bool = True):
+    def __init__(self, *, model_name: str = "buffalo_s", use_gpu: bool = True):
         use_gpu = _env_bool("USE_GPU", use_gpu)
 
         # Default behavior:
