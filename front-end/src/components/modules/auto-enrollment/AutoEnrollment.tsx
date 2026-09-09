@@ -15,12 +15,20 @@ export default function AutoEnrollment({
   loadCameras,
   initialEmployeeId = "",
   initialName = "",
+  initialUnit = "",
+  initialDepartment = "",
+  initialSection = "",
+  initialLine = "",
   reEnroll = false,
 }: {
   cameras: Camera[];
   loadCameras: () => Promise<void>;
   initialEmployeeId?: string;
   initialName?: string;
+  initialUnit?: string;
+  initialDepartment?: string;
+  initialSection?: string;
+  initialLine?: string;
   reEnroll?: boolean;
 }) {
   const container = useAutoEnrollmentContainer({
@@ -28,6 +36,10 @@ export default function AutoEnrollment({
     loadCameras,
     initialEmployeeId,
     initialName,
+    initialUnit,
+    initialDepartment,
+    initialSection,
+    initialLine,
     reEnroll,
   });
 
@@ -93,17 +105,44 @@ export default function AutoEnrollment({
 
   const { employees, loading: erpLoading, error: erpError, setSearch: setErpSearch } = useErpEmployees({
     debounceMs: 350,
-    initialSearch: "",
+    initialSearch: initialEmployeeId || "",
     pageSize: 100,
     pageNumber: 1,
   });
 
-  const [selectedErpEmployeeId, setSelectedErpEmployeeId] = useState("");
+  const [selectedErpEmployeeId, setSelectedErpEmployeeId] = useState(initialEmployeeId || "");
   const [selectedEmployee, setSelectedEmployee] = useState<ErpEmployee | null>(null);
   const [departmentFilter, setDepartmentFilter] = useState("");
-  const [employeeSearch, setEmployeeSearch] = useState("");
+  const [employeeSearch, setEmployeeSearch] = useState(initialEmployeeId || "");
   const { departments: erpDepartments } = useErpDepartments();
   const lockEmployeeIdentity = reEnroll && !!initialEmployeeId;
+
+  React.useEffect(() => {
+    if (!initialEmployeeId) return;
+    setSelectedErpEmployeeId(initialEmployeeId);
+    setEmployeeSearch(initialEmployeeId);
+    setErpSearch(initialEmployeeId);
+  }, [initialEmployeeId, setErpSearch]);
+
+  React.useEffect(() => {
+    if (!initialEmployeeId) return;
+    const picked = employees.find((e) => e.employeeId === initialEmployeeId);
+    if (!picked) return;
+    setSelectedEmployee(picked);
+    container.setEmployeeId(picked.employeeId);
+    if (picked.employeeName) container.setName(picked.employeeName);
+    if (picked.unit) container.setUnit(picked.unit);
+    if (picked.department) container.setDepartment(picked.department);
+    if (picked.section) container.setSection(picked.section);
+    if (picked.line) container.setLine(picked.line);
+    if (picked.deptId) container.setDeptId(picked.deptId);
+    if (picked.sectionId) container.setSectionId(picked.sectionId);
+    if (picked.designationId) container.setDesignationId(picked.designationId);
+    if (picked.designation) container.setDesignation(picked.designation);
+    if (picked.unitId) container.setUnitId(picked.unitId);
+    if (picked.lineId) container.setLineId(picked.lineId);
+    if (picked.picUrl) container.setEmpPicUrl(picked.picUrl);
+  }, [employees, initialEmployeeId, container]);
 
   const handleSearchChange = useCallback(
     (q: string) => {
@@ -214,16 +253,19 @@ export default function AutoEnrollment({
       keywords: `${e.employeeName} ${e.employeeId} ${e.unit} ${e.department} ${e.section} ${e.line}`,
     }));
 
-    if (selectedEmployee && !options.some((o) => o.value === selectedEmployee.employeeId)) {
+    const targetEmpId = selectedEmployee?.employeeId || initialEmployeeId;
+    const targetEmpName = selectedEmployee?.employeeName || initialName || container.name;
+
+    if (targetEmpId && !options.some((o) => o.value === targetEmpId)) {
       options.unshift({
-        value: selectedEmployee.employeeId,
-        label: `${selectedEmployee.employeeName} (${selectedEmployee.employeeId})`,
-        keywords: `${selectedEmployee.employeeName} ${selectedEmployee.employeeId} ${selectedEmployee.unit} ${selectedEmployee.department} ${selectedEmployee.section} ${selectedEmployee.line}`,
+        value: targetEmpId,
+        label: targetEmpName ? `${targetEmpName} (${targetEmpId})` : targetEmpId,
+        keywords: `${targetEmpName} ${targetEmpId}`,
       });
     }
 
     return options;
-  }, [filteredEmployees, selectedEmployee]);
+  }, [filteredEmployees, selectedEmployee, initialEmployeeId, initialName, container.name]);
 
   return (
     <div className="flex flex-col gap-4 w-full">

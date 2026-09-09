@@ -18,12 +18,20 @@ export function useAutoEnrollmentContainer({
   loadCameras,
   initialEmployeeId = "",
   initialName = "",
+  initialUnit = "",
+  initialDepartment = "",
+  initialSection = "",
+  initialLine = "",
   reEnroll = false,
 }: {
   cameras: Camera[];
   loadCameras: () => Promise<void>;
   initialEmployeeId?: string;
   initialName?: string;
+  initialUnit?: string;
+  initialDepartment?: string;
+  initialSection?: string;
+  initialLine?: string;
   reEnroll?: boolean;
 }) {
   const companyId = getCompanyIdFromToken();
@@ -32,10 +40,10 @@ export function useAutoEnrollmentContainer({
   const [cameraId, setCameraId] = useState<string>(laptopCameraId);
   const [employeeId, setEmployeeId] = useState(initialEmployeeId);
   const [name, setName] = useState(initialName);
-  const [unit, setUnit] = useState("");
-  const [department, setDepartment] = useState("");
-  const [section, setSection] = useState("");
-  const [line, setLine] = useState("");
+  const [unit, setUnit] = useState(initialUnit);
+  const [department, setDepartment] = useState(initialDepartment);
+  const [section, setSection] = useState(initialSection);
+  const [line, setLine] = useState(initialLine);
   const [deptId, setDeptId] = useState("");
   const [sectionId, setSectionId] = useState("");
   const [designationId, setDesignationId] = useState("");
@@ -43,6 +51,13 @@ export function useAutoEnrollmentContainer({
   const [unitId, setUnitId] = useState("");
   const [lineId, setLineId] = useState("");
   const [empPicUrl, setEmpPicUrl] = useState("");
+
+  useEffect(() => { if (initialEmployeeId) setEmployeeId(initialEmployeeId); }, [initialEmployeeId]);
+  useEffect(() => { if (initialName) setName(initialName); }, [initialName]);
+  useEffect(() => { if (initialUnit) setUnit(initialUnit); }, [initialUnit]);
+  useEffect(() => { if (initialDepartment) setDepartment(initialDepartment); }, [initialDepartment]);
+  useEffect(() => { if (initialSection) setSection(initialSection); }, [initialSection]);
+  useEffect(() => { if (initialLine) setLine(initialLine); }, [initialLine]);
 
   const {
     previewVideoRef,
