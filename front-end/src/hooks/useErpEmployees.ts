@@ -178,7 +178,7 @@ export function useErpEmployees(options?: {
 }) {
   const debounceMs = options?.debounceMs ?? 350;
   const autoFetch = options?.autoFetch ?? true;
-  const pageSize = options?.pageSize ?? 20;
+  const pageSize = Math.min(Math.max(1, options?.pageSize ?? 100), 100);
   const pageNumber = options?.pageNumber ?? 1;
   const filterByOrg = options?.filterByOrg ?? false;
 
