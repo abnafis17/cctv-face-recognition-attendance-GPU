@@ -120,7 +120,7 @@ export default function BoundingBoxCanvasEditor({
 
     return () => {
       try {
-        img.src = "about:blank";
+        img.removeAttribute("src");
       } catch {
         // ignore
       }

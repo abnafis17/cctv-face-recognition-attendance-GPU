@@ -99,7 +99,7 @@ export function useLocalCamera({
 
     try {
       if (recognitionImgRef.current) {
-        recognitionImgRef.current.src = "about:blank";
+        recognitionImgRef.current.removeAttribute("src");
       }
     } catch {}
 
@@ -416,7 +416,7 @@ export function useLocalCamera({
     const img = recognitionImgRef.current;
     return () => {
       try {
-        if (img) img.src = "about:blank";
+        if (img) img.removeAttribute("src");
       } catch {}
     };
   }, [localActive, recUrl]);
