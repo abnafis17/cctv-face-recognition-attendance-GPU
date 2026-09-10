@@ -63,7 +63,6 @@ export type ErpSettingsDto = {
   erpBaseUrl: string | null;
   erpPrefix: string | null;
   erpAttendanceEndpoint: string | null;
-  isActive: boolean | null;
   createdAt: string | null;
   updatedAt: string | null;
 };
@@ -84,7 +83,6 @@ function toErpSettingsDto(row: {
   erpBaseUrl: string | null;
   erpPrefix: string | null;
   erpAttendanceEndpoint: string | null;
-  isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
 }): ErpSettingsDto {
@@ -94,7 +92,6 @@ function toErpSettingsDto(row: {
     erpBaseUrl: row.erpBaseUrl ?? null,
     erpPrefix: row.erpPrefix ?? null,
     erpAttendanceEndpoint: row.erpAttendanceEndpoint ?? null,
-    isActive: row.isActive,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -107,7 +104,6 @@ function emptyErpSettingsDto(urlType: string): ErpSettingsDto {
     erpBaseUrl: null,
     erpPrefix: null,
     erpAttendanceEndpoint: null,
-    isActive: null,
     createdAt: null,
     updatedAt: null,
   };
@@ -124,7 +120,6 @@ export async function listCompanyErpSettings(
       erpBaseUrl: true,
       erpPrefix: true,
       erpAttendanceEndpoint: true,
-      isActive: true,
       createdAt: true,
       updatedAt: true,
     },
@@ -147,22 +142,53 @@ export async function getCompanyErpSettings(
   companyId: string,
   urlType?: string | null
 ): Promise<ErpSettingsDto> {
+  const rawType = String(urlType ?? "").trim();
   const resolvedUrlType = normalizeErpUrlType(urlType);
-  const row = await prisma.companyErpSetting.findFirst({
-    where: {
-      urlType: resolvedUrlType,
-    },
+  const cleaned = rawType.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+  const rows = await prisma.companyErpSetting.findMany({
     select: {
       id: true,
       urlType: true,
       erpBaseUrl: true,
       erpPrefix: true,
       erpAttendanceEndpoint: true,
-      isActive: true,
       createdAt: true,
       updatedAt: true,
     },
+    orderBy: { createdAt: "desc" },
   });
+
+  let row = rows.find((r) => {
+    const t = String(r.urlType ?? "").trim().toLowerCase();
+    const tClean = t.replace(/[^a-z0-9]/g, "");
+    return (
+      t === rawType.toLowerCase() ||
+      t === resolvedUrlType ||
+      (cleaned.length > 0 && tClean === cleaned)
+    );
+  });
+
+  if (!row && (cleaned.includes("gatepassdetail") || cleaned.includes("getgatepass") || cleaned.includes("details"))) {
+    row = rows.find((r) => {
+      const tClean = String(r.urlType ?? "")
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "");
+      const epClean = String(r.erpAttendanceEndpoint ?? "")
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "");
+      return (
+        tClean.includes("getgatepassdetail") ||
+        tClean.includes("gatepassdetail") ||
+        tClean.includes("getallgatepassdetailsbyid") ||
+        tClean === "getgatepassdetails" ||
+        epClean.includes("getallgatepassdetailsbyid") ||
+        epClean.includes("getgatepassdetails")
+      );
+    });
+  }
 
   if (!row) {
     return emptyErpSettingsDto(resolvedUrlType);
@@ -188,16 +214,35 @@ export async function createCompanyErpSettings(
   payload: ErpSettingsCreateInput
 ): Promise<ErpSettingsDto> {
   const resolvedUrlType = normalizeErpUrlType(payload.urlType);
-  
-  // Check if this urlType is already configured globally
+
   const existing = await prisma.companyErpSetting.findFirst({
-    where: { urlType: resolvedUrlType }
+    where: {
+      companyId,
+      urlType: { equals: resolvedUrlType, mode: "insensitive" },
+    },
   });
-  
+
   if (existing) {
-    const err = new Error("ERP URLs for this url_type already exist.");
-    (err as any).code = "P2002";
-    throw err;
+    const row = await prisma.companyErpSetting.update({
+      where: { id: existing.id },
+      data: {
+        ...(payload.erpBaseUrl !== undefined ? { erpBaseUrl: payload.erpBaseUrl } : {}),
+        ...(payload.erpPrefix !== undefined ? { erpPrefix: payload.erpPrefix } : {}),
+        ...(payload.erpAttendanceEndpoint !== undefined
+          ? { erpAttendanceEndpoint: payload.erpAttendanceEndpoint }
+          : {}),
+      },
+      select: {
+        id: true,
+        urlType: true,
+        erpBaseUrl: true,
+        erpPrefix: true,
+        erpAttendanceEndpoint: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+    return toErpSettingsDto(row);
   }
 
   const row = await prisma.companyErpSetting.create({
@@ -210,7 +255,6 @@ export async function createCompanyErpSettings(
         payload.erpAttendanceEndpoint !== undefined
           ? payload.erpAttendanceEndpoint
           : null,
-      isActive: payload.isActive !== undefined ? payload.isActive : true,
     },
     select: {
       id: true,
@@ -218,7 +262,6 @@ export async function createCompanyErpSettings(
       erpBaseUrl: true,
       erpPrefix: true,
       erpAttendanceEndpoint: true,
-      isActive: true,
       createdAt: true,
       updatedAt: true,
     },
@@ -240,9 +283,10 @@ async function findCompanyErpSettingTarget(
     return row ? { id: row.id } : null;
   }
 
+  const resolvedUrlType = normalizeErpUrlType(target.urlType);
   const row = await prisma.companyErpSetting.findFirst({
     where: {
-      urlType: normalizeErpUrlType(target.urlType),
+      urlType: { equals: resolvedUrlType, mode: "insensitive" },
     },
     select: { id: true },
   });
@@ -267,7 +311,6 @@ export async function updateCompanyErpSettings(
       ...(payload.erpAttendanceEndpoint !== undefined
         ? { erpAttendanceEndpoint: payload.erpAttendanceEndpoint }
         : {}),
-      ...(payload.isActive !== undefined ? { isActive: payload.isActive } : {}),
     },
     select: {
       id: true,
@@ -275,7 +318,6 @@ export async function updateCompanyErpSettings(
       erpBaseUrl: true,
       erpPrefix: true,
       erpAttendanceEndpoint: true,
-      isActive: true,
       createdAt: true,
       updatedAt: true,
     },

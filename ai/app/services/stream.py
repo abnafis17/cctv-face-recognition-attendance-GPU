@@ -707,7 +707,50 @@ class LiteCameraStream:
             print(f"[DOOR] failed cid={self.camera_id} emp={emp_id} err={e}", flush=True)
 
     def _sync_and_log_recognized_persons(self):
-        pass
+        try:
+            url = f"{BACKEND_BASE_URL}/api/v1/gatepass"
+            headers = {
+                "x-company-id": self.company_id
+            }
+            res = requests.get(url, headers=headers, timeout=2.0)
+            if res.status_code == 200:
+                gp_records = res.json()
+                checked_out_ids = set()
+                for gp in gp_records:
+                    status = gp.get("status")
+                    emp_pk = gp.get("employeePkId")
+                    emp_code = gp.get("employeeId")
+                    if status == "out":
+                        if emp_pk: checked_out_ids.add(emp_pk)
+                        if emp_code: checked_out_ids.add(emp_code)
+                
+                filtered = []
+                for p in self.recognized_persons:
+                    emp_id = p["employeeId"]
+                    if emp_id not in checked_out_ids:
+                        filtered.append(p)
+                
+                self.recognized_persons = filtered
+                
+                templates = get_gallery_templates()
+                id_to_name = {t["employee_id"]: t["name"] for t in templates}
+                
+                output_list = []
+                for p in self.recognized_persons:
+                    emp_id = p["employeeId"]
+                    name = id_to_name.get(emp_id, emp_id)
+                    output_list.append({
+                        "employeeId": emp_id,
+                        "name": name,
+                        "timestamp": p["timestamp"]
+                    })
+                
+                current_str = str(output_list)
+                if current_str != getattr(self, "last_logged_recognized_str", ""):
+                    self.last_logged_recognized_str = current_str
+                    logger.warning(f"[AI Server] Recognised persons list: {output_list}")
+        except Exception as e:
+            pass
 
     def _trigger_attendance(self, emp_id: str, name: str, score: float):
         now = time.time()
@@ -767,7 +810,20 @@ class LiteCameraStream:
             "type": getattr(self, "stream_type", "attendance")
         }
         try:
-            requests.post(url, headers=headers, json=payload, timeout=3.0)
+            res = requests.post(url, headers=headers, json=payload, timeout=3.0)
+            if res.status_code in (200, 201):
+                emp_exists = False
+                for item in self.recognized_persons:
+                    if item["employeeId"] == emp_id:
+                        item["timestamp"] = payload["timestamp"]
+                        emp_exists = True
+                        break
+                if not emp_exists:
+                    self.recognized_persons.append({
+                        "employeeId": emp_id,
+                        "timestamp": payload["timestamp"]
+                    })
+                self._sync_and_log_recognized_persons()
         except Exception:
             pass
 

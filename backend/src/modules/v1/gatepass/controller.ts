@@ -819,87 +819,72 @@ export async function getGatepassExternalDetails(req: Request, res: Response) {
     );
     const url = resolveConfiguredErpUrl(settings);
 
-    if (url && targetExtId) {
-      console.log(
-        `[ERP GET DETAILS] Calling ERP URL: ${url} for reqMasterId: ${targetExtId}`,
-      );
-
-      try {
-        const response = await axios.post(
-          url,
-          {
-            reqMasterId: targetExtId,
-          },
-          {
-            headers: {
-              Accept: "*/*",
-              "Content-Type": "application/json",
-              "x-api-version": "2.0",
-            },
-            timeout: 10000,
-            validateStatus: () => true,
-          },
-        );
-
-        console.log(
-          `[ERP GET DETAILS] ERP response status: ${response.status}`,
-          response.data,
-        );
-
-        if (response.status >= 200 && response.status < 300 && response.data) {
-          const resData = response.data;
-          // Ensure response structure is cleanly passed back to frontend
-          if (
-            resData &&
-            typeof resData === "object" &&
-            !resData.data &&
-            !resData.error
-          ) {
-            return res.json({ ok: true, data: resData });
-          }
-          return res.json(resData);
-        } else {
-          console.warn(
-            `[ERP GET DETAILS] ERP returned status ${response.status}. Falling back to DB record details.`,
-          );
-        }
-      } catch (axiosErr) {
-        console.warn(`[ERP GET DETAILS] ERP request threw error:`, axiosErr);
-      }
+    if (!url) {
+      console.log(`[GATEPASS REPORT] ERP URL for 'getgatepassdetails' is NOT CONFIGURED.`);
+      return res.status(400).json({
+        error: "ERP endpoint URL for getgatepassdetails is not configured in ERP Settings.",
+      });
     }
 
-    // Fallback: Construct detail object from DB record if ERP request fails or is not configured
-    const employee = record.employeeId
-      ? await prisma.employee.findFirst({
-          where: { id: record.employeeId, companyId },
-        })
-      : null;
+    if (!targetExtId) {
+      console.log(`[GATEPASS REPORT] No externalGatepassId found for record ID: ${id}`);
+      return res.status(404).json({
+        error: `No externalGatepassId found for gatepass record ${id}. ERP report view requires a valid external gatepass ID.`,
+      });
+    }
 
-    const fallbackData = {
-      organization: "Pakiza Apparels Limited",
-      organizationAddress: "Khordo Nowpara, Rasulpur, Madhabdi, Narsingdi",
-      date_: record.outTime
-        ? new Date(record.outTime).toLocaleDateString("en-GB")
-        : "",
-      employeeId: employee?.empId || record.employeeId || "",
-      employeeName: employee?.name || "N/A",
-      department: employee?.department || "N/A",
-      designation: employee?.designation || "N/A",
-      docName: "Gate-Pass",
-      passTitleName: record.passType || record.purpose || "Gate-Pass",
-      timeStart: record.outTime
-        ? new Date(record.outTime).toLocaleTimeString("en-GB")
-        : "N/A",
-      timeEnd: record.returnTime
-        ? new Date(record.returnTime).toLocaleTimeString("en-GB")
-        : "N/A",
-      remarks: record.remarks || record.purpose || "N/A",
-      prepareByName: employee?.name || "N/A",
-      prepareByDesi: employee?.designation || "N/A",
-      prepareTime: record.createdAt ? record.createdAt.toISOString() : "",
-    };
+    const erpPayload = { reqMasterId: targetExtId };
 
-    return res.json({ ok: true, source: "fallback", data: fallbackData });
+    console.log(`\n=================== [GATEPASS REPORT VIEW API CALL] ===================`);
+    console.log(`[GATEPASS REPORT] Internal Record ID : ${id}`);
+    console.log(`[GATEPASS REPORT] Target reqMasterId  : ${targetExtId}`);
+    console.log(`[GATEPASS REPORT] ERP Target Endpoint: ${url}`);
+    console.log(`[GATEPASS REPORT] ERP Request Payload :`, JSON.stringify(erpPayload, null, 2));
+
+    try {
+      const response = await axios.post(
+        url,
+        erpPayload,
+        {
+          headers: {
+            Accept: "*/*",
+            "Content-Type": "application/json",
+            "x-api-version": "2.0",
+          },
+          timeout: 10000,
+          validateStatus: () => true,
+        },
+      );
+
+      console.log(`[GATEPASS REPORT] ERP Response Status : ${response.status}`);
+      console.log(`[GATEPASS REPORT] ERP Response Body   :`, JSON.stringify(response.data, null, 2));
+      console.log(`=======================================================================\n`);
+
+      if (response.status >= 200 && response.status < 300 && response.data) {
+        const resData = response.data;
+        if (
+          resData &&
+          typeof resData === "object" &&
+          !resData.data &&
+          !resData.error
+        ) {
+          return res.json({ ok: true, data: resData });
+        }
+        return res.json(resData);
+      } else {
+        return res.status(response.status || 500).json({
+          error: `ERP API returned status ${response.status}`,
+          status: response.status,
+          erpData: response.data,
+        });
+      }
+    } catch (axiosErr) {
+      console.error(`[GATEPASS REPORT] ERP request threw exception:`, axiosErr);
+      return res.status(502).json({
+        error: "Failed to connect to ERP API",
+        detail: axiosErr instanceof Error ? axiosErr.message : String(axiosErr),
+      });
+    }
   } catch (error: unknown) {
     console.error(`[ERP GET DETAILS] Error occurred:`, error);
     return res.status(500).json({
