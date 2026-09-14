@@ -114,11 +114,11 @@ class DoorRelayService:
         if not turn_on:
             return
 
-        relay_on_url, _ = self.get_relay_urls_for_company(company_id)
-        if not relay_on_url:
+        relay_on_url, relay_silent_url = self.get_relay_urls_for_company(company_id)
+        url = relay_on_url or relay_silent_url
+        if not url:
             return
 
-        url = relay_on_url
         if emp_id:
             sep = "&" if "?" in url else "?"
             url = f"{url}{sep}employee_id={urllib.parse.quote(emp_id, safe='')}"
@@ -172,11 +172,11 @@ class DoorRelayService:
 
         self._door_last_fire[key] = now
 
-        _, relay_silent_url = self.get_relay_urls_for_company(company_id)
-        if not relay_silent_url:
+        relay_on_url, relay_silent_url = self.get_relay_urls_for_company(company_id)
+        url = relay_silent_url or relay_on_url
+        if not url:
             return
 
-        url = relay_silent_url
         if emp_id:
             sep = "&" if "?" in url else "?"
             url = f"{url}{sep}employee_id={urllib.parse.quote(emp_id, safe='')}"

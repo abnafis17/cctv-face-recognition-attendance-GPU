@@ -93,8 +93,9 @@ class LiteCameraStream:
         self._cached_annotated_jpeg = None
         self._cached_annotated_frame_time = 0.0
         
-        # Track cooldowns for marking attendance
+        # Track cooldowns for marking attendance and door unlock
         self.attendance_cooldowns = {} # emp_id -> last_log_time
+        self.door_cooldowns = {} # emp_id -> last_door_fire_time
         
         # Track recognized persons list
         self.recognized_persons = []
@@ -397,6 +398,47 @@ class LiteCameraStream:
             
         if matched_track.emp_id and matched_track.is_authorized and self.attendance_enabled:
             self._trigger_attendance(matched_track.emp_id, matched_track.score)
+            self._trigger_door_unlock(matched_track.emp_id, matched_track.name, matched_track.score)
+
+    def _trigger_door_unlock(self, emp_id: str, name: str, score: float):
+        now = time.time()
+        last_fired = self.door_cooldowns.get(emp_id, 0.0)
+        min_gap = float(os.getenv("DOOR_UNLOCK_MIN_GAP", "0.15"))
+        if now - last_fired < min_gap:
+            return
+        self.door_cooldowns[emp_id] = now
+        
+        def _do():
+            try:
+                url_settings = f"{BACKEND_BASE_URL}/api/v1/settings/relay"
+                headers = {"x-company-id": self.company_id}
+                res = requests.get(url_settings, headers=headers, timeout=2.0)
+                if res.status_code == 200:
+                    data = res.json()
+                    relay_url = (
+                        data.get("relaySilentUrl")
+                        or data.get("relay_silent_url")
+                        or data.get("relayOnUrl")
+                        or data.get("relay_on_url")
+                    )
+                    if relay_url:
+                        import urllib.parse
+                        sep = "&" if "?" in relay_url else "?"
+                        final_url = f"{relay_url}{sep}employee_id={urllib.parse.quote(str(emp_id), safe='')}"
+                        emp_pic_url = f"{BACKEND_BASE_URL}/api/v1/master-data/employees/{emp_id}/photo"
+                        sep = "&" if "?" in final_url else "?"
+                        final_url = f"{final_url}{sep}empPicUrl={urllib.parse.quote(emp_pic_url, safe='')}"
+                        
+                        door_timeout = float(os.getenv("DOOR_HTTP_TIMEOUT_S", "3.0"))
+                        door_res = requests.get(final_url, timeout=door_timeout)
+                        logger.info(
+                            f"[DOOR] unlock fired cid={self.camera_id} emp={emp_id} "
+                            f"url={final_url} name={name} sim={score:.3f} status={door_res.status_code}"
+                        )
+            except Exception as e:
+                logger.error(f"[DOOR] failed cid={self.camera_id} emp={emp_id} err={e}")
+
+        threading.Thread(target=_do, name=f"door-unlock-{emp_id}", daemon=True).start()
 
     def _sync_and_log_recognized_persons(self):
         try:
