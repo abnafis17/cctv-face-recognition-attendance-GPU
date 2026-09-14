@@ -6,9 +6,11 @@ import { prisma, disconnectPrisma } from "../../prisma";
  * Defaults: From '07/09/2026' (07 Sep 2026 00:00:00) to current time.
  */
 
-// Default Configuration
-const DEFAULT_START_DATE = "2026-09-07T00:00:00.000Z";
-const FALLBACK_ERP_URL = "http://172.20.60.101:7001/api/v2/Attendance/manual-attendance";
+// Filter & Endpoint Configuration (Edit hardcoded values here)
+const START_DATE = "2026-09-07T00:00:00.000Z";
+const END_DATE = ""; // Leave empty to query up to current time (e.g. "2026-09-14T23:59:59.000Z")
+const COMPANY_ID = "cmk9dp01a0000vpskicoq1gj0";
+const ERP_URL = "http://172.20.60.101:7001/api/v2/Attendance/manual-attendance";
 
 // Format Date as DD/MM/YYYY (Asia/Dhaka time zone)
 function toDDMMYYYY(d: Date): string {
@@ -41,47 +43,28 @@ function toHHMMSS(d: Date): string {
   return `${hh}:${mi}:${ss}`;
 }
 
-async function resolveErpEndpoint(companyId?: string | null): Promise<string> {
-  try {
-    const row = await prisma.companyErpSetting.findFirst({
-      where: {
-        urlType: { equals: "attendance", mode: "insensitive" },
-        ...(companyId ? { companyId } : {}),
-      },
-      orderBy: { createdAt: "desc" },
-    });
-
-    if (row && row.erpBaseUrl && row.erpAttendanceEndpoint) {
-      const baseUrl = row.erpBaseUrl.replace(/\/+$/, "");
-      const prefix = (row.erpPrefix || "").replace(/^\/+|\/+$/g, "");
-      const endpoint = row.erpAttendanceEndpoint.replace(/^\/+/, "");
-      
-      if (prefix) {
-        return `${baseUrl}/${prefix}/${endpoint}`;
-      }
-      return `${baseUrl}/${endpoint}`;
-    }
-  } catch (err) {
-    console.warn("[ERP SCRIPT] Failed to load ERP config from DB, using fallback URL.");
-  }
-  return FALLBACK_ERP_URL;
-}
-
 export async function runErpManualAttendanceSync(params?: {
   startDate?: string;
   endDate?: string;
+  companyId?: string;
+  erpUrl?: string;
 }) {
-  const startTime = params?.startDate ? new Date(params.startDate) : new Date(DEFAULT_START_DATE);
-  const endTime = params?.endDate ? new Date(params.endDate) : new Date();
+  const startTime = new Date(params?.startDate || START_DATE);
+  const endTime = params?.endDate ? new Date(params.endDate) : (END_DATE ? new Date(END_DATE) : new Date());
+  const companyId = params?.companyId || COMPANY_ID;
+  const targetErpUrl = params?.erpUrl || ERP_URL;
 
   console.log("==========================================================================");
   console.log(" [ERP MANUAL ATTENDANCE RE-PUSH SCRIPT]");
-  console.log(` Date Range Filter: From ${startTime.toISOString()} to ${endTime.toISOString()}`);
+  console.log(` Date Range Filter : From ${startTime.toISOString()} to ${endTime.toISOString()}`);
+  console.log(` Company ID Filter : ${companyId}`);
+  console.log(` Target ERP URL    : ${targetErpUrl}`);
   console.log("==========================================================================");
 
   // Fetch Attendance records joined with Employee and Camera
   const records = await prisma.attendance.findMany({
     where: {
+      companyId: companyId,
       timestamp: {
         gte: startTime,
         lte: endTime,
@@ -128,13 +111,11 @@ export async function runErpManualAttendanceSync(params?: {
       inLocation,
     };
 
-    const erpUrl = await resolveErpEndpoint(rec.companyId);
-
     try {
       console.log(`\n[${i + 1}/${records.length}] Pushing ERP Payload for Emp: ${rec.employee.name} (${empCode}) ...`);
       console.log(` Payload:`, JSON.stringify(payload));
       
-      const res = await axios.post(erpUrl, payload, {
+      const res = await axios.post(targetErpUrl, payload, {
         headers: {
           "Content-Type": "application/json",
           accept: "*/*",
@@ -151,7 +132,7 @@ export async function runErpManualAttendanceSync(params?: {
       }
     } catch (err: any) {
       const errMsg = err.response ? `HTTP ${err.response.status}: ${JSON.stringify(err.response.data)}` : err.message;
-      console.error(` [FAILED] Error pushing to ERP (${erpUrl}): ${errMsg}`);
+      console.error(` [FAILED] Error pushing to ERP (${targetErpUrl}): ${errMsg}`);
       failCount++;
     }
   }
