@@ -25,7 +25,7 @@ from ..vision.adaptive_scheduler import AdaptiveScheduler
 from ..vision.attendance_debouncer import AttendanceDebouncer
 from ..vision.db_writer import AttendanceWriteJob, DBWriter
 from ..vision.gpu_arbiter import Detection, GPUArbiter
-from ..vision.hud import ACCENT_KNOWN, ACCENT_UNKNOWN, draw_label_card
+from ..vision.hud import ACCENT_KNOWN, ACCENT_UNKNOWN, draw_label_card, draw_bounding_box
 from ..vision.insightface_models import FaceDetector, FaceEmbedder
 from ..vision.motion_gate import MotionGate as SceneMotionGate
 from ..vision.pipeline_config import Config
@@ -766,8 +766,7 @@ class AttendanceRuntime:
                 )
 
             # Draw HUD card (Jetson Orin Nano optimized zero-copy ROI)
-            color = ACCENT_KNOWN if known else ACCENT_UNKNOWN
-            cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 3)
+            draw_bounding_box(annotated, (x1, y1, x2, y2), known, thickness=2)
             label = tr.name if recognized_known else "Unknown"
             draw_label_card(annotated, label, x1, max(38, y1 - 14), known, scale=0.75)
 

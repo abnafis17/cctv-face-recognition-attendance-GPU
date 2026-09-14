@@ -30,6 +30,7 @@ from app.core.config import (
     MJPEG_RECOGNITION_JPEG_QUALITY,
 )
 from app.core.logging import logger
+from app.vision.hud import draw_label_card, draw_bounding_box, ACCENT_KNOWN, ACCENT_UNKNOWN
 from app.vision.body_tracker import BodyTracker, face_belongs_to_body, draw_polygon_body_bbox
 from app.utils import open_capture_with_fallback
 from app.services.model_manager import init_models, get_detector, get_embedder, get_body_detector
@@ -150,28 +151,33 @@ class LiteCameraStream:
             with self.body_tracker.lock:
                 tracks_copy = list(self.body_tracker.tracks)
                 
+            now = time.time()
             for track in tracks_copy:
-                bx1, by1, bx2, by2 = track.bbox
-                if track.name != "Unknown":
-                    if track.is_authorized:
-                        color = (220, 180, 0)
-                        label = f"{track.name} ({track.score:.2f})"
-                    else:
-                        color = (60, 60, 240)
-                        label = f"Unauthorized: {track.name}"
+                face_bbox = getattr(track, 'last_face_bbox', None)
+                last_time = getattr(track, 'last_face_time', 0.0)
+                
+                if face_bbox and (now - last_time <= 0.5):
+                    x1, y1, x2, y2 = face_bbox
                 else:
-                    color = (180, 190, 30)
-                    label = "Unknown"
-                    
-                draw_polygon_body_bbox(annotated, track.bbox, color, 1)
+                    bx1, by1, bx2, by2 = track.bbox
+                    bw = bx2 - bx1
+                    bh = by2 - by1
+                    if bw > 0 and bh > 0:
+                        x1 = bx1 + int(bw * 0.15)
+                        y1 = by1 + int(bh * 0.05)
+                        x2 = bx2 - int(bw * 0.15)
+                        y2 = by1 + int(bh * 0.35)
+                    else:
+                        x1, y1, x2, y2 = track.bbox
+                        
+                recognized_known = (track.name != "Unknown")
+                is_authorized = getattr(track, 'is_authorized', True)
+                known = recognized_known and is_authorized
                 
-                label_sz, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_DUPLEX, 0.55, 1)
-                y_top = max(by1 - label_sz[1] - 12, 0)
-                bg_color = (28, 28, 28)
+                label = track.name if recognized_known else "Unknown"
                 
-                cv2.rectangle(annotated, (bx1, y_top), (bx1 + label_sz[0] + 12, y_top + label_sz[1] + 12), bg_color, cv2.FILLED)
-                cv2.rectangle(annotated, (bx1, y_top), (bx1 + label_sz[0] + 12, y_top + label_sz[1] + 12), color, 1)
-                cv2.putText(annotated, label, (bx1 + 6, y_top + label_sz[1] + 6), cv2.FONT_HERSHEY_DUPLEX, 0.55, (255, 255, 255), 1, cv2.LINE_AA)
+                draw_bounding_box(annotated, (x1, y1, x2, y2), known, thickness=2)
+                draw_label_card(annotated, label, x1, max(38, y1 - 14), known, scale=0.75)
                 
             ret_jpeg, jpeg_bytes = cv2.imencode(".jpg", annotated, [int(cv2.IMWRITE_JPEG_QUALITY), MJPEG_RECOGNITION_JPEG_QUALITY])
             if ret_jpeg:
@@ -346,6 +352,8 @@ class LiteCameraStream:
         logger.info(f"[PROCESS] AI thread stopped for camera: {self.camera_id}")
 
     def _process_recognition(self, frame, face, face_bbox, matched_track, now):
+        matched_track.last_face_bbox = face_bbox
+        matched_track.last_face_time = now
         embedder = get_embedder()
         if matched_track.should_recognize(now, recheck_interval=self.body_tracker.recheck_interval):
             emb = embedder.embed(frame, bbox=face_bbox, kps=face.kps)

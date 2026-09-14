@@ -46,6 +46,7 @@ try:
     from app.utils import l2_normalize, open_capture_with_fallback
     from app.vision.body_detector import UniversalBodyDetector
     from app.vision.body_tracker import BodyTracker, face_belongs_to_body, draw_polygon_body_bbox
+    from app.vision.hud import draw_label_card, draw_bounding_box, ACCENT_KNOWN, ACCENT_UNKNOWN
 except ImportError as e:
     print(f"Error importing AI service modules: {e}")
     print("Please make sure you run this script within the 'ai' directory structure and environment.")
@@ -320,26 +321,31 @@ def run_viewer(url):
                     # Copy frame for annotations
                     frame = frame_orig.copy()
                     
-                    # Draw latest recognized/cached body tracks
+                    # Draw face bounding boxes and HUD cards
+                    now = time.time()
                     for track in body_tracker.tracks:
-                        bx1, by1, bx2, by2 = track.bbox
-                        matched_name = track.name
-                        match_score = track.score
+                        face_bbox = getattr(track, 'last_face_bbox', None)
+                        last_time = getattr(track, 'last_face_time', 0.0)
                         
-                        if matched_name != "Unknown":
-                            color = (220, 180, 0) # Neon Cyan/Teal (BGR)
-                            label = f"{matched_name} ({match_score:.2f})"
+                        if face_bbox and (now - last_time <= 0.5):
+                            x1, y1, x2, y2 = face_bbox
                         else:
-                            color = (180, 190, 30) # Blue-Green/Teal (BGR)
-                            label = "Unknown"
+                            bx1, by1, bx2, by2 = track.bbox
+                            bw = bx2 - bx1
+                            bh = by2 - by1
+                            if bw > 0 and bh > 0:
+                                x1 = bx1 + int(bw * 0.15)
+                                y1 = by1 + int(bh * 0.05)
+                                x2 = bx2 - int(bw * 0.15)
+                                y2 = by1 + int(bh * 0.35)
+                            else:
+                                x1, y1, x2, y2 = track.bbox
+                                
+                        known = (track.name != "Unknown") and getattr(track, 'is_authorized', True)
+                        label = track.name if (track.name != "Unknown") else "Unknown"
                         
-                        # Draw slate background & text plate above the head/body (Polygons and boxes are omitted for maximum Jetson Nano performance)
-                        label_sz, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_DUPLEX, 0.55, 1)
-                        y_top = max(by1 - label_sz[1] - 12, 0)
-                        bg_color = (28, 28, 28)
-                        cv2.rectangle(frame, (bx1, y_top), (bx1 + label_sz[0] + 12, y_top + label_sz[1] + 12), bg_color, cv2.FILLED)
-                        cv2.rectangle(frame, (bx1, y_top), (bx1 + label_sz[0] + 12, y_top + label_sz[1] + 12), color, 1)
-                        cv2.putText(frame, label, (bx1 + 6, y_top + label_sz[1] + 6), cv2.FONT_HERSHEY_DUPLEX, 0.55, (255, 255, 255), 1, cv2.LINE_AA)
+                        draw_bounding_box(frame, (x1, y1, x2, y2), known, thickness=2)
+                        draw_label_card(frame, label, x1, max(38, y1 - 14), known, scale=0.75)
 
                     # Add beautiful HUD overlay
                     draw_hud(frame, url, grabber.fps, grabber.connected, len(body_tracker.tracks))
