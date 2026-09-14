@@ -189,10 +189,10 @@ def open_capture_with_fallback(rtsp_url: str) -> cv2.VideoCapture:
 
     # 1. Ensure low-latency FFmpeg parameters are set in the environment globally
     os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay"
+    os.environ.setdefault("OPENCV_LOG_LEVEL", "OFF")
     
     # Check if RTSP url is local file path (for testing with video files)
     if not rtsp_url.startswith("rtsp://") and not rtsp_url.startswith("rtmps://") and not rtsp_url.startswith("http://") and not rtsp_url.startswith("https://"):
-        print(f"[Capture] Local file path detected: {rtsp_url}. Opening standard capture...")
         return cv2.VideoCapture(rtsp_url)
 
     # Load target resolution and fps from environment variables
@@ -206,7 +206,6 @@ def open_capture_with_fallback(rtsp_url: str) -> cv2.VideoCapture:
         backend = cv2.CAP_FFMPEG if cached_pipeline == "ffmpeg" else cv2.CAP_GSTREAMER
         src_str = rtsp_url if cached_pipeline == "ffmpeg" else cached_pipeline
         
-        print(f"[Capture] Trying cached working pipeline/backend for {rtsp_url}...")
         cap = cv2.VideoCapture(src_str, backend)
         if cached_pipeline == "ffmpeg":
             cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
@@ -214,10 +213,8 @@ def open_capture_with_fallback(rtsp_url: str) -> cv2.VideoCapture:
         if cap.isOpened():
             ret, frame = cap.read()
             if ret and frame is not None:
-                print(f"[Capture] Successfully opened stream using cached backend.")
                 return cap
             cap.release()
-        print(f"[Capture] Cached backend failed. Clearing cache and doing full fallback sequence...")
         _WORKING_PIPELINE_CACHE.pop(rtsp_url, None)
 
     # 1. Try DeepStream nvurisrcbin pipeline (hardware decode, scale, rate control, auto-reconnection)

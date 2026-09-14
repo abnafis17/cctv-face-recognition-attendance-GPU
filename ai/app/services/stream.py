@@ -198,7 +198,7 @@ class LiteCameraStream:
         while not self.stopped:
             try:
                 if not self.cap or not self.cap.isOpened():
-                    logger.warning(f"[INGEST] RTSP Stream not open for {self.camera_id}. Retrying in 10.0s...")
+                    logger.debug(f"[INGEST] RTSP Stream not open for {self.camera_id}. Retrying in 10.0s...")
                     time.sleep(10.0)
                     if not self.stopped:
                         self.cap = open_capture_with_fallback(self.rtsp_url)
@@ -208,7 +208,7 @@ class LiteCameraStream:
                 ret, frame = self.cap.read()
                 if not ret or frame is None:
                     if time.time() - last_frame_time > 3.0:
-                        logger.warning(f"[INGEST] RTSP Stream stale for 3.0s on {self.camera_id}. Reopening...")
+                        logger.debug(f"[INGEST] RTSP Stream stale for 3.0s on {self.camera_id}. Reopening...")
                         if self.cap:
                             self.cap.release()
                         time.sleep(1.0)
@@ -388,10 +388,6 @@ class LiteCameraStream:
                     # we should reset it to Unknown to prevent locking onto a false identity.
                     # We use a small buffer (e.g. SIMILARITY_THRESHOLD - 0.08) to prevent flickering.
                     if matched_track.name != "Unknown" and max_score < (SIMILARITY_THRESHOLD - 0.08):
-                        logger.warning(
-                            f"[TRACK] Resetting track {matched_track.track_id} from {matched_track.name} "
-                            f"back to Unknown due to low similarity ({max_score:.2f})"
-                        )
                         matched_track.name = "Unknown"
                         matched_track.emp_id = None
                         matched_track.score = -1.0
@@ -444,7 +440,8 @@ class LiteCameraStream:
                 current_str = str(output_list)
                 if current_str != getattr(self, "last_logged_recognized_str", ""):
                     self.last_logged_recognized_str = current_str
-                    logger.warning(f"[AI Server] Recognised persons list: {output_list}")
+                    if output_list:
+                        logger.info(f"[AI Server] Recognised persons list: {output_list}")
         except Exception as e:
             pass
 
@@ -473,11 +470,8 @@ class LiteCameraStream:
             "type": getattr(self, "stream_type", "attendance")
         }
         try:
-            logger.info(f"[ATTENDANCE] Pushing event to backend for employee: {emp_id} (conf: {score:.2f})")
             res = requests.post(url, headers=headers, json=payload, timeout=3.0)
             if res.status_code == 200 or res.status_code == 201:
-                logger.info(f"[ATTENDANCE] Logged successfully: {emp_id}")
-                
                 emp_exists = False
                 for item in self.recognized_persons:
                     if item["employeeId"] == emp_id:
@@ -491,9 +485,9 @@ class LiteCameraStream:
                     })
                 self._sync_and_log_recognized_persons()
             else:
-                logger.error(f"[ATTENDANCE] Failed to log. Code: {res.status_code}, Msg: {res.text}")
+                logger.error(f"[ATTENDANCE ERROR] Failed to log emp={emp_id}. Code: {res.status_code}, Msg: {res.text}")
         except Exception as e:
-            logger.error(f"[ATTENDANCE] Error posting attendance event: {e}")
+            logger.error(f"[ATTENDANCE ERROR] Error posting attendance event emp={emp_id}: {e}")
 
         # Trigger real-time push to ERP systems
         if getattr(self, "stream_type", "attendance") == "attendance":
@@ -507,7 +501,8 @@ class LiteCameraStream:
         attendance_date = datetime.now().strftime("%d/%m/%Y")
         in_time = datetime.now().strftime("%H:%M:%S")
 
-        for url_type in ["attendance", "attendance_two", "attendance_two_log"]:
+        # Comment out secondary ERP types ("attendance_two", "attendance_two_log") to prevent offline endpoint log noise
+        for url_type in ["attendance"]:
             try:
                 url = f"{BACKEND_BASE_URL}/api/v1/settings/erp?url_type={url_type}"
                 headers = {"x-company-id": self.company_id}
@@ -559,10 +554,11 @@ class LiteCameraStream:
                     log_msg = f"PUSH REALTIME | type={url_type} | {payload_log} | STATUS=SUCCESS | erp_response={resp_str}"
                 else:
                     log_msg = f"PUSH REALTIME | type={url_type} | {payload_log} | STATUS=FAILED | erp_status={erp_status} | erp_response={resp_str}"
+                    logger.error(f"[ERP ERROR] Realtime push failed for type={url_type} emp={emp_id}: status={erp_status} resp={resp_str}")
 
                 write_erp_log(log_msg)
             except Exception as e:
-                logger.warning(f"[ERP] Realtime push failed for type={url_type} emp={emp_id}: {e}")
+                logger.error(f"[ERP ERROR] Realtime push failed for type={url_type} emp={emp_id}: {e}")
 
     def stop(self):
         self.stopped = True

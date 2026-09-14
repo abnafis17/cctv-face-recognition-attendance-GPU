@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
@@ -13,6 +14,32 @@ import threading
 
 from ..utils import l2_normalize
 from .insightface_pack import normalize_model_pack_layout
+
+
+try:
+    import onnxruntime as ort
+    ort.set_default_logger_severity(3)
+except Exception:
+    pass
+
+
+class SuppressStdoutStderr:
+    def __enter__(self):
+        self._stdout = sys.stdout
+        self._stderr = sys.stderr
+        self._devnull_out = open(os.devnull, 'w')
+        self._devnull_err = open(os.devnull, 'w')
+        sys.stdout = self._devnull_out
+        sys.stderr = self._devnull_err
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        sys.stdout = self._stdout
+        sys.stderr = self._stderr
+        try:
+            self._devnull_out.close()
+            self._devnull_err.close()
+        except Exception:
+            pass
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -97,32 +124,29 @@ class FaceDetector:
         self.min_face_size = _env_int("RECOGNITION_MIN_FACE_PX", _env_int("MIN_FACE_SIZE", min_face_size))
         self.min_det_score = _clamp(_env_float("MIN_FACE_DET_SCORE", min_det_score), 0.0, 1.0)
 
-        normalize_model_pack_layout(model_name)
-        providers = _pick_providers(use_gpu)
-        ctx_id = 0 if use_gpu else -1
+        with SuppressStdoutStderr():
+            normalize_model_pack_layout(model_name)
+            providers = _pick_providers(use_gpu)
+            ctx_id = 0 if use_gpu else -1
 
-        from ..core.runtime_opt import create_ort_session_options
-        ort_opts = create_ort_session_options()
+            from ..core.runtime_opt import create_ort_session_options
+            ort_opts = create_ort_session_options()
 
-        try:
-            self.app = FaceAnalysis(
-                name=model_name,
-                providers=providers,
-                allowed_modules=["detection"],
-                session_options=ort_opts,
-            )
-        except Exception:
-            self.app = FaceAnalysis(
-                name=model_name,
-                providers=providers,
-                allowed_modules=["detection"],
-            )
+            try:
+                self.app = FaceAnalysis(
+                    name=model_name,
+                    providers=providers,
+                    allowed_modules=["detection"],
+                    session_options=ort_opts,
+                )
+            except Exception:
+                self.app = FaceAnalysis(
+                    name=model_name,
+                    providers=providers,
+                    allowed_modules=["detection"],
+                )
 
-        self.app.prepare(ctx_id=ctx_id, det_size=det_size)
-
-        print(
-            f"[FaceDetector] USE_GPU={int(use_gpu)} ORT_PROVIDER={_env_str('ORT_PROVIDER','auto')} providers={providers} ctx_id={ctx_id} det_size={det_size} min_face_size={self.min_face_size}"
-        )
+            self.app.prepare(ctx_id=ctx_id, det_size=det_size)
 
     def detect(self, frame_bgr: np.ndarray) -> List[FaceDetection]:
         faces = self.app.get(frame_bgr)
@@ -162,28 +186,25 @@ class FaceEmbedder:
         # Default behavior:
         # - If EMBED_USE_GPU is explicitly set, honor it.
         # - Otherwise, follow USE_GPU (restores legacy "fast" behavior when GPU is enabled).
-        raw = os.getenv("EMBED_USE_GPU")
-        embed_use_gpu = use_gpu if raw is None else _env_bool("EMBED_USE_GPU", False)
-        providers = _pick_providers(use_gpu=use_gpu) if embed_use_gpu else ["CPUExecutionProvider"]
-        ctx_id = 0 if (embed_use_gpu and "CUDAExecutionProvider" in providers) else -1
-        normalize_model_pack_layout(model_name)
+        with SuppressStdoutStderr():
+            raw = os.getenv("EMBED_USE_GPU")
+            embed_use_gpu = use_gpu if raw is None else _env_bool("EMBED_USE_GPU", False)
+            providers = _pick_providers(use_gpu=use_gpu) if embed_use_gpu else ["CPUExecutionProvider"]
+            ctx_id = 0 if (embed_use_gpu and "CUDAExecutionProvider" in providers) else -1
+            normalize_model_pack_layout(model_name)
 
-        from ..core.runtime_opt import create_ort_session_options
-        ort_opts = create_ort_session_options()
+            from ..core.runtime_opt import create_ort_session_options
+            ort_opts = create_ort_session_options()
 
-        try:
-            self.model = model_zoo.get_model(model_name, providers=providers, session_options=ort_opts)
-        except Exception:
-            self.model = model_zoo.get_model(model_name, providers=providers)
+            try:
+                self.model = model_zoo.get_model(model_name, providers=providers, session_options=ort_opts)
+            except Exception:
+                self.model = model_zoo.get_model(model_name, providers=providers)
 
-        if self.model is None:
-            raise RuntimeError(f"Failed to load insightface model: {model_name}")
-        self.model.prepare(ctx_id=ctx_id)
+            if self.model is None:
+                raise RuntimeError(f"Failed to load insightface model: {model_name}")
+            self.model.prepare(ctx_id=ctx_id)
         self._lock = threading.Lock()
-
-        print(
-            f"[FaceEmbedder] EMBED_USE_GPU={int(embed_use_gpu)} providers={providers} ctx_id={ctx_id}"
-        )
 
     @staticmethod
     def enhance_production_face_crop(crop: np.ndarray) -> np.ndarray:

@@ -94,9 +94,10 @@ def main() -> None:
         "on",
         "true",
     }
-    log_level = os.getenv("AI_LOG_LEVEL", os.getenv("LOG_LEVEL", "info")).strip().lower()
+    os.environ.setdefault("OPENCV_LOG_LEVEL", "OFF")
+    log_level = os.getenv("AI_LOG_LEVEL", os.getenv("LOG_LEVEL", "warning")).strip().lower()
 
-    print(f"Starting FastAPI server on {host}:{port} (reload={reload_flag})")
+    print(f"[SERVER] Starting FastAPI AI Server on http://{host}:{port}...")
 
     try:
         if reload_flag:
@@ -107,6 +108,7 @@ def main() -> None:
                 reload=True,
                 app_dir=str(PROJECT_ROOT),
                 log_level=log_level,
+                access_log=False,
             )
         else:
             uvicorn.run(
@@ -114,6 +116,7 @@ def main() -> None:
                 host=host,
                 port=port,
                 log_level=log_level,
+                access_log=False,
             )
     except KeyboardInterrupt:
         print("\n[SERVER] Stopped by Ctrl+C.")

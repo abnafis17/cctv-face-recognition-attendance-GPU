@@ -65,7 +65,6 @@ class ERPClient:
                 "status": status_val,
                 "source": in_location,
             }
-            print("[ERP PAYLOAD - ATTENDANCE_TWO / ATTENDANCE_TWO_LOG]", payload, flush=True)
         else:
             payload: Dict[str, Any] = {
                 "attendanceDate": attendance_date,  # "03/01/2026" (dd/mm/yyyy)
@@ -73,8 +72,6 @@ class ERPClient:
                 "inTime": in_time,  # "09:00:00"
                 "inLocation": in_location,
             }
-
-            print("[ERP PAYLOAD - ATTENDANCE]", payload, flush=True)
 
         endpoint = str(self._attendance_endpoint)
         if _is_http_url(endpoint):
