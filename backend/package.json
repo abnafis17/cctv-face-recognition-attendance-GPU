@@ -9,7 +9,10 @@
     "build": "tsc -p .",
     "start": "node --max-old-space-size=256 dist/index.js",
     "start:prod": "node --max-old-space-size=256 dist/index.js",
-    "prisma:generate": "prisma generate"
+    "prisma:generate": "prisma generate",
+    "sync:erp": "ts-node src/scripts/erp_manual_attendance/push_attendance.ts",
+    "sync:erp:two": "ts-node src/scripts/erp_manual_attendance/push_attendance_two.ts",
+    "sync:erp:two-log": "ts-node src/scripts/erp_manual_attendance/push_attendance_two_log.ts"
   },
   "author": "nafis",
   "license": "ISC",

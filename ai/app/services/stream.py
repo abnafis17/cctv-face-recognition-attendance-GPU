@@ -73,10 +73,11 @@ class LiteCameraStream:
     Decoupled non-blocking reader and face recognition loop.
     Optimized for Jetson Orin Nano GPU/CPU.
     """
-    def __init__(self, camera_id: str, rtsp_url: str, company_id: str):
+    def __init__(self, camera_id: str, rtsp_url: str, company_id: str, camera_name: Optional[str] = None):
         self.camera_id = camera_id
         self.rtsp_url = rtsp_url
         self.company_id = company_id
+        self.camera_name = camera_name or camera_id
         
         self.latest_raw_frame = None
         self.latest_frame_time = 0.0
@@ -485,6 +486,75 @@ class LiteCameraStream:
                 logger.error(f"[ATTENDANCE] Failed to log. Code: {res.status_code}, Msg: {res.text}")
         except Exception as e:
             logger.error(f"[ATTENDANCE] Error posting attendance event: {e}")
+
+        # Trigger real-time push to ERP systems
+        if getattr(self, "stream_type", "attendance") == "attendance":
+            in_loc = getattr(self, "camera_name", None) or self.camera_id
+            threading.Thread(target=self._push_to_erp, args=(emp_id, str(in_loc)), daemon=True).start()
+
+    def _push_to_erp(self, emp_id: str, in_location: str):
+        from app.clients.erp_client import ERPClient, ERPClientConfig, check_erp_success, write_erp_log
+        from datetime import datetime
+
+        attendance_date = datetime.now().strftime("%d/%m/%Y")
+        in_time = datetime.now().strftime("%H:%M:%S")
+
+        for url_type in ["attendance", "attendance_two", "attendance_two_log"]:
+            try:
+                url = f"{BACKEND_BASE_URL}/api/v1/settings/erp?url_type={url_type}"
+                headers = {"x-company-id": self.company_id}
+                res = requests.get(url, headers=headers, timeout=2.0)
+                if res.status_code != 200:
+                    continue
+
+                data = res.json()
+                base_url = data.get("erpBaseUrl") or data.get("erp_base_url")
+                prefix = data.get("erpPrefix") or data.get("erp_prefix") or ""
+                endpoint = data.get("erpAttendanceEndpoint") or data.get("erp_attendance_endpoint")
+
+                is_abs_endpoint = bool(endpoint and str(endpoint).lower().startswith(("http://", "https://")))
+                if not base_url and is_abs_endpoint:
+                    base_url = "http://127.0.0.1"
+
+                if not base_url or not endpoint:
+                    continue
+
+                cfg = ERPClientConfig(
+                    base_url=base_url,
+                    prefix=prefix,
+                    timeout_s=5.0,
+                    attendance_endpoint=endpoint,
+                    url_type=url_type
+                )
+                client = ERPClient(cfg)
+                resp = client.manual_attendance(attendance_date, emp_id, in_time, in_location)
+                is_success, erp_status = check_erp_success(resp)
+
+                if url_type in ("attendance_two", "attendance_two_log"):
+                    try:
+                        parts = attendance_date.split("/")
+                        fmt_date = f"{parts[2]}-{parts[1]}-{parts[0]}"
+                    except Exception:
+                        fmt_date = attendance_date
+                    status_val = "present" if url_type == "attendance_two_log" else "Present"
+                    payload_log = f"employee_id={emp_id} | attendance_date={fmt_date} | time={in_time} | status={status_val} | source={in_location}"
+                else:
+                    payload_log = f"empId={emp_id} | attendanceDate={attendance_date} | inTime={in_time} | inLocation={in_location}"
+
+                import json
+                try:
+                    resp_str = json.dumps(resp)
+                except Exception:
+                    resp_str = str(resp)
+
+                if is_success:
+                    log_msg = f"PUSH REALTIME | type={url_type} | {payload_log} | STATUS=SUCCESS | erp_response={resp_str}"
+                else:
+                    log_msg = f"PUSH REALTIME | type={url_type} | {payload_log} | STATUS=FAILED | erp_status={erp_status} | erp_response={resp_str}"
+
+                write_erp_log(log_msg)
+            except Exception as e:
+                logger.warning(f"[ERP] Realtime push failed for type={url_type} emp={emp_id}: {e}")
 
     def stop(self):
         self.stopped = True
