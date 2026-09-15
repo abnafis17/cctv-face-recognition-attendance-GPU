@@ -9,7 +9,7 @@ import { prisma, disconnectPrisma } from "../../prisma";
 // Filter & Endpoint Configuration (Edit hardcoded values here)
 const START_DATE = "2026-09-07T00:00:00.000Z";
 const END_DATE = ""; // Leave empty to query up to current time (e.g. "2026-09-14T23:59:59.000Z")
-const COMPANY_ID = "cmk9dp01a0000vpskicoq1gj0";
+const COMPANY_ID = "cmth4dzas0002jx5hhmvnveag";
 const ERP_URL = "http://172.20.60.101:7001/api/v2/Attendance/manual-attendance";
 
 // Format Date as DD/MM/YYYY (Asia/Dhaka time zone)
@@ -50,7 +50,11 @@ export async function runErpManualAttendanceSync(params?: {
   erpUrl?: string;
 }) {
   const startTime = new Date(params?.startDate || START_DATE);
-  const endTime = params?.endDate ? new Date(params.endDate) : (END_DATE ? new Date(END_DATE) : new Date());
+  const endTime = params?.endDate
+    ? new Date(params.endDate)
+    : END_DATE
+      ? new Date(END_DATE)
+      : new Date();
   const companyId = params?.companyId || COMPANY_ID;
   const targetErpUrl = params?.erpUrl || ERP_URL;
 
@@ -112,9 +116,11 @@ export async function runErpManualAttendanceSync(params?: {
     };
 
     try {
-      console.log(`\n[${i + 1}/${records.length}] Pushing ERP Payload for Emp: ${rec.employee.name} (${empCode}) ...`);
+      console.log(
+        `\n[${i + 1}/${records.length}] Pushing ERP Payload for Emp: ${rec.employee.name} (${empCode}) ...`
+      );
       console.log(` Payload:`, JSON.stringify(payload));
-      
+
       const res = await axios.post(targetErpUrl, payload, {
         headers: {
           "Content-Type": "application/json",
@@ -131,7 +137,9 @@ export async function runErpManualAttendanceSync(params?: {
         failCount++;
       }
     } catch (err: any) {
-      const errMsg = err.response ? `HTTP ${err.response.status}: ${JSON.stringify(err.response.data)}` : err.message;
+      const errMsg = err.response
+        ? `HTTP ${err.response.status}: ${JSON.stringify(err.response.data)}`
+        : err.message;
       console.error(` [FAILED] Error pushing to ERP (${targetErpUrl}): ${errMsg}`);
       failCount++;
     }
