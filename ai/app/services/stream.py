@@ -325,9 +325,9 @@ class LiteCameraStream:
                 res = requests.get(url, headers=headers, timeout=5.0)
                 if res.status_code == 200:
                     data = res.json()
-                    raw_ids = data.get("authorizedEmployeeIds") or data.get("authorizedEmployeePublicIds") or []
-                    self.authorized_employee_ids = set(str(eid) for eid in raw_ids)
-                    logger.info(f"[AUTH] Camera {self.camera_id} loaded {len(self.authorized_employee_ids)} authorized employees.")
+                    raw_ids = (data.get("authorizedEmployeeIds") or []) + (data.get("authorizedEmployeePublicIds") or [])
+                    self.authorized_employee_ids = set(str(eid) for eid in raw_ids if eid)
+                    logger.info(f"[AUTH] Camera {self.camera_id} loaded {len(self.authorized_employee_ids)} authorized employee IDs/Codes.")
             except Exception as e:
                 logger.error(f"[AUTH] Failed to refresh authorized employees for camera {self.camera_id}: {e}")
                 
@@ -494,8 +494,16 @@ class LiteCameraStream:
                         top1_score = max(top1_score, last_emp_score)
                         margin_gap = 0.05
 
-                req_margin = 0.04
-                is_qualified = (top1_score >= SIMILARITY_THRESHOLD and margin_gap >= req_margin)
+                min_sim = float(SIMILARITY_THRESHOLD)
+                # Adaptive multi-tier qualification:
+                # - High confidence match: accepts directly (margin gap not required for strong matches)
+                # - Solid match: requires small margin (>= 0.02)
+                # - Moderate match: requires distinct margin (>= 0.03)
+                is_qualified = (
+                    (top1_score >= max(0.46, min_sim))
+                    or (top1_score >= min_sim and margin_gap >= 0.02)
+                    or (top1_score >= 0.42 and margin_gap >= 0.03)
+                )
                 
                 if is_qualified:
                     matched_track.name = best_name
@@ -517,8 +525,7 @@ class LiteCameraStream:
                         is_authorized = False
                     matched_track.is_authorized = is_authorized
                     
-                    # Require stable confirmation (at least 2 consecutive frames matching the same employee)
-                    # to eliminate any single-frame glitch, false positive, or edge-angle noise.
+                    # Require stable confirmation (at least 2 hits) to eliminate glitches/flicker
                     min_confirm_hits = int(os.getenv("STABLE_ID_CONFIRMATIONS", "2"))
                     if matched_track.confirm_hits >= min_confirm_hits:
                         # 🔓 Door unlock triggered on confirmed authorized recognition
@@ -528,8 +535,10 @@ class LiteCameraStream:
                         if is_authorized and self.attendance_enabled:
                             self._trigger_attendance(best_emp_id, best_name, top1_score)
                 else:
-                    matched_track.confirm_hits = 0
-                    matched_track.confirmed_emp_id = None
+                    # Graceful decay rather than hard wipe on a single missed frame
+                    matched_track.confirm_hits = max(0, getattr(matched_track, 'confirm_hits', 0) - 1)
+                    if matched_track.confirm_hits == 0:
+                        matched_track.confirmed_emp_id = None
                     
                     # Identity hold hysteresis: if track was matched to known employee within 1.0s, keep green card on head turns, far distance & shadows
                     last_ts = getattr(matched_track, 'last_known_time', 0.0)
@@ -630,7 +639,7 @@ class LiteCameraStream:
         now = time.time()
         emp_id_str = str(emp_id or "").strip()
         name_str = str(name or "").strip()
-        min_threshold = float(SIMILARITY_THRESHOLD)
+        min_threshold = min(0.42, float(SIMILARITY_THRESHOLD))
         if not emp_id_str or name_str in ("Unknown", "") or float(score or 0.0) < min_threshold:
             return
             
@@ -758,8 +767,8 @@ class LiteCameraStream:
         name_str = str(name or "").strip()
         stream_type = str(getattr(self, "stream_type", "attendance") or "attendance").lower()
 
-        # Enforce exact same 0.45 similarity threshold & recognition logic across all modes
-        min_threshold = SIMILARITY_THRESHOLD  # 0.45
+        # Enforce consistent similarity threshold & recognition logic across all modes
+        min_threshold = min(0.42, float(SIMILARITY_THRESHOLD))
 
         if not emp_key or name_str == "Unknown" or float(score or 0.0) < min_threshold:
             return
