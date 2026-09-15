@@ -80,20 +80,27 @@ class ERPClient:
                 res = self.http.session.post(
                     endpoint, json=payload, timeout=self.http.timeout_s
                 )
-                res.raise_for_status()
-                return res.json()
+                try:
+                    data = res.json()
+                except Exception:
+                    data = res.text or {"status": res.status_code}
+
+                if res.status_code in (200, 201):
+                    return data
+                return {"error": f"HTTP {res.status_code}", "detail": data}
             except requests.RequestException as e:
                 if res is not None:
                     try:
                         detail: Any = res.json()
                     except Exception:
                         detail = res.text
-                    raise RuntimeError(
-                        f"[ERPClient] {res.status_code} {endpoint} -> {detail}"
-                    ) from e
-                raise RuntimeError(f"[ERPClient] Request failed -> {endpoint}") from e
+                    return {"error": f"HTTP {res.status_code}", "detail": detail}
+                return {"error": f"Request failed: {e}"}
 
-        return self.http.post(endpoint, payload)
+        try:
+            return self.http.post(endpoint, payload)
+        except Exception as e:
+            return {"error": str(e)}
 
 
 def write_erp_log(message: str):

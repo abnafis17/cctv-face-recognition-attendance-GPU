@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import threading
 import time
 from typing import Dict, List, Optional, Tuple
 
@@ -7,6 +9,21 @@ import numpy as np
 
 from ..clients.backend_client import BackendClient
 from ..utils import l2_normalize
+
+
+_GLOBAL_COMPANY_CACHE: Optional[CompanyEmbeddingCache] = None
+_GLOBAL_COMPANY_CACHE_LOCK = threading.Lock()
+
+
+def get_company_cache() -> CompanyEmbeddingCache:
+    global _GLOBAL_COMPANY_CACHE
+    if _GLOBAL_COMPANY_CACHE is None:
+        with _GLOBAL_COMPANY_CACHE_LOCK:
+            if _GLOBAL_COMPANY_CACHE is None:
+                default_company_id = os.getenv("BACKEND_COMPANY_ID", "").strip() or None
+                _GLOBAL_COMPANY_CACHE = CompanyEmbeddingCache(default_company_id=default_company_id)
+    return _GLOBAL_COMPANY_CACHE
+
 
 
 class CompanyEmbeddingCache:
@@ -181,6 +198,14 @@ class CompanyEmbeddingCache:
         if not employee_key:
             return None
         key = self.gallery_key(company_id)
+        if key not in self._employee_pic_by_company:
+            cid = str(company_id or self.default_company_id or "").strip() or None
+            if cid:
+                try:
+                    client = self.client_for_company(cid)
+                    self._refresh_employee_pic_cache(cid, client)
+                except Exception:
+                    pass
         pic_url = self._employee_pic_by_company.get(key, {}).get(employee_key)
         if not pic_url:
             return None

@@ -4,6 +4,7 @@ import { prisma } from "../../../prisma";
 import {
   employeePublicId,
   findEmployeeByAnyId,
+  getOrCreateEmployeeByAnyId,
   normalizeEmployeeIdentifier,
 } from "../../../utils/employee";
 import { findCameraByAnyId } from "../../../utils/camera";
@@ -79,7 +80,9 @@ export async function createAttendance(req: Request, res: Response) {
       return res.status(400).json({ error: `Rejected: low confidence score for ${eventType || "attendance"}` });
     }
 
-    const employee = await findEmployeeByAnyId(identifier, companyId);
+    const employee = await getOrCreateEmployeeByAnyId(identifier, companyId, {
+      nameIfCreate: req.body.employeeName || req.body.name || "Unknown",
+    });
     if (!employee) {
       return res.status(404).json({ error: "Employee not found" });
     }

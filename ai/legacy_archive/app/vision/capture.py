@@ -19,7 +19,7 @@ if not os.getenv("OPENCV_FFMPEG_CAPTURE_OPTIONS"):
     os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
         "rtsp_transport;tcp|fflags;nobuffer|max_delay;0|flags;low_delay|"
         "reorder_queue_size;0|threads;1|fflags;discardcorrupt|"
-        "rw_timeout;3000000|stimeout;3000000|loglevel;quiet"
+        "rw_timeout;3000000|timeout;3000000|loglevel;quiet"
     )
 
 
@@ -494,7 +494,7 @@ class _FFmpegGrabber:
             args.extend(["-timeout", str(self.ffmpeg_timeout_us)])
         if self.ffmpeg_rw_timeout_us > 0:
             if is_rtsp:
-                args.extend(["-stimeout", str(self.ffmpeg_rw_timeout_us)])
+                args.extend(["-timeout", str(self.ffmpeg_rw_timeout_us)])
             else:
                 args.extend(["-rw_timeout", str(self.ffmpeg_rw_timeout_us)])
         if self.ffmpeg_max_delay_us > 0:

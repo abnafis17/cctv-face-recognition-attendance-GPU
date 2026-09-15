@@ -423,11 +423,18 @@ class LiteCameraStream:
                     )
                     if relay_url:
                         import urllib.parse
+                        from app.services.company_cache import get_company_cache
                         sep = "&" if "?" in relay_url else "?"
                         final_url = f"{relay_url}{sep}employee_id={urllib.parse.quote(str(emp_id), safe='')}"
-                        emp_pic_url = f"{BACKEND_BASE_URL}/api/v1/master-data/employees/{emp_id}/photo"
+                        
+                        try:
+                            pic_url = get_company_cache().get_employee_pic_url(self.company_id, emp_id)
+                        except Exception:
+                            pic_url = None
+                        if not pic_url:
+                            pic_url = f"{BACKEND_BASE_URL}/api/v1/master-data/employees/{emp_id}/photo"
                         sep = "&" if "?" in final_url else "?"
-                        final_url = f"{final_url}{sep}empPicUrl={urllib.parse.quote(emp_pic_url, safe='')}"
+                        final_url = f"{final_url}{sep}empPicUrl={urllib.parse.quote(pic_url, safe='')}"
                         
                         door_timeout = float(os.getenv("DOOR_HTTP_TIMEOUT_S", "3.0"))
                         door_res = requests.get(final_url, timeout=door_timeout)
@@ -564,10 +571,11 @@ class LiteCameraStream:
                 if not base_url or not endpoint:
                     continue
 
+                erp_timeout = float(os.getenv("ERP_TIMEOUT_S", "10.0"))
                 cfg = ERPClientConfig(
                     base_url=base_url,
                     prefix=prefix,
-                    timeout_s=5.0,
+                    timeout_s=erp_timeout,
                     attendance_endpoint=endpoint,
                     url_type=url_type
                 )
@@ -594,13 +602,15 @@ class LiteCameraStream:
 
                 if is_success:
                     log_msg = f"PUSH REALTIME | type={url_type} | {payload_log} | STATUS=SUCCESS | erp_response={resp_str}"
+                    logger.info(f"[ERP] Realtime push success for type={url_type} emp={emp_id}")
                 else:
                     log_msg = f"PUSH REALTIME | type={url_type} | {payload_log} | STATUS=FAILED | erp_status={erp_status} | erp_response={resp_str}"
-                    logger.error(f"[ERP ERROR] Realtime push failed for type={url_type} emp={emp_id}: status={erp_status} resp={resp_str}")
+                    logger.warning(f"[ERP WARNING] Realtime push status={erp_status} for type={url_type} emp={emp_id}: {resp_str}")
 
                 write_erp_log(log_msg)
             except Exception as e:
-                logger.error(f"[ERP ERROR] Realtime push failed for type={url_type} emp={emp_id}: {e}")
+                logger.warning(f"[ERP WARNING] Realtime push failed for type={url_type} emp={emp_id}: {e}")
+                write_erp_log(f"PUSH REALTIME | type={url_type} | empId={emp_id} | STATUS=FAILED | erp_response={e}")
 
     def stop(self):
         self.stopped = True
