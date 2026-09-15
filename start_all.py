@@ -285,6 +285,7 @@ class ProcessSupervisor:
         env = os.environ.copy()
         env["NODE_OPTIONS"] = f"--max-old-space-size={backend_mem}"
         env["PORT"] = str(self.backend_port)
+        env["HOST"] = "0.0.0.0"
 
         backend_dist = BACKEND_DIR / "dist" / "index.js"
         if self.dev_mode or not backend_dist.is_file():
@@ -307,7 +308,7 @@ class ProcessSupervisor:
         t.start()
 
         if wait_for_port(self.backend_port, timeout=20.0):
-            print(f"{COLOR_GREEN} [OK] Backend Service ready on http://127.0.0.1:{self.backend_port}{COLOR_RESET}")
+            print(f"{COLOR_GREEN} [OK] Backend Service ready on http://0.0.0.0:{self.backend_port}{COLOR_RESET}")
         else:
             print(f"{COLOR_YELLOW} [INFO] Backend server process launched (port {self.backend_port}){COLOR_RESET}")
 
@@ -331,6 +332,7 @@ class ProcessSupervisor:
 
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"
+        env["HOST"] = "0.0.0.0"
 
         p = subprocess.Popen(
             cmd,
@@ -347,7 +349,7 @@ class ProcessSupervisor:
         t.start()
 
         if wait_for_port(self.ai_port, timeout=25.0):
-            print(f"{COLOR_GREEN} [OK] AI Engine ready on http://127.0.0.1:{self.ai_port}{COLOR_RESET}")
+            print(f"{COLOR_GREEN} [OK] AI Engine ready on http://0.0.0.0:{self.ai_port}{COLOR_RESET}")
         else:
             print(f"{COLOR_YELLOW} [INFO] AI Engine process launched (port {self.ai_port}){COLOR_RESET}")
 
@@ -362,6 +364,8 @@ class ProcessSupervisor:
         env = os.environ.copy()
         env["NODE_OPTIONS"] = f"--max-old-space-size={frontend_mem}"
         env["PORT"] = str(self.frontend_port)
+        env["HOSTNAME"] = "0.0.0.0"
+        env["HOST"] = "0.0.0.0"
 
         frontend_next = FRONTEND_DIR / ".next"
         if self.dev_mode or not frontend_next.is_dir():
@@ -446,8 +450,29 @@ def main() -> None:
     parser.add_argument("--no-backend", action="store_true", help="Skip starting Backend server")
     parser.add_argument("--no-frontend", action="store_true", help="Skip starting Frontend server")
     parser.add_argument("--dry-run", action="store_true", help="Check ports and environment only")
+    parser.add_argument("--install-startup", action="store_true", help="Configure Windows auto-start on PC boot/logon")
+    parser.add_argument("--uninstall-startup", action="store_true", help="Remove Windows auto-start on PC boot/logon")
+    parser.add_argument("--stop", action="store_true", help="Stop all currently running servers on ports 3000, 3001, and 8000")
 
     args = parser.parse_args()
+
+    if args.stop:
+        print(f"\n{COLOR_YELLOW}[STOP] Terminating all running microservices (Ports 3000, 3001, 8000)...{COLOR_RESET}")
+        free_port(3001)
+        free_port(8000)
+        free_port(3000)
+        print(f"{COLOR_GREEN}[OK] All server processes terminated successfully.{COLOR_RESET}\n")
+        sys.exit(0)
+
+    if args.install_startup or args.uninstall_startup:
+        from scripts.setup_windows_startup import install_vbs_startup, install_task_scheduler, uninstall_startup
+        if args.uninstall_startup:
+            uninstall_startup()
+        else:
+            prod_mode = bool(args.prod)
+            install_vbs_startup(prod_mode=prod_mode)
+            install_task_scheduler(prod_mode=prod_mode)
+        sys.exit(0)
 
     dev_mode = not args.prod
 

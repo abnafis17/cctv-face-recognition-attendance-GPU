@@ -305,12 +305,15 @@ export async function autoStartRtspCamerasOnBoot() {
     return;
   }
 
+  const targetCompanyId = String(process.env.BACKEND_COMPANY_ID || process.env.COMPANY_ID || "").trim();
   const cameraWhere: any = {
     companyId: { not: null },
     rtspUrl: { not: null },
     isActive: true,
   };
-  if (cameraHasTaskField) cameraWhere.task = "attendance";
+  if (targetCompanyId) {
+    cameraWhere.companyId = targetCompanyId;
+  }
 
   const cameraSelect: any = {
     id: true,

@@ -136,7 +136,7 @@ class FacePresenceDetector:
 
     def __init__(
         self,
-        model_name: str = "buffalo_s",
+        model_name: str = "buffalo_l",
         det_size: int = 640,
         min_face_size: int = 30,
         min_det_score: float = 0.35,

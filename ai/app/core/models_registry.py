@@ -40,7 +40,7 @@ class ModelRegistry:
         det_thresh: float = 0.5,
     ):
         env_model = env_str("INSIGHTFACE_MODEL", "")
-        model_name = env_model or name or "buffalo_s"
+        model_name = env_model or name or "buffalo_l"
         if self._face_detector is None:
             with self._lock:
                 if self._face_detector is None:
@@ -61,7 +61,7 @@ class ModelRegistry:
         use_gpu: bool = True,
     ):
         env_model = env_str("INSIGHTFACE_MODEL", "")
-        model_name = env_model or name or "buffalo_s"
+        model_name = env_model or name or "buffalo_l"
         if self._face_embedder is None:
             with self._lock:
                 if self._face_embedder is None:

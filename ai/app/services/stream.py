@@ -491,7 +491,7 @@ class LiteCameraStream:
             if emb_norm > 0:
                 emb = emb / emb_norm
                 
-            templates = get_gallery_templates()
+            templates = get_gallery_templates(self.company_id)
             if templates:
                 # Group template embeddings per employee for multi-sample max similarity matching
                 emp_templates = {}
@@ -563,13 +563,8 @@ class LiteCameraStream:
                         if is_authorized:
                             self._trigger_door_relay(best_emp_id, best_name, top1_score)
 
-                        if is_authorized:
-                            # 1. Push real-time event to update Recognition History table
-                            self._push_realtime_recognition(best_emp_id, best_name, top1_score)
-                            
-                            # 2. Trigger ERP attendance push
-                            if getattr(self, "attendance_enabled", True):
-                                self._trigger_attendance(best_emp_id, best_name, top1_score)
+                        if is_authorized and getattr(self, "attendance_enabled", True):
+                            self._trigger_attendance(best_emp_id, best_name, top1_score)
                 else:
                     # Graceful decay rather than hard wipe on a single missed frame
                     matched_track.confirm_hits = max(0, getattr(matched_track, 'confirm_hits', 0) - 1)
@@ -781,7 +776,7 @@ class LiteCameraStream:
                 
                 self.recognized_persons = filtered
                 
-                templates = get_gallery_templates()
+                templates = get_gallery_templates(self.company_id)
                 id_to_name = {t["employee_id"]: t["name"] for t in templates}
                 
                 output_list = []
@@ -976,7 +971,8 @@ class LiteCameraStream:
                         erp_response_str = f'{{"error": "{str(ex)}"}}'
 
                 if is_success:
-                    if should_print:
+                    target_cid_filter = str(os.getenv("BACKEND_COMPANY_ID") or os.getenv("COMPANY_ID") or "").strip()
+                    if should_print and (not target_cid_filter or str(self.company_id or "").strip() == target_cid_filter):
                         print(f"[{tag}] queued ok=True emp={emp_id} name={name} date={date_str} in={time_str}", flush=True)
                     write_erp_log(f"PUSH REALTIME | {f_log} | STATUS=SUCCESS | erp_response={erp_response_str}")
                 else:

@@ -105,11 +105,19 @@ class ERPClient:
 
 def write_erp_log(message: str):
     try:
-        log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../logs")
+        # Datewise file inside logs/erp/YYYY-MM-DD.log (matching door log format)
+        log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../logs/erp")
         os.makedirs(log_dir, exist_ok=True)
-        log_path = os.path.join(log_dir, "erp-sync.log")
+        date_str = datetime.now().strftime("%Y-%m-%d")
+        log_path = os.path.join(log_dir, f"{date_str}.log")
         timestamp = datetime.now().isoformat()
         with open(log_path, "a", encoding="utf-8") as f:
+            f.write(f"[{timestamp}] {message}\n")
+
+        # Also append to logs/erp-sync.log for backward compatibility
+        main_log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../logs")
+        main_log_path = os.path.join(main_log_dir, "erp-sync.log")
+        with open(main_log_path, "a", encoding="utf-8") as f:
             f.write(f"[{timestamp}] {message}\n")
     except Exception as e:
         print(f"Failed to write to ERP log file: {e}")

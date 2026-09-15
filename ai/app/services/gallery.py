@@ -5,13 +5,15 @@ from app.core.config import BACKEND_BASE_URL
 from app.core.logging import logger
 from app.services.model_manager import get_l2_norm
 
-gallery_templates = []
+gallery_templates_by_company = {}
 gallery_lock = threading.Lock()
 
 def sync_gallery(company_id: str):
-    global gallery_templates
+    if not company_id:
+        return
+    cid_key = str(company_id).strip()
     url = f"{BACKEND_BASE_URL}/api/v1/gallery/templates"
-    headers = {"x-company-id": company_id}
+    headers = {"x-company-id": cid_key}
     try:
         res = requests.get(url, headers=headers, timeout=5.0)
         if res.status_code == 200:
@@ -30,12 +32,22 @@ def sync_gallery(company_id: str):
                         "embedding": emb
                     })
             with gallery_lock:
-                gallery_templates = loaded
+                gallery_templates_by_company[cid_key] = loaded
+            logger.info(f"[GALLERY] Synced {len(loaded)} templates for company={cid_key}")
         else:
-            logger.error(f"Failed to load templates. Status: {res.status_code}")
+            logger.error(f"Failed to load templates for company={cid_key}. Status: {res.status_code}")
     except Exception as e:
-        logger.error(f"Gallery template sync failed: {e}. Running with empty/stale cache.")
+        logger.error(f"Gallery template sync failed for company={cid_key}: {e}. Running with empty/stale cache.")
 
-def get_gallery_templates():
+def get_gallery_templates(company_id: str = None):
     with gallery_lock:
-        return list(gallery_templates)
+        if company_id and str(company_id).strip():
+            cid_key = str(company_id).strip()
+            if cid_key in gallery_templates_by_company:
+                return list(gallery_templates_by_company[cid_key])
+            return []
+            
+        all_templates = []
+        for templates in gallery_templates_by_company.values():
+            all_templates.extend(templates)
+        return all_templates
