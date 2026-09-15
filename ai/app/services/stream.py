@@ -393,6 +393,7 @@ class LiteCameraStream:
                         bodies = body_detector.detect(frame)
                         self.body_tracker.update(bodies)
                         
+                        assigned_track_ids = set()
                         for face in faces:
                             fx1, fy1, fx2, fy2 = [int(v) for v in face.bbox]
                             fx1 = max(0, min(w - 1, fx1))
@@ -403,16 +404,38 @@ class LiteCameraStream:
                             
                             matched_track = None
                             for track in self.body_tracker.tracks:
-                                if face_belongs_to_body(face_bbox, track.bbox):
+                                if track.track_id not in assigned_track_ids and face_belongs_to_body(face_bbox, track.bbox):
                                     matched_track = track
                                     break
                                     
-                            if matched_track is not None:
-                                matched_track.last_face_bbox = face_bbox
-                                matched_track.last_face_time = now
-                                self._process_recognition(frame, face, face_bbox, matched_track, now)
+                            if matched_track is None:
+                                for track in self.body_tracker.tracks:
+                                    if track.track_id not in assigned_track_ids:
+                                        if compute_iou(face_bbox, track.bbox) > 0.1 or face_belongs_to_body(face_bbox, track.bbox):
+                                            matched_track = track
+                                            break
+                                            
+                            if matched_track is None:
+                                fw = fx2 - fx1
+                                fh = fy2 - fy1
+                                synth_bbox = (
+                                    max(0, int(fx1 - fw * 0.5)),
+                                    max(0, int(fy1)),
+                                    min(w, int(fx2 + fw * 0.5)),
+                                    min(h, int(fy1 + fh * 4.0))
+                                )
+                                from app.vision.body_tracker import PersonTrack
+                                matched_track = PersonTrack(self.body_tracker.next_track_id, synth_bbox)
+                                self.body_tracker.next_track_id += 1
+                                self.body_tracker.tracks.append(matched_track)
+                                
+                            assigned_track_ids.add(matched_track.track_id)
+                            matched_track.last_face_bbox = face_bbox
+                            matched_track.last_face_time = now
+                            self._process_recognition(frame, face, face_bbox, matched_track, now)
                     else:
                         from app.vision.body_detector import BodyDetection
+                        from app.vision.body_tracker import PersonTrack
                         face_dets = []
                         for face in faces:
                             fx1, fy1, fx2, fy2 = [int(v) for v in face.bbox]
@@ -424,6 +447,7 @@ class LiteCameraStream:
                             
                         self.body_tracker.update(face_dets)
                         
+                        assigned_track_ids = set()
                         for face in faces:
                             fx1, fy1, fx2, fy2 = [int(v) for v in face.bbox]
                             fx1 = max(0, min(w - 1, fx1))
@@ -434,14 +458,20 @@ class LiteCameraStream:
                             
                             matched_track = None
                             for track in self.body_tracker.tracks:
-                                if compute_iou(face_bbox, track.bbox) > 0.4:
+                                if track.track_id not in assigned_track_ids and compute_iou(face_bbox, track.bbox) > 0.2:
                                     matched_track = track
                                     break
                                     
-                            if matched_track is not None:
-                                matched_track.last_face_bbox = face_bbox
-                                matched_track.last_face_time = now
-                                self._process_recognition(frame, face, face_bbox, matched_track, now)
+                            if matched_track is None:
+                                synth_bbox = (fx1, fy1, fx2, fy2)
+                                matched_track = PersonTrack(self.body_tracker.next_track_id, synth_bbox)
+                                self.body_tracker.next_track_id += 1
+                                self.body_tracker.tracks.append(matched_track)
+                                
+                            assigned_track_ids.add(matched_track.track_id)
+                            matched_track.last_face_bbox = face_bbox
+                            matched_track.last_face_time = now
+                            self._process_recognition(frame, face, face_bbox, matched_track, now)
                                 
                 time.sleep(0.002)
             except Exception as e:
@@ -500,13 +530,10 @@ class LiteCameraStream:
 
                 min_sim = float(SIMILARITY_THRESHOLD)
                 # Adaptive multi-tier qualification:
-                # - High confidence match: accepts directly (margin gap not required for strong matches)
-                # - Solid match: requires small margin (>= 0.02)
-                # - Moderate match: requires distinct margin (>= 0.03)
+                # Require similarity score to meet or exceed SIMILARITY_THRESHOLD (0.45)
                 is_qualified = (
                     (top1_score >= max(0.46, min_sim))
                     or (top1_score >= min_sim and margin_gap >= 0.02)
-                    or (top1_score >= 0.42 and margin_gap >= 0.03)
                 )
                 
                 if is_qualified:
@@ -536,8 +563,14 @@ class LiteCameraStream:
                         if is_authorized:
                             self._trigger_door_relay(best_emp_id, best_name, top1_score)
 
-                        if is_authorized and self.attendance_enabled:
-                            self._trigger_attendance(best_emp_id, best_name, top1_score)
+                        if is_authorized:
+                            # 1. Push real-time event to update Recognition History table
+                            self._push_realtime_recognition(best_emp_id, best_name, top1_score)
+                            
+                            # 2. Trigger ERP attendance push
+                            if getattr(self, "attendance_enabled", True):
+                                self._trigger_attendance(best_emp_id, best_name, top1_score)
+                else:
                     # Graceful decay rather than hard wipe on a single missed frame
                     matched_track.confirm_hits = max(0, getattr(matched_track, 'confirm_hits', 0) - 1)
                     if matched_track.confirm_hits == 0:
@@ -826,9 +859,11 @@ class LiteCameraStream:
             "confidence": score,
             "type": getattr(self, "stream_type", "attendance")
         }
+        attendance_confirmed = False
         try:
             res = requests.post(url, headers=headers, json=payload, timeout=3.0)
             if res.status_code in (200, 201):
+                attendance_confirmed = True
                 emp_exists = False
                 for item in self.recognized_persons:
                     if item["employeeId"] == emp_id:
@@ -841,8 +876,14 @@ class LiteCameraStream:
                         "timestamp": payload["timestamp"]
                     })
                 self._sync_and_log_recognized_persons()
-        except Exception:
-            pass
+            else:
+                logger.warning(f"[ATTENDANCE] Internal attendance log skipped for emp={emp_id}: status={res.status_code}")
+        except Exception as e:
+            logger.error(f"[ATTENDANCE] Error posting attendance to backend for emp={emp_id}: {e}")
+
+        # Gate ERP push: push to ERP APIs only when face recognition & backend attendance are confirmed
+        if not attendance_confirmed:
+            return
 
         # 2. Fetch all active ERP configurations for this company & map by urlType
         active_erp_map = {}
@@ -861,7 +902,13 @@ class LiteCameraStream:
             pass
 
         if not active_erp_map:
-            active_erp_map["attendance"] = {"urlType": "attendance", "isActive": True}
+            active_erp_map["attendance"] = {
+                "urlType": "attendance",
+                "isActive": True,
+                "erpBaseUrl": os.getenv("ERP_BASE_URL", "http://172.20.60.101:7001"),
+                "erpAttendanceEndpoint": os.getenv("ERP_ATTENDANCE_ENDPOINT", "/api/v2/Attendance/manual-attendance"),
+                "erpPrefix": ""
+            }
 
         # 3. Loop over fixed ERP spec list matching main branch schema
         erp_specs = [
@@ -890,16 +937,12 @@ class LiteCameraStream:
             else:
                 file_payload_log = f"type=attendance | empId={emp_id} | name={name} | attendanceDate={date_str} | inTime={time_str} | inLocation={self.camera_id}"
 
-            # Print main branch queued log ONCE per recognition event with employee name
-            if should_print:
-                print(f"[{name_tag}] queued ok=True emp={emp_id} name={name} date={date_str} in={time_str}", flush=True)
-
             # Asynchronous background ERP push + erp-sync.log write
             endpoint = erp.get("erpAttendanceEndpoint") or erp.get("erp_attendance_endpoint")
             base_url = erp.get("erpBaseUrl") or erp.get("erp_base_url")
             prefix = erp.get("erpPrefix") or erp.get("erp_prefix") or ""
 
-            def _push_worker(u_type=q_type, b_url=base_url, e_point=endpoint, p_fix=prefix, f_log=file_payload_log):
+            def _push_worker(u_type=q_type, b_url=base_url, e_point=endpoint, p_fix=prefix, f_log=file_payload_log, tag=name_tag):
                 erp_response_str = '{"statusCode": 200, "message": "Success"}'
                 is_success = True
                 
@@ -933,6 +976,8 @@ class LiteCameraStream:
                         erp_response_str = f'{{"error": "{str(ex)}"}}'
 
                 if is_success:
+                    if should_print:
+                        print(f"[{tag}] queued ok=True emp={emp_id} name={name} date={date_str} in={time_str}", flush=True)
                     write_erp_log(f"PUSH REALTIME | {f_log} | STATUS=SUCCESS | erp_response={erp_response_str}")
                 else:
                     write_erp_log(f"PUSH REALTIME | {f_log} | STATUS=FAILED | erp_response={erp_response_str}")
