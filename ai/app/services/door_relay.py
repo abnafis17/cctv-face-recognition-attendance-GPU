@@ -5,6 +5,7 @@ import threading
 import time
 import urllib.parse
 import urllib.request
+from datetime import datetime
 from typing import Any, Dict, Optional, Tuple
 
 from ..clients.backend_client import BackendClient
@@ -16,6 +17,19 @@ def is_known_employee_id(employee_id: Optional[str]) -> bool:
     if not emp:
         return False
     return emp.lower() not in {"-1", "unknown", "none", "null"}
+
+
+def write_door_log(message: str) -> None:
+    try:
+        log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../logs/door")
+        os.makedirs(log_dir, exist_ok=True)
+        date_str = datetime.now().strftime("%Y-%m-%d")
+        log_path = os.path.join(log_dir, f"{date_str}.log")
+        timestamp = datetime.now().isoformat()
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(f"[{timestamp}] {message}\n")
+    except Exception as e:
+        pass
 
 
 class DoorRelayService:
@@ -143,9 +157,10 @@ class DoorRelayService:
             try:
                 resp = urllib.request.urlopen(url, timeout=self._relay_http_timeout_s)
                 resp.close()
-                print(f"[RELAY] {desired} cid={cid} url={url}")
+                write_door_log(f"[RELAY] {desired} cid={cid} url={url}")
             except Exception as e:
-                print(f"[RELAY] failed cid={cid} url={url} err={e}")
+                err_str = "timed out" if ("timed out" in str(e).lower() or "timeout" in str(e).lower()) else str(e)
+                write_door_log(f"[RELAY] failed cid={cid} url={url} err={err_str}")
 
         from ..core.runtime_opt import submit_async_io
         submit_async_io(_do)
@@ -190,12 +205,13 @@ class DoorRelayService:
                 door_timeout = float(os.getenv("DOOR_HTTP_TIMEOUT_S", "3.0"))
                 resp = urllib.request.urlopen(url, timeout=door_timeout)
                 resp.close()
-                print(
+                write_door_log(
                     f"[DOOR] unlock fired cid={camera_id} emp={emp_id} url={url} "
                     f"name={name} sim={similarity:.3f}"
                 )
             except Exception as e:
-                print(f"[DOOR] failed cid={camera_id} emp={emp_id} url={url} err={e}")
+                err_str = "timed out" if ("timed out" in str(e).lower() or "timeout" in str(e).lower()) else str(e)
+                write_door_log(f"[DOOR] failed cid={camera_id} emp={emp_id} url={url} err={err_str}")
 
         from ..core.runtime_opt import submit_async_io
         submit_async_io(_do)

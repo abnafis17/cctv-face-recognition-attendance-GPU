@@ -423,7 +423,10 @@ class LiteCameraStream:
                     )
                     if relay_url:
                         import urllib.parse
+                        import urllib.request
                         from app.services.company_cache import get_company_cache
+                        from app.services.door_relay import write_door_log
+
                         sep = "&" if "?" in relay_url else "?"
                         final_url = f"{relay_url}{sep}employee_id={urllib.parse.quote(str(emp_id), safe='')}"
                         
@@ -436,14 +439,21 @@ class LiteCameraStream:
                         sep = "&" if "?" in final_url else "?"
                         final_url = f"{final_url}{sep}empPicUrl={urllib.parse.quote(pic_url, safe='')}"
                         
-                        door_timeout = float(os.getenv("DOOR_HTTP_TIMEOUT_S", "3.0"))
-                        door_res = requests.get(final_url, timeout=door_timeout)
-                        logger.info(
-                            f"[DOOR] unlock fired cid={self.camera_id} emp={emp_id} "
-                            f"url={final_url} name={name} sim={score:.3f} status={door_res.status_code}"
-                        )
+                        door_timeout = float(os.getenv("DOOR_HTTP_TIMEOUT_S", "1.2"))
+                        try:
+                            resp = urllib.request.urlopen(final_url, timeout=door_timeout)
+                            resp.close()
+                            write_door_log(
+                                f"[DOOR] unlock fired cid={self.camera_id} emp={emp_id} "
+                                f"url={final_url} name={name} sim={score:.3f}"
+                            )
+                        except Exception as ex:
+                            err_str = "timed out" if ("timed out" in str(ex).lower() or "timeout" in str(ex).lower()) else str(ex)
+                            write_door_log(f"[DOOR] failed cid={self.camera_id} emp={emp_id} url={final_url} err={err_str}")
             except Exception as e:
-                logger.error(f"[DOOR] failed cid={self.camera_id} emp={emp_id} err={e}")
+                err_str = "timed out" if ("timed out" in str(e).lower() or "timeout" in str(e).lower()) else str(e)
+                from app.services.door_relay import write_door_log
+                write_door_log(f"[DOOR] failed cid={self.camera_id} emp={emp_id} url=N/A err={err_str}")
 
         threading.Thread(target=_do, name=f"door-unlock-{emp_id}", daemon=True).start()
 
