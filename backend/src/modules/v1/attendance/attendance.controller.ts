@@ -75,7 +75,7 @@ export async function createAttendance(req: Request, res: Response) {
     }
 
     const confVal = Number(confidence ?? 0);
-    const reqMinConf = 0.45;
+    const reqMinConf = 0.40;
     if (confVal > 0 && confVal < reqMinConf) {
       return res.status(400).json({ error: `Rejected: low confidence score for ${eventType || "attendance"}` });
     }

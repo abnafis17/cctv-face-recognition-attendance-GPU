@@ -436,58 +436,33 @@ export async function createGatepassRecord(req: Request, res: Response) {
       });
     }
 
-    await prisma.$executeRaw(
-      Prisma.sql`
-      INSERT INTO "GatepassTable" (
-        "id",
-        "companyId",
-        "employeeId",
-        "leaveTypeId",
-        "leaveType",
-        "purpose",
-        "destination",
-        "outTime",
-        "inTime",
-        "status",
-        "requestCameraId",
-        "returnCameraId",
-        "createdAt",
-        "updatedAt",
-        "passType",
-        "remarks",
-        "returnTime",
-        "externalSubmitAckAt",
-        "externalSubmitPayload",
-        "externalGatepassId",
-        "erpStatus",
-        "approvedByName",
-        "approvedByDesignation"
-      ) VALUES (
-        ${gatepassId},
-        ${companyId},
-        ${employee.id},
-        ${payload.leaveTypeId},
-        ${payload.leaveType},
-        ${trimmedPurpose},
-        ${normalizedDestination},
-        ${recognizedAt},
-        null,
-        'out',
-        ${camera?.id ?? null},
-        null,
-        ${createdAt},
-        ${createdAt},
-        ${payload.passType ?? null},
-        ${payload.remarks ?? null},
-        ${payload.returnTime ?? null},
-        ${erpSubmit.ackAt},
-        CAST(${JSON.stringify(erpSubmit.payload)} AS jsonb),
-        ${erpSubmit.gatePassId},
-        ${erpSubmit.acknowledged ? "pending" : "failed"},
-        ${erpSubmit.approvedByName ?? null},
-        ${erpSubmit.approvedByDesignation ?? null}
-      )`,
-    );
+    await prisma.gatepassTable.create({
+      data: {
+        id: gatepassId,
+        companyId,
+        employeeId: employee.id,
+        leaveTypeId: payload.leaveTypeId,
+        leaveType: payload.leaveType,
+        purpose: trimmedPurpose,
+        destination: normalizedDestination,
+        outTime: recognizedAt,
+        inTime: null,
+        status: "out",
+        requestCameraId: camera?.id ?? null,
+        returnCameraId: null,
+        createdAt,
+        updatedAt: createdAt,
+        passType: payload.passType ?? null,
+        remarks: payload.remarks ?? null,
+        returnTime: payload.returnTime ?? null,
+        externalSubmitAckAt: erpSubmit.ackAt,
+        externalSubmitPayload: erpSubmit.payload as any,
+        externalGatepassId: erpSubmit.gatePassId,
+        erpStatus: erpSubmit.acknowledged ? "pending" : "failed",
+        approvedByName: erpSubmit.approvedByName ?? null,
+        approvedByDesignation: erpSubmit.approvedByDesignation ?? null,
+      },
+    });
 
     const row = await loadGatepassById(companyId, gatepassId);
     if (!row)
@@ -559,34 +534,24 @@ export async function markGatepassReturn(req: Request, res: Response) {
       }
     }
 
-    const openRows = await prisma.$queryRaw<
-      Array<{
-        id: string;
-        outTime: Date;
-        outTimeClock: string | null;
-        leaveTypeId: string | null;
-        leaveType: string;
-        returnTime: number | null;
-      }>
-    >(
-      Prisma.sql`
-        SELECT
-          "id",
-          "outTime",
-          TO_CHAR("outTime", 'HH24:MI:SS') AS "outTimeClock",
-          "leaveTypeId",
-          "leaveType",
-          "returnTime"
-        FROM "GatepassTable"
-        WHERE "companyId" = ${companyId}
-          AND "employeeId" = ${employee.id}
-          AND "status" = ${"out"}
-          AND "inTime" IS NULL
-        ORDER BY "outTime" DESC
-        LIMIT 1
-      `,
-    );
-    const openGatepass = openRows[0];
+    const openGatepass = await prisma.gatepassTable.findFirst({
+      where: {
+        companyId,
+        employeeId: employee.id,
+        status: "out",
+        inTime: null,
+      },
+      orderBy: {
+        outTime: "desc",
+      },
+      select: {
+        id: true,
+        outTime: true,
+        leaveTypeId: true,
+        leaveType: true,
+        returnTime: true,
+      },
+    });
 
     if (!openGatepass) {
       return res.json({ ok: true, updated: false, reason: "no_open_gatepass" });
@@ -606,38 +571,15 @@ export async function markGatepassReturn(req: Request, res: Response) {
       }
     }
 
-    await prisma.$executeRaw(
-      Prisma.sql`
-        UPDATE "GatepassTable"
-        SET
-          "inTime" = ${recognizedAt},
-          "status" = ${"returned"},
-          "returnCameraId" = ${camera?.id ?? null},
-          "updatedAt" = ${new Date()}
-        WHERE "id" = ${openGatepass.id}
-          AND "companyId" = ${companyId}
-      `,
-    );
-
-    const updatedClockRows = await prisma.$queryRaw<
-      Array<{
-        outTimeClock: string | null;
-        inTimeClock: string | null;
-        inDateDDMMYYYY: string | null;
-      }>
-    >(
-      Prisma.sql`
-        SELECT
-          TO_CHAR("outTime", 'HH24:MI:SS') AS "outTimeClock",
-          TO_CHAR("inTime", 'HH24:MI:SS') AS "inTimeClock",
-          TO_CHAR("inTime", 'DD/MM/YYYY') AS "inDateDDMMYYYY"
-        FROM "GatepassTable"
-        WHERE "id" = ${openGatepass.id}
-          AND "companyId" = ${companyId}
-        LIMIT 1
-      `,
-    );
-    const updatedClockRow = updatedClockRows[0] ?? null;
+    await prisma.gatepassTable.update({
+      where: { id: openGatepass.id },
+      data: {
+        inTime: recognizedAt,
+        status: "returned",
+        returnCameraId: camera?.id ?? null,
+        updatedAt: new Date(),
+      },
+    });
 
     const erpReturnUpdate = await updateGatepassReturnToErp(companyId, {
       empId: employee.empId,
@@ -649,17 +591,14 @@ export async function markGatepassReturn(req: Request, res: Response) {
     });
 
     try {
-      await prisma.$executeRaw(
-        Prisma.sql`
-          UPDATE "GatepassTable"
-          SET
-            "externalReturnAckAt" = ${erpReturnUpdate.ackAt},
-            "externalReturnPayload" = CAST(${JSON.stringify(erpReturnUpdate.payload)} AS jsonb),
-            "updatedAt" = ${new Date()}
-          WHERE "id" = ${openGatepass.id}
-            AND "companyId" = ${companyId}
-        `,
-      );
+      await prisma.gatepassTable.update({
+        where: { id: openGatepass.id },
+        data: {
+          externalReturnAckAt: erpReturnUpdate.ackAt,
+          externalReturnPayload: erpReturnUpdate.payload as any,
+          updatedAt: new Date(),
+        },
+      });
     } catch {
       // Local gatepass return already succeeded. Keep the request successful.
     }

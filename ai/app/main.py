@@ -17,6 +17,11 @@ os.makedirs(PUBLIC_STATIC_DIR, exist_ok=True)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    logger.warning("==========================================================================")
+    logger.warning("[AI SERVER] CCTV Face Recognition & Attendance Engine ON")
+    logger.warning("[AI SERVER] Models Loaded: InsightFace (buffalo_s CUDA GPU)")
+    logger.warning("[AI SERVER] Services Active: Realtime ERP Attendance Sync & Door Unlock Relay")
+    logger.warning("==========================================================================")
     init_models()
     host = os.getenv("AI_SERVER_HOST", os.getenv("HOST", "0.0.0.0")).strip()
     port = os.getenv("AI_SERVER_PORT", os.getenv("PORT", "8000")).strip()

@@ -111,7 +111,7 @@ class FaceDetector:
     def __init__(
         self,
         *,
-        model_name: str = "buffalo_l",
+        model_name: str = "buffalo_s",
         use_gpu: bool = True,
         det_size: Tuple[int, int] = (640, 640),
         min_face_size: int = 14,
@@ -168,8 +168,8 @@ class FaceDetector:
             if best_fallback is None or score > best_fallback.det_score:
                 best_fallback = det
 
-        fallback_floor = float(os.getenv("FALLBACK_DET_SCORE", "0.0"))  # 0.0 disables fallback
-        if not out and best_fallback is not None and best_fallback.det_score >= fallback_floor:
+        fallback_floor = float(os.getenv("FALLBACK_DET_SCORE", "0.0"))  # <= 0.0 disables fallback
+        if fallback_floor > 0.0 and not out and best_fallback is not None and best_fallback.det_score >= fallback_floor:
             out.append(best_fallback)
 
         return out
@@ -180,7 +180,7 @@ class FaceEmbedder:
     Recognition-only embedder (ArcFace ONNX from the same InsightFace model pack).
     """
 
-    def __init__(self, *, model_name: str = "buffalo_l", use_gpu: bool = True):
+    def __init__(self, *, model_name: str = "buffalo_s", use_gpu: bool = True):
         use_gpu = _env_bool("USE_GPU", use_gpu)
 
         # Default behavior:
@@ -209,52 +209,23 @@ class FaceEmbedder:
     @staticmethod
     def enhance_production_face_crop(crop: np.ndarray) -> np.ndarray:
         """
-        Production-grade 5-stage Face Image Filter Pipeline:
-        1. Bi-cubic Super-Resolution Upscaling for distant faces (< 112x112).
-        2. Bilateral Edge-Preserving Denoising for RTSP compression artifacts.
-        3. High-Frequency Unsharp Feature Sharpening for eyes, nose, and lips.
-        4. Adaptive CLAHE Contrast Equalization in LAB Luma channel for overhead/ceiling shadows.
-        5. Luma Range Stretching to optimize contrast dynamic range.
-        
-        Elevates similarity scores on true enrolled faces up to 0.65 - 0.85+ even on distant or low-res cameras.
+        Gentle illumination normalization for extremely underexposed CCTV frames (mean luma < 50).
+        Preserves natural facial geometry and textures so ArcFace feature vectors remain unperturbed.
         """
         if crop is None or crop.size == 0:
             return crop
 
         try:
-            h, w = crop.shape[:2]
-            
-            # 1. Super-resolution / Lanczos4 upscaling for small distant face crops
-            if h < 112 or w < 112:
-                crop = cv2.resize(crop, (112, 112), interpolation=cv2.INTER_LANCZOS4)
+            gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+            mean_luma = float(np.mean(gray))
 
-            # 2. Bilateral edge-preserving denoising
-            denoised = cv2.bilateralFilter(crop, d=3, sigmaColor=15, sigmaSpace=15)
-
-            # 3. High-frequency unsharp mask sharpening
-            blurred = cv2.GaussianBlur(denoised, (0, 0), sigmaX=1.6)
-            sharpened = cv2.addWeighted(denoised, 1.30, blurred, -0.30, 0)
-
-            # 4. Adaptive LAB Luma CLAHE for ceiling shadows & low light
-            lab = cv2.cvtColor(sharpened, cv2.COLOR_BGR2LAB)
-            l_channel, a_channel, b_channel = cv2.split(lab)
-
-            # Stretch Luma dynamic range [10, 245]
-            l_norm = cv2.normalize(l_channel, None, alpha=10, beta=245, norm_type=cv2.NORM_MINMAX)
-
-            mean_luma = float(np.mean(l_norm))
-            std_luma = float(np.std(l_norm))
-
-            if mean_luma < 140.0 or std_luma > 22.0:
-                clip = _env_float("LOW_LIGHT_CLAHE_CLIP_LIMIT", 2.2)
-                grid_n = _env_int("LOW_LIGHT_CLAHE_TILE_GRID", 4)
-                clahe = cv2.createCLAHE(clipLimit=clip, tileGridSize=(grid_n, grid_n))
-                cl = clahe.apply(l_norm)
-                enhanced_lab = cv2.merge((cl, a_channel, b_channel))
-                return cv2.cvtColor(enhanced_lab, cv2.COLOR_LAB2BGR)
-            
-            enhanced_lab = cv2.merge((l_norm, a_channel, b_channel))
-            return cv2.cvtColor(enhanced_lab, cv2.COLOR_LAB2BGR)
+            # Only adjust if image is severely underexposed (dark shadows / low light)
+            if mean_luma < 50.0:
+                # Mild gamma correction to lift shadows without destroying high-frequency features
+                gamma = max(0.65, min(1.0, mean_luma / 85.0))
+                inv_gamma = 1.0 / gamma
+                table = np.array([((i / 255.0) ** inv_gamma) * 255 for i in np.arange(0, 256)]).astype("uint8")
+                return cv2.LUT(crop, table)
         except Exception:
             pass
 
@@ -281,7 +252,7 @@ class FaceEmbedder:
         bbox: Tuple[int, int, int, int],
         kps: Optional[np.ndarray] = None,
     ) -> Optional[np.ndarray]:
-        enhance_enabled = _env_bool("LOW_LIGHT_ENHANCE_ENABLED", True)
+        enhance_enabled = _env_bool("LOW_LIGHT_ENHANCE_ENABLED", False)
         try:
             if kps is not None:
                 kps = np.asarray(kps, dtype=np.float32)
