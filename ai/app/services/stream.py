@@ -733,6 +733,10 @@ class LiteCameraStream:
             silent_url = relay_silent_url
             sep = "&" if "?" in silent_url else "?"
             silent_url = f"{silent_url}{sep}employee_id={urllib.parse.quote(emp_id, safe='')}"
+            emp_name = str(name or "").strip()
+            if emp_name:
+                sep = "&" if "?" in silent_url else "?"
+                silent_url = f"{silent_url}{sep}employee_name={urllib.parse.quote(emp_name, safe='')}"
             if emp_pic_url:
                 sep = "&" if "?" in silent_url else "?"
                 silent_url = f"{silent_url}{sep}empPicUrl={urllib.parse.quote(emp_pic_url, safe='')}"
@@ -932,7 +936,7 @@ class LiteCameraStream:
             else:
                 file_payload_log = f"type=attendance | empId={emp_id} | name={name} | attendanceDate={date_str} | inTime={time_str} | inLocation={self.camera_id}"
 
-            # Asynchronous background ERP push + erp-sync.log write
+            # Asynchronous background ERP push
             endpoint = erp.get("erpAttendanceEndpoint") or erp.get("erp_attendance_endpoint")
             base_url = erp.get("erpBaseUrl") or erp.get("erp_base_url")
             prefix = erp.get("erpPrefix") or erp.get("erp_prefix") or ""

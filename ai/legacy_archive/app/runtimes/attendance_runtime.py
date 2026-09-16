@@ -1700,6 +1700,10 @@ class AttendanceRuntime:
         if emp_id:
             sep = "&" if "?" in url else "?"
             url = f"{url}{sep}employee_id={urllib.parse.quote(emp_id, safe='')}"
+            emp_name = str(name or "").strip()
+            if emp_name:
+                sep = "&" if "?" in url else "?"
+                url = f"{url}{sep}employee_name={urllib.parse.quote(emp_name, safe='')}"
             emp_pic_url = self._employee_pic_url(company_id, emp_id)
             if emp_pic_url:
                 sep = "&" if "?" in url else "?"

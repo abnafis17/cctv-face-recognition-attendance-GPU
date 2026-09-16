@@ -113,12 +113,6 @@ def write_erp_log(message: str):
         timestamp = datetime.now().isoformat()
         with open(log_path, "a", encoding="utf-8") as f:
             f.write(f"[{timestamp}] {message}\n")
-
-        # Also append to logs/erp-sync.log for backward compatibility
-        main_log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../logs")
-        main_log_path = os.path.join(main_log_dir, "erp-sync.log")
-        with open(main_log_path, "a", encoding="utf-8") as f:
-            f.write(f"[{timestamp}] {message}\n")
     except Exception as e:
         print(f"Failed to write to ERP log file: {e}")
 

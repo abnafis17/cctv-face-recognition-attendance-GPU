@@ -83,7 +83,13 @@ def install_task_scheduler(prod_mode: bool = True) -> bool:
             print(f"[OK] System Boot Task '{task_name}' registered successfully.")
             return True
         else:
-            print(f"[INFO] Task Scheduler registration note: {res_boot.stderr.strip()}")
+            err_msg = res_boot.stderr.strip()
+            if "Access is denied" in err_msg or "access is denied" in err_msg.lower():
+                print(f"[INFO] Task Scheduler (pre-logon boot task): Admin privileges required.")
+                print(f"[INFO] Startup VBScript is already ACTIVE for automatic startup on logon.")
+                print(f"[TIP]  To also enable pre-logon startup before user login, open PowerShell as Administrator and re-run.")
+            else:
+                print(f"[INFO] Task Scheduler registration note: {err_msg}")
             return False
     except Exception as e:
         print(f"[WARNING] Task Scheduler error: {e}")
@@ -103,13 +109,13 @@ def uninstall_startup() -> bool:
         print(f"[WARNING] Could not remove VBScript: {e}")
         success = False
 
-    try:
-        task_name = "CCTV_Attendance_AutoStart"
-        res = subprocess.run(["schtasks", "/Delete", "/TN", task_name, "/F"], capture_output=True, text=True)
-        if res.returncode == 0:
-            print(f"[OK] Removed Scheduled Task: {task_name}")
-    except Exception:
-        pass
+    for task_name in ("CCTV_Attendance_BootStart", "CCTV_Attendance_AutoStart"):
+        try:
+            res = subprocess.run(["schtasks", "/Delete", "/TN", task_name, "/F"], capture_output=True, text=True)
+            if res.returncode == 0:
+                print(f"[OK] Removed Scheduled Task: {task_name}")
+        except Exception:
+            pass
         
     return success
 
