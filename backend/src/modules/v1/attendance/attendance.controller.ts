@@ -164,41 +164,24 @@ export async function createAttendance(req: Request, res: Response) {
       });
     }
 
-    // Deduplicate against duplicate HTTP requests within 10 seconds for the same employee/company
-    const tenSecondsAgo = new Date(parsedTimestamp.getTime() - 10000);
-    const existingRecent = await prisma.attendance.findFirst({
-      where: {
+    const row = await prisma.attendance.create({
+      data: {
         employeeId: employee.id,
+        timestamp: parsedTimestamp,
+        cameraId: cam ? cam.id : null,
+        confidence: confidence ?? null,
         companyId,
-        timestamp: {
-          gte: tenSecondsAgo,
-        },
-      },
-      orderBy: {
-        timestamp: "desc",
       },
     });
 
-    let row = existingRecent;
-    if (!row) {
-      row = await prisma.attendance.create({
-        data: {
-          employeeId: employee.id,
-          timestamp: parsedTimestamp,
-          cameraId: cam ? cam.id : null,
-          confidence: confidence ?? null,
-          companyId,
-        },
-      });
-
-      pushAttendanceEvent(companyId, {
-        at: new Date().toISOString(),
-        attendanceId: row.id,
-        employeeId: employeePublicId(employee),
-        timestamp: row.timestamp.toISOString(),
-        cameraId: cam ? cam.camId || cam.id : normalizedCameraId,
-      });
-    }
+    // Push a lightweight event so clients can refresh attendance without polling.
+    pushAttendanceEvent(companyId, {
+      at: new Date().toISOString(),
+      attendanceId: row.id,
+      employeeId: employeePublicId(employee),
+      timestamp: row.timestamp.toISOString(),
+      cameraId: cam ? cam.camId || cam.id : normalizedCameraId,
+    });
 
     // ONLY create Headcount entry and push real-time Headcount Event if eventType is "headcount"!
     if (eventType === "headcount") {
@@ -234,7 +217,6 @@ export async function createAttendance(req: Request, res: Response) {
       attendance: row,
       employeeId: employeePublicId(employee),
       snapshotPath: snapshotPath ?? null,
-      deduplicated: Boolean(existingRecent),
     });
   } catch (e: any) {
     res.status(500).json({
