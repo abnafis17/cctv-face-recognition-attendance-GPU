@@ -141,10 +141,6 @@ class DoorRelayService:
             if emp_name:
                 sep = "&" if "?" in url else "?"
                 url = f"{url}{sep}employee_name={urllib.parse.quote(emp_name, safe='')}"
-            emp_pic_url = self.company_cache.get_employee_pic_url(company_id, emp_id)
-            if emp_pic_url:
-                sep = "&" if "?" in url else "?"
-                url = f"{url}{sep}empPicUrl={urllib.parse.quote(emp_pic_url, safe='')}"
 
         cid = str(camera_id)
         desired = "on" if turn_on else "off"
@@ -178,6 +174,7 @@ class DoorRelayService:
         company_id: Optional[str],
         name: str,
         similarity: float,
+        timestamp: Optional[str] = None,
     ) -> None:
         """Fire-and-forget door unlock with per-person rate limiting."""
         emp_id = str(employee_id or "").strip()
@@ -197,30 +194,54 @@ class DoorRelayService:
         if not url:
             return
 
+        dt = datetime.now()
+        if timestamp:
+            try:
+                dt = datetime.fromisoformat(str(timestamp))
+            except Exception:
+                pass
+        formatted_time = dt.strftime("%H:%M:%S")
+        formatted_date = dt.strftime("%d-%m-%Y")
+
+        emp_name = str(name or "").strip()
+
         if emp_id:
             sep = "&" if "?" in url else "?"
             url = f"{url}{sep}employee_id={urllib.parse.quote(emp_id, safe='')}"
-            emp_name = str(name or "").strip()
             if emp_name:
                 sep = "&" if "?" in url else "?"
                 url = f"{url}{sep}employee_name={urllib.parse.quote(emp_name, safe='')}"
-            emp_pic_url = self.company_cache.get_employee_pic_url(company_id, emp_id)
-            if emp_pic_url:
-                sep = "&" if "?" in url else "?"
-                url = f"{url}{sep}empPicUrl={urllib.parse.quote(emp_pic_url, safe='')}"
+            sep = "&" if "?" in url else "?"
+            url = f"{url}{sep}time={urllib.parse.quote(formatted_time, safe='')}&date={urllib.parse.quote(formatted_date, safe='')}"
+
+        payload = {
+            "employee_id": emp_id,
+            "employee_name": emp_name,
+            "time": formatted_time,
+            "date": formatted_date,
+        }
+        import json
+        payload_str = json.dumps(payload, ensure_ascii=False)
 
         def _do() -> None:
             try:
                 door_timeout = float(os.getenv("DOOR_HTTP_TIMEOUT_S", "3.0"))
-                resp = urllib.request.urlopen(url, timeout=door_timeout)
-                resp.close()
+                req = urllib.request.Request(
+                    url,
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST"
+                )
+                with urllib.request.urlopen(req, timeout=door_timeout) as resp:
+                    resp_status = resp.status
+                    resp_text = resp.read().decode("utf-8", errors="ignore").strip()
                 write_door_log(
                     f"[DOOR] unlock fired cid={camera_id} emp={emp_id} url={url} "
-                    f"name={name} sim={similarity:.3f}"
+                    f"payload={payload_str} status={resp_status} resp={resp_text} name={name} sim={similarity:.3f}"
                 )
             except Exception as e:
                 err_str = "timed out" if ("timed out" in str(e).lower() or "timeout" in str(e).lower()) else str(e)
-                write_door_log(f"[DOOR] failed cid={camera_id} emp={emp_id} url={url} err={err_str}")
+                write_door_log(f"[DOOR] failed cid={camera_id} emp={emp_id} url={url} payload={payload_str} err={err_str}")
 
         from ..core.runtime_opt import submit_async_io
         submit_async_io(_do)

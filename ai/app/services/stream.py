@@ -16,6 +16,7 @@ finally:
 
 import time
 import threading
+from datetime import datetime
 import requests
 import urllib.parse
 import urllib.request
@@ -530,7 +531,8 @@ class LiteCameraStream:
                     if matched_track.confirm_hits >= min_confirm_hits:
                         # 🔓 Door unlock triggered on confirmed authorized recognition
                         if is_authorized:
-                            self._trigger_door_relay(best_emp_id, best_name, top1_score)
+                            rec_time = datetime.now().isoformat()
+                            self._trigger_door_relay(best_emp_id, best_name, top1_score, rec_time=rec_time)
 
                         if is_authorized and self.attendance_enabled:
                             self._trigger_attendance(best_emp_id, best_name, top1_score)
@@ -635,7 +637,7 @@ class LiteCameraStream:
 
         threading.Thread(target=_do_post, daemon=True).start()
 
-    def _trigger_door_relay(self, emp_id: str, name: str, score: float):
+    def _trigger_door_relay(self, emp_id: str, name: str, score: float, rec_time: Optional[str] = None):
         now = time.time()
         emp_id_str = str(emp_id or "").strip()
         name_str = str(name or "").strip()
@@ -643,6 +645,9 @@ class LiteCameraStream:
         if not emp_id_str or name_str in ("Unknown", "") or float(score or 0.0) < min_threshold:
             return
             
+        if not rec_time:
+            rec_time = datetime.now().isoformat()
+
         emp_key = f"{self.camera_id}:{emp_id_str}"
         min_gap = max(0.0, float(os.getenv("DOOR_UNLOCK_MIN_GAP", "5.0")))
         
@@ -654,11 +659,11 @@ class LiteCameraStream:
 
         threading.Thread(
             target=self._send_door_unlock_request,
-            args=(emp_id_str, name, score),
+            args=(emp_id_str, name, score, rec_time),
             daemon=True
         ).start()
 
-    def _send_door_unlock_request(self, emp_id: str, name: str, score: float):
+    def _send_door_unlock_request(self, emp_id: str, name: str, score: float, rec_time: Optional[str] = None):
         from app.services.door_relay import write_door_log
         try:
             relay_silent_url = "http://10.81.100.72/silent"
@@ -698,27 +703,64 @@ class LiteCameraStream:
             if not emp_pic_url:
                 emp_pic_url = f"{emp_id}.jpg"
 
-            # Door Silent Unlock URL matching main branch
+            dt = datetime.now()
+            if rec_time:
+                try:
+                    dt = datetime.fromisoformat(str(rec_time))
+                except Exception:
+                    pass
+            formatted_time = dt.strftime("%H:%M:%S")
+            formatted_date = dt.strftime("%d-%m-%Y")
+
+            emp_name = str(name or "").strip()
+
+            # Door Silent Unlock URL with query parameters
             silent_url = relay_silent_url
             sep = "&" if "?" in silent_url else "?"
             silent_url = f"{silent_url}{sep}employee_id={urllib.parse.quote(emp_id, safe='')}"
-            emp_name = str(name or "").strip()
             if emp_name:
                 sep = "&" if "?" in silent_url else "?"
                 silent_url = f"{silent_url}{sep}employee_name={urllib.parse.quote(emp_name, safe='')}"
-            if emp_pic_url:
-                sep = "&" if "?" in silent_url else "?"
-                silent_url = f"{silent_url}{sep}empPicUrl={urllib.parse.quote(emp_pic_url, safe='')}"
+            sep = "&" if "?" in silent_url else "?"
+            silent_url = f"{silent_url}{sep}time={urllib.parse.quote(formatted_time, safe='')}&date={urllib.parse.quote(formatted_date, safe='')}"
 
-            # Execute Door Silent Unlock HTTP GET
+            # API body payload
+            payload = {
+                "employee_id": emp_id,
+                "employee_name": emp_name,
+                "time": formatted_time,
+                "date": formatted_date,
+            }
+            import json
+            payload_str = json.dumps(payload, ensure_ascii=False)
+
+            # Execute Door Silent Unlock HTTP call with payload
             try:
                 door_timeout = float(os.getenv("DOOR_HTTP_TIMEOUT_S", "1.2"))
-                resp = urllib.request.urlopen(silent_url, timeout=door_timeout)
-                resp.close()
-                write_door_log(f"[DOOR] unlock fired cid={self.camera_id} emp={emp_id} url={silent_url} name={name} sim={score:.3f}")
+                resp_status = None
+                resp_text = ""
+                try:
+                    res = requests.post(silent_url, json=payload, headers={"Content-Type": "application/json"}, timeout=door_timeout)
+                    resp_status = res.status_code
+                    resp_text = res.text.strip() if res.text else ""
+                except Exception:
+                    req = urllib.request.Request(
+                        silent_url,
+                        data=json.dumps(payload).encode("utf-8"),
+                        headers={"Content-Type": "application/json"},
+                        method="POST"
+                    )
+                    with urllib.request.urlopen(req, timeout=door_timeout) as r:
+                        resp_status = r.status
+                        resp_text = r.read().decode("utf-8", errors="ignore").strip()
+
+                write_door_log(
+                    f"[DOOR] unlock fired cid={self.camera_id} emp={emp_id} url={silent_url} "
+                    f"payload={payload_str} status={resp_status} resp={resp_text} name={name} sim={score:.3f}"
+                )
             except Exception as e:
                 err_str = "timed out" if ("timed out" in str(e).lower() or "timeout" in str(e).lower()) else str(e)
-                write_door_log(f"[DOOR] failed cid={self.camera_id} emp={emp_id} url={silent_url} err={err_str}")
+                write_door_log(f"[DOOR] failed cid={self.camera_id} emp={emp_id} url={silent_url} payload={payload_str} err={err_str}")
         except Exception as e:
             err_str = "timed out" if ("timed out" in str(e).lower() or "timeout" in str(e).lower()) else str(e)
             write_door_log(f"[DOOR] failed cid={self.camera_id} emp={emp_id} url=N/A err={err_str}")

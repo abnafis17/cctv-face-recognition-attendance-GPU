@@ -764,6 +764,7 @@ class AttendanceRuntime:
                     company_id=company_id,
                     name=str(tr.name),
                     similarity=float(tr.similarity),
+                    timestamp=datetime.now().isoformat(),
                 )
 
             # Draw HUD card (Jetson Orin Nano optimized zero-copy ROI)
