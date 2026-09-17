@@ -629,6 +629,7 @@ class AttendanceRuntime:
                 True,
                 employee_id=str(job.employee_id),
                 company_id=company_id,
+                employee_name=str(job.name),
             )
             self.voice_service.push_voice_event(
                 employee_id=str(job.employee_id),

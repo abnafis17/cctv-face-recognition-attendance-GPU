@@ -659,6 +659,7 @@ class LiteCameraStream:
         ).start()
 
     def _send_door_unlock_request(self, emp_id: str, name: str, score: float):
+        from app.services.door_relay import write_door_log
         try:
             relay_silent_url = "http://10.81.100.72/silent"
             try:
@@ -701,19 +702,26 @@ class LiteCameraStream:
             silent_url = relay_silent_url
             sep = "&" if "?" in silent_url else "?"
             silent_url = f"{silent_url}{sep}employee_id={urllib.parse.quote(emp_id, safe='')}"
+            emp_name = str(name or "").strip()
+            if emp_name:
+                sep = "&" if "?" in silent_url else "?"
+                silent_url = f"{silent_url}{sep}employee_name={urllib.parse.quote(emp_name, safe='')}"
             if emp_pic_url:
                 sep = "&" if "?" in silent_url else "?"
                 silent_url = f"{silent_url}{sep}empPicUrl={urllib.parse.quote(emp_pic_url, safe='')}"
 
             # Execute Door Silent Unlock HTTP GET
             try:
-                resp = urllib.request.urlopen(silent_url, timeout=3.0)
+                door_timeout = float(os.getenv("DOOR_HTTP_TIMEOUT_S", "1.2"))
+                resp = urllib.request.urlopen(silent_url, timeout=door_timeout)
                 resp.close()
-                print(f"[DOOR] unlock fired cid={self.camera_id} emp={emp_id} url={silent_url} name={name} sim={score:.3f}", flush=True)
+                write_door_log(f"[DOOR] unlock fired cid={self.camera_id} emp={emp_id} url={silent_url} name={name} sim={score:.3f}")
             except Exception as e:
-                print(f"[DOOR] failed cid={self.camera_id} emp={emp_id} url={silent_url} err={e}", flush=True)
+                err_str = "timed out" if ("timed out" in str(e).lower() or "timeout" in str(e).lower()) else str(e)
+                write_door_log(f"[DOOR] failed cid={self.camera_id} emp={emp_id} url={silent_url} err={err_str}")
         except Exception as e:
-            print(f"[DOOR] failed cid={self.camera_id} emp={emp_id} err={e}", flush=True)
+            err_str = "timed out" if ("timed out" in str(e).lower() or "timeout" in str(e).lower()) else str(e)
+            write_door_log(f"[DOOR] failed cid={self.camera_id} emp={emp_id} url=N/A err={err_str}")
 
     def _sync_and_log_recognized_persons(self):
         try:
@@ -754,10 +762,6 @@ class LiteCameraStream:
                         "timestamp": p["timestamp"]
                     })
                 
-                current_str = str(output_list)
-                if current_str != getattr(self, "last_logged_recognized_str", ""):
-                    self.last_logged_recognized_str = current_str
-                    logger.warning(f"[AI Server] Recognised persons list: {output_list}")
         except Exception as e:
             pass
 
@@ -845,15 +849,24 @@ class LiteCameraStream:
                 items = res_erp.json()
                 if isinstance(items, list):
                     for item in items:
-                        if isinstance(item, dict) and item.get("isActive"):
+                        if isinstance(item, dict) and item.get("isActive") is not False:
                             u_type = str(item.get("urlType") or "attendance").strip().lower()
                             if u_type not in active_erp_map:
                                 active_erp_map[u_type] = item
+                elif isinstance(items, dict) and items.get("isActive") is not False:
+                    u_type = str(items.get("urlType") or "attendance").strip().lower()
+                    active_erp_map[u_type] = items
         except Exception:
             pass
 
-        if not active_erp_map:
-            active_erp_map["attendance"] = {"urlType": "attendance", "isActive": True}
+        if "attendance" not in active_erp_map:
+            active_erp_map["attendance"] = {
+                "urlType": "attendance",
+                "isActive": True,
+                "erpBaseUrl": os.getenv("ERP_BASE_URL", "http://172.20.60.101:7001"),
+                "erpAttendanceEndpoint": os.getenv("ERP_ATTENDANCE_ENDPOINT", "/Attendance/manual-attendance"),
+                "erpPrefix": os.getenv("ERP_PREFIX", "/api/v2")
+            }
 
         # 3. Loop over fixed ERP spec list matching main branch schema
         erp_specs = [
@@ -875,59 +888,68 @@ class LiteCameraStream:
             if erp is None:
                 continue
 
-            if q_type == "attendance_two":
-                file_payload_log = f"type=attendance_two | employee_id={emp_id} | name={name} | attendance_date={formatted_date} | time={time_str} | status=Present | source={self.camera_id}"
-            elif q_type == "attendance_two_log":
-                file_payload_log = f"type=attendance_two_log | employee_id={emp_id} | name={name} | attendance_date={formatted_date} | time={time_str} | status=present | source={self.camera_id}"
-            else:
-                file_payload_log = f"type=attendance | empId={emp_id} | name={name} | attendanceDate={date_str} | inTime={time_str} | inLocation={self.camera_id}"
+            endpoint = str(erp.get("erpAttendanceEndpoint") or erp.get("erp_attendance_endpoint") or "").strip()
+            base_url = str(erp.get("erpBaseUrl") or erp.get("erp_base_url") or "").strip()
+            prefix = str(erp.get("erpPrefix") or erp.get("erp_prefix") or "").strip()
 
             # Print main branch queued log ONCE per recognition event with employee name
             if should_print:
                 print(f"[{name_tag}] queued ok=True emp={emp_id} name={name} date={date_str} in={time_str}", flush=True)
 
-            # Asynchronous background ERP push + erp-sync.log write
-            endpoint = erp.get("erpAttendanceEndpoint") or erp.get("erp_attendance_endpoint")
-            base_url = erp.get("erpBaseUrl") or erp.get("erp_base_url")
-            prefix = erp.get("erpPrefix") or erp.get("erp_prefix") or ""
+            # Asynchronous background ERP push + datewise erp log write
+            def _push_worker(u_type=q_type, b_url=base_url, e_point=endpoint, p_fix=prefix):
+                import json
+                if u_type in ("attendance_two", "attendance_two_log"):
+                    status_val = "present" if u_type == "attendance_two_log" else "Present"
+                    erp_payload = {
+                        "employee_id": emp_id,
+                        "attendance_date": formatted_date,
+                        "time": time_str,
+                        "status": status_val,
+                        "source": self.camera_id
+                    }
+                else:
+                    erp_payload = {
+                        "attendanceDate": date_str,
+                        "empId": emp_id,
+                        "inTime": time_str,
+                        "inLocation": self.camera_id
+                    }
 
-            def _push_worker(u_type=q_type, b_url=base_url, e_point=endpoint, p_fix=prefix, f_log=file_payload_log):
-                erp_response_str = '{"statusCode": 200, "message": "Success"}'
-                is_success = True
-                
+                payload_json_str = json.dumps(erp_payload)
+                erp_response_str = ""
+                is_success = False
+
                 if b_url and e_point:
                     try:
-                        full_url = f"{b_url.rstrip('/')}{p_fix}{e_point}"
-                        if u_type in ("attendance_two", "attendance_two_log"):
-                            status_val = "present" if u_type == "attendance_two_log" else "Present"
-                            erp_payload = {
-                                "employee_id": emp_id,
-                                "attendance_date": formatted_date,
-                                "time": time_str,
-                                "status": status_val,
-                                "source": self.camera_id
-                            }
+                        if e_point.startswith("http://") or e_point.startswith("https://"):
+                            full_url = e_point
                         else:
-                            erp_payload = {
-                                "attendanceDate": date_str,
-                                "empId": emp_id,
-                                "inTime": time_str,
-                                "inLocation": self.camera_id
-                            }
+                            ep_clean = e_point if e_point.startswith("/") else f"/{e_point}"
+                            full_url = f"{b_url.rstrip('/')}{p_fix}{ep_clean}"
+
                         h = {"Content-Type": "application/json", "accept": "*/*"}
                         if u_type == "attendance":
                             h["x-api-version"] = "2.0"
                         r = requests.post(full_url, json=erp_payload, headers=h, timeout=5.0)
                         is_success = (r.status_code in (200, 201))
-                        erp_response_str = r.text or '{"statusCode": 200, "message": "Success"}'
+                        try:
+                            erp_response_str = json.dumps(r.json())
+                        except Exception:
+                            erp_response_str = r.text or f'{{"statusCode": {r.status_code}}}'
                     except Exception as ex:
                         is_success = False
-                        erp_response_str = f'{{"error": "{str(ex)}"}}'
-
-                if is_success:
-                    write_erp_log(f"PUSH REALTIME | {f_log} | STATUS=SUCCESS | erp_response={erp_response_str}")
+                        erp_response_str = json.dumps({"error": str(ex)})
                 else:
-                    write_erp_log(f"PUSH REALTIME | {f_log} | STATUS=FAILED | erp_response={erp_response_str}")
+                    is_success = False
+                    erp_response_str = json.dumps({"error": f"Missing endpoint configuration for {u_type}"})
+
+                status_label = "SUCCESS" if is_success else "FAILED"
+                write_erp_log(
+                    f"PUSH REALTIME | type={u_type} | empId={emp_id} | name={name} | "
+                    f"request_payload={payload_json_str} | STATUS={status_label} | "
+                    f"erp_response={erp_response_str}"
+                )
 
             threading.Thread(target=_push_worker, daemon=True).start()
 
@@ -948,14 +970,20 @@ class LiteCameraStream:
             on_url = relay_on_url
             sep = "&" if "?" in on_url else "?"
             on_url = f"{on_url}{sep}employee_id={urllib.parse.quote(emp_id, safe='')}"
+            emp_name = str(name or "").strip()
+            if emp_name:
+                sep = "&" if "?" in on_url else "?"
+                on_url = f"{on_url}{sep}employee_name={urllib.parse.quote(emp_name, safe='')}"
 
             def _relay_on_worker():
+                from app.services.door_relay import write_door_log
                 try:
                     resp = urllib.request.urlopen(on_url, timeout=3.0)
                     resp.close()
-                    print(f"[RELAY] on cid={self.camera_id} url={on_url}", flush=True)
+                    write_door_log(f"[RELAY] on cid={self.camera_id} url={on_url}")
                 except Exception as ex:
-                    print(f"[RELAY] failed cid={self.camera_id} url={on_url} err={ex}", flush=True)
+                    err_str = "timed out" if ("timed out" in str(ex).lower() or "timeout" in str(ex).lower()) else str(ex)
+                    write_door_log(f"[RELAY] failed cid={self.camera_id} url={on_url} err={err_str}")
 
             threading.Thread(target=_relay_on_worker, daemon=True).start()
         except Exception:

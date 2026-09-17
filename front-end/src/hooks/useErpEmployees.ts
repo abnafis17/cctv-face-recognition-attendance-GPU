@@ -73,6 +73,73 @@ export type ErpEmployee = {
   picUrl?: string;
 };
 
+export async function fetchErpEmployeeById(empIdOrQuery: string): Promise<ErpEmployee | null> {
+  const query = String(empIdOrQuery ?? "").trim();
+  if (!query) return null;
+
+  let resolvedUrl: string | null = null;
+  try {
+    const erpSettingsRes = await axiosInstance.get<any[]>(API.SETTINGS_ERP, {
+      params: { all: true },
+    });
+    const rows = erpSettingsRes.data || [];
+    const match = rows.find((r) => {
+      const type = String(r.urlType || "").trim().toLowerCase();
+      return (
+        type === "employeelist" ||
+        type === "employees" ||
+        type === "employee" ||
+        type === "employee_info" ||
+        type === "employeeinfo" ||
+        type === "employee_list"
+      );
+    });
+    if (match) {
+      resolvedUrl = resolveConfiguredErpUrl(match);
+    }
+  } catch (err) {
+    console.warn("Failed to fetch ERP settings:", err);
+  }
+
+  if (!resolvedUrl) {
+    throw new Error("ERP employee URL not configured in Settings.");
+  }
+
+  const res = await erpAxios.post(
+    resolvedUrl,
+    {
+      pageNumber: 1,
+      pageSize: 20,
+      search: query,
+    },
+    {
+      headers: {
+        Accept: "*/*",
+        "Content-Type": "application/json",
+        "x-api-version": "2.0",
+      },
+    }
+  );
+
+  const rawList =
+    res?.data?.results ??
+    res?.data?.data ??
+    res?.data?.items ??
+    res?.data?.result ??
+    res?.data ??
+    [];
+
+  const list = Array.isArray(rawList) ? rawList : [];
+  const mapped = list.map(mapEmployee).filter(Boolean) as ErpEmployee[];
+  const queryLower = query.toLowerCase();
+  const matched = mapped.find(
+    (e) =>
+      e.employeeId.toLowerCase() === queryLower ||
+      e.employeeName.toLowerCase() === queryLower
+  );
+  return matched || mapped[0] || null;
+}
+
 type ErpEmployeeApiItem = any;
 
 function mapEmployee(item: ErpEmployeeApiItem): ErpEmployee | null {

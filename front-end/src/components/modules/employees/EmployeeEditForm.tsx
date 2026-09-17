@@ -1,16 +1,20 @@
 "use client";
 
-import React, { useMemo } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import toast from "react-hot-toast";
+import { Download, RefreshCw } from "lucide-react";
 import { Employee } from "@/types";
-import { useErpEmployees } from "@/hooks/useErpEmployees";
+import { fetchErpEmployeeById } from "@/hooks/useErpEmployees";
 import {
   deriveEmployeeHierarchy,
   normalizeHierarchyValue,
 } from "@/lib/employeeHierarchy";
+import type { EmployeeRow } from "./useEmployeeTableState";
 
 type Props = {
   selectedUser: Employee | null;
-  setSelectedUser: React.Dispatch<React.SetStateAction<Employee | null>>;
+  setSelectedUser?: React.Dispatch<React.SetStateAction<Employee | null>>;
+  allEmployees?: (Employee | EmployeeRow)[];
   loading: boolean;
   onClose: () => void;
   onSave: (payload: {
@@ -42,286 +46,420 @@ function toHierarchyWriteValue(value?: string | null): string {
   return normalized || "";
 }
 
+interface FormState {
+  empId: string;
+  name: string;
+  designation: string;
+  unit: string;
+  department: string;
+  section: string;
+  line: string;
+  deptId: string;
+  sectionId: string;
+  designationId: string;
+  unitId: string;
+  lineId: string;
+  empPicUrl: string;
+}
+
 const EmployeeEditForm: React.FC<Props> = ({
   selectedUser,
   setSelectedUser,
+  allEmployees = [],
   loading,
   onClose,
   onSave,
 }) => {
-  const targetSearch = selectedUser?.empId || "";
-  const {
-    employees: erpEmployees,
-    loading: erpLoading,
-    error: erpError,
-  } = useErpEmployees({ debounceMs: 350, initialSearch: targetSearch, autoFetch: true });
+  const [formData, setFormData] = useState<FormState>({
+    empId: selectedUser?.empId ?? "",
+    name: selectedUser?.name ?? "",
+    designation: selectedUser?.designation ?? "",
+    unit: selectedUser?.unit ?? "",
+    department: selectedUser?.department ?? "",
+    section: selectedUser?.section ?? "",
+    line: selectedUser?.line ?? "",
+    deptId: selectedUser?.deptId ?? "",
+    sectionId: selectedUser?.sectionId ?? "",
+    designationId: selectedUser?.designationId ?? "",
+    unitId: selectedUser?.unitId ?? "",
+    lineId: selectedUser?.lineId ?? "",
+    empPicUrl: selectedUser?.empPicUrl ?? "",
+  });
 
-  // When ERP search completes, if a matching employee is found, populate the fields
-  React.useEffect(() => {
-    if (erpLoading || !selectedUser?.empId) return;
-    const matched = erpEmployees.find((e) => e.employeeId === selectedUser.empId);
-    if (matched) {
-      setSelectedUser((prev) => {
-        if (!prev) return prev;
+  const [isFetchingErp, setIsFetchingErp] = useState(false);
+  const [customHierarchy, setCustomHierarchy] = useState({
+    unit: false,
+    department: false,
+    section: false,
+    line: false,
+  });
 
-        // Only update if there are differences to avoid infinite loops
-        if (
-          prev.name === matched.employeeName &&
-          prev.unit === matched.unit &&
-          prev.department === matched.department &&
-          prev.section === matched.section &&
-          prev.line === matched.line &&
-          prev.deptId === matched.deptId &&
-          prev.sectionId === matched.sectionId &&
-          prev.designationId === matched.designationId &&
-          prev.designation === matched.designation &&
-          prev.unitId === matched.unitId &&
-          prev.lineId === matched.lineId &&
-          prev.empPicUrl === matched.picUrl
-        ) {
-          return prev;
-        }
-
-        return {
-          ...prev,
-          name: matched.employeeName,
-          unit: matched.unit,
-          department: matched.department,
-          section: matched.section,
-          line: matched.line,
-          deptId: matched.deptId ?? null,
-          sectionId: matched.sectionId ?? null,
-          designationId: matched.designationId ?? null,
-          designation: matched.designation ?? null,
-          unitId: matched.unitId ?? null,
-          lineId: matched.lineId ?? null,
-          empPicUrl: matched.picUrl ?? null,
-        };
+  // Re-sync form state when selectedUser changes (e.g. editing a different employee)
+  useEffect(() => {
+    if (selectedUser) {
+      setFormData({
+        empId: selectedUser.empId ?? "",
+        name: selectedUser.name ?? "",
+        designation: selectedUser.designation ?? "",
+        unit: selectedUser.unit ?? "",
+        department: selectedUser.department ?? "",
+        section: selectedUser.section ?? "",
+        line: selectedUser.line ?? "",
+        deptId: selectedUser.deptId ?? "",
+        sectionId: selectedUser.sectionId ?? "",
+        designationId: selectedUser.designationId ?? "",
+        unitId: selectedUser.unitId ?? "",
+        lineId: selectedUser.lineId ?? "",
+        empPicUrl: selectedUser.empPicUrl ?? "",
       });
     }
-  }, [erpEmployees, erpLoading, selectedUser?.empId, setSelectedUser]);
+  }, [selectedUser?.id]);
 
+  const updateField = useCallback(
+    (field: keyof FormState, value: string) => {
+      setFormData((prev) => {
+        const next = { ...prev, [field]: value };
+        if (setSelectedUser) {
+          setSelectedUser((curr) => (curr ? { ...curr, [field]: value } : curr));
+        }
+        return next;
+      });
+    },
+    [setSelectedUser]
+  );
+
+  // Derive hierarchy options from existing organization employees
   const hierarchy = useMemo(
     () =>
-      deriveEmployeeHierarchy(erpEmployees, {
-        unit: selectedUser?.unit ?? "",
-        department: selectedUser?.department ?? "",
-        section: selectedUser?.section ?? "",
-        line: selectedUser?.line ?? "",
+      deriveEmployeeHierarchy(allEmployees, {
+        unit: formData.unit,
+        department: formData.department,
+        section: formData.section,
+        line: formData.line,
       }),
-    [
-      erpEmployees,
-      selectedUser?.department,
-      selectedUser?.line,
-      selectedUser?.section,
-      selectedUser?.unit,
-    ],
+    [allEmployees, formData.unit, formData.department, formData.section, formData.line]
   );
 
   const unitOptions = useMemo(
-    () => withCurrentOption(hierarchy.options.units, selectedUser?.unit),
-    [hierarchy.options.units, selectedUser?.unit],
+    () => withCurrentOption(hierarchy.options.units, formData.unit),
+    [hierarchy.options.units, formData.unit]
   );
   const departmentOptions = useMemo(
-    () =>
-      withCurrentOption(
-        hierarchy.options.departments,
-        selectedUser?.department,
-      ),
-    [hierarchy.options.departments, selectedUser?.department],
+    () => withCurrentOption(hierarchy.options.departments, formData.department),
+    [hierarchy.options.departments, formData.department]
   );
   const sectionOptions = useMemo(
-    () => withCurrentOption(hierarchy.options.sections, selectedUser?.section),
-    [hierarchy.options.sections, selectedUser?.section],
+    () => withCurrentOption(hierarchy.options.sections, formData.section),
+    [hierarchy.options.sections, formData.section]
   );
   const lineOptions = useMemo(
-    () => withCurrentOption(hierarchy.options.lines, selectedUser?.line),
-    [hierarchy.options.lines, selectedUser?.line],
+    () => withCurrentOption(hierarchy.options.lines, formData.line),
+    [hierarchy.options.lines, formData.line]
   );
+
+  // Explicit user-triggered ERP fetch
+  const handleFetchFromErp = async () => {
+    const query = (formData.empId || formData.name).trim();
+    if (!query) {
+      toast.error("Please enter an Employee ID to search in ERP.");
+      return;
+    }
+
+    setIsFetchingErp(true);
+    try {
+      const emp = await fetchErpEmployeeById(query);
+      if (emp) {
+        setFormData((prev) => {
+          const next: FormState = {
+            ...prev,
+            empId: emp.employeeId || prev.empId,
+            name: emp.employeeName || prev.name,
+            unit: emp.unit || prev.unit,
+            department: emp.department || prev.department,
+            section: emp.section || prev.section,
+            line: emp.line || prev.line,
+            designation: emp.designation || prev.designation,
+            deptId: emp.deptId ?? prev.deptId,
+            sectionId: emp.sectionId ?? prev.sectionId,
+            designationId: emp.designationId ?? prev.designationId,
+            unitId: emp.unitId ?? prev.unitId,
+            lineId: emp.lineId ?? prev.lineId,
+            empPicUrl: emp.picUrl ?? prev.empPicUrl,
+          };
+          if (setSelectedUser) {
+            setSelectedUser((curr) => (curr ? { ...curr, ...next } : curr));
+          }
+          return next;
+        });
+        toast.success(`Loaded ERP data for "${emp.employeeName}" (${emp.employeeId})`);
+      } else {
+        toast.error(`No ERP record found for Employee ID: ${query}`);
+      }
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to fetch employee from ERP.");
+    } finally {
+      setIsFetchingErp(false);
+    }
+  };
+
+  const handleSave = () => {
+    const trimmedName = formData.name.trim();
+    if (!trimmedName) {
+      toast.error("Employee Name is required.");
+      return;
+    }
+
+    onSave({
+      name: trimmedName,
+      empId: formData.empId.trim() || null,
+      unit: toHierarchyWriteValue(formData.unit),
+      section: toHierarchyWriteValue(formData.section),
+      department: toHierarchyWriteValue(formData.department),
+      line: toHierarchyWriteValue(formData.line),
+      deptId: toHierarchyWriteValue(formData.deptId),
+      sectionId: toHierarchyWriteValue(formData.sectionId),
+      designationId: toHierarchyWriteValue(formData.designationId),
+      designation: toHierarchyWriteValue(formData.designation),
+      unitId: toHierarchyWriteValue(formData.unitId),
+      lineId: toHierarchyWriteValue(formData.lineId),
+      empPicUrl: toHierarchyWriteValue(formData.empPicUrl),
+    });
+  };
 
   return (
     <div className="space-y-4">
+      {/* Employee ID with ERP Sync Button */}
       <div className="space-y-1">
-        <label className="text-sm font-medium">Employee ID</label>
+        <div className="flex items-center justify-between">
+          <label className="text-sm font-medium text-zinc-700">Employee ID</label>
+          <button
+            type="button"
+            onClick={handleFetchFromErp}
+            disabled={loading || isFetchingErp || !formData.empId.trim()}
+            className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-700 disabled:opacity-50 transition cursor-pointer"
+            title="Fetch latest details from ERP"
+          >
+            {isFetchingErp ? (
+              <RefreshCw className="h-3 w-3 animate-spin" />
+            ) : (
+              <Download className="h-3 w-3" />
+            )}
+            {isFetchingErp ? "Fetching ERP..." : "Autofill from ERP"}
+          </button>
+        </div>
         <input
-          className="w-full rounded border px-3 py-2 text-sm"
-          value={selectedUser?.empId ?? ""}
-          onChange={(e) =>
-            setSelectedUser((prev) =>
-              prev ? { ...prev, empId: e.target.value } : prev,
-            )
-          }
-          placeholder="Employee ID"
+          className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 disabled:bg-zinc-100"
+          value={formData.empId}
+          onChange={(e) => updateField("empId", e.target.value)}
+          placeholder="e.g. 20240501"
+          disabled={loading || isFetchingErp}
         />
       </div>
 
+      {/* Employee Name */}
       <div className="space-y-1">
-        <label className="text-sm font-medium">Name</label>
+        <label className="text-sm font-medium text-zinc-700">
+          Employee Name <span className="text-red-500">*</span>
+        </label>
         <input
-          className="w-full rounded border px-3 py-2 text-sm"
-          value={selectedUser?.name ?? ""}
-          onChange={(e) =>
-            setSelectedUser((prev) =>
-              prev ? { ...prev, name: e.target.value } : prev,
-            )
-          }
-          placeholder="Name"
+          className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 disabled:bg-zinc-100"
+          value={formData.name}
+          onChange={(e) => updateField("name", e.target.value)}
+          placeholder="Employee full name"
+          disabled={loading || isFetchingErp}
         />
       </div>
 
-      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-        <div className="text-sm font-semibold text-slate-900">Hierarchy</div>
-        <div className="mt-1 text-xs text-slate-600">
-          ERP hierarchy: Unit, Department, Section, Line.
+      {/* Designation */}
+      <div className="space-y-1">
+        <label className="text-sm font-medium text-zinc-700">Designation</label>
+        <input
+          className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 disabled:bg-zinc-100"
+          value={formData.designation}
+          onChange={(e) => updateField("designation", e.target.value)}
+          placeholder="e.g. Software Engineer, Operator"
+          disabled={loading || isFetchingErp}
+        />
+      </div>
+
+      {/* Hierarchy Panel */}
+      <div className="rounded-xl border border-zinc-200 bg-zinc-50/70 p-3.5 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="text-xs font-bold uppercase tracking-wider text-zinc-600">
+            Hierarchy Attributes
+          </div>
+          <span className="text-[11px] text-zinc-500">Unit &bull; Department &bull; Section &bull; Line</span>
         </div>
 
-        {erpError ? (
-          <div className="mt-2 text-xs text-red-600">{erpError}</div>
-        ) : null}
-
-        <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-          {hierarchy.availability.hasUnit ? (
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Unit</label>
-              <select
-                className="w-full rounded border bg-white px-3 py-2 text-sm"
-                value={selectedUser?.unit ?? ""}
-                onChange={(e) =>
-                  setSelectedUser((prev) =>
-                    prev
-                      ? {
-                          ...prev,
-                          unit: e.target.value,
-                        }
-                      : prev,
-                  )
-                }
-                disabled={loading || erpLoading}
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          {/* Unit */}
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-zinc-700">Unit</label>
+              <button
+                type="button"
+                className="text-[11px] text-indigo-600 hover:underline cursor-pointer"
+                onClick={() => setCustomHierarchy((prev) => ({ ...prev, unit: !prev.unit }))}
               >
-                <option value="">N/A</option>
+                {customHierarchy.unit ? "Choose list" : "+ Custom"}
+              </button>
+            </div>
+            {customHierarchy.unit ? (
+              <input
+                className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                value={formData.unit}
+                onChange={(e) => updateField("unit", e.target.value)}
+                placeholder="Type custom unit"
+                disabled={loading || isFetchingErp}
+              />
+            ) : (
+              <select
+                className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 disabled:bg-zinc-100"
+                value={formData.unit}
+                onChange={(e) => updateField("unit", e.target.value)}
+                disabled={loading || isFetchingErp}
+              >
+                <option value="">N/A (None)</option>
                 {unitOptions.map((v) => (
                   <option key={v} value={v}>
                     {v}
                   </option>
                 ))}
               </select>
-            </div>
-          ) : null}
+            )}
+          </div>
 
-          {hierarchy.availability.hasDepartment ? (
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Department</label>
-              <select
-                className="w-full rounded border bg-white px-3 py-2 text-sm"
-                value={selectedUser?.department ?? ""}
-                onChange={(e) =>
-                  setSelectedUser((prev) =>
-                    prev
-                      ? {
-                          ...prev,
-                          department: e.target.value,
-                        }
-                      : prev,
-                  )
-                }
-                disabled={loading || erpLoading}
+          {/* Department */}
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-zinc-700">Department</label>
+              <button
+                type="button"
+                className="text-[11px] text-indigo-600 hover:underline cursor-pointer"
+                onClick={() => setCustomHierarchy((prev) => ({ ...prev, department: !prev.department }))}
               >
-                <option value="">N/A</option>
+                {customHierarchy.department ? "Choose list" : "+ Custom"}
+              </button>
+            </div>
+            {customHierarchy.department ? (
+              <input
+                className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                value={formData.department}
+                onChange={(e) => updateField("department", e.target.value)}
+                placeholder="Type custom department"
+                disabled={loading || isFetchingErp}
+              />
+            ) : (
+              <select
+                className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 disabled:bg-zinc-100"
+                value={formData.department}
+                onChange={(e) => updateField("department", e.target.value)}
+                disabled={loading || isFetchingErp}
+              >
+                <option value="">N/A (None)</option>
                 {departmentOptions.map((v) => (
                   <option key={v} value={v}>
                     {v}
                   </option>
                 ))}
               </select>
-            </div>
-          ) : null}
+            )}
+          </div>
 
-          {hierarchy.availability.hasSection ? (
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Section</label>
-              <select
-                className="w-full rounded border bg-white px-3 py-2 text-sm"
-                value={selectedUser?.section ?? ""}
-                onChange={(e) =>
-                  setSelectedUser((prev) =>
-                    prev
-                      ? {
-                          ...prev,
-                          section: e.target.value,
-                        }
-                      : prev,
-                  )
-                }
-                disabled={loading || erpLoading}
+          {/* Section */}
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-zinc-700">Section</label>
+              <button
+                type="button"
+                className="text-[11px] text-indigo-600 hover:underline cursor-pointer"
+                onClick={() => setCustomHierarchy((prev) => ({ ...prev, section: !prev.section }))}
               >
-                <option value="">N/A</option>
+                {customHierarchy.section ? "Choose list" : "+ Custom"}
+              </button>
+            </div>
+            {customHierarchy.section ? (
+              <input
+                className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                value={formData.section}
+                onChange={(e) => updateField("section", e.target.value)}
+                placeholder="Type custom section"
+                disabled={loading || isFetchingErp}
+              />
+            ) : (
+              <select
+                className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 disabled:bg-zinc-100"
+                value={formData.section}
+                onChange={(e) => updateField("section", e.target.value)}
+                disabled={loading || isFetchingErp}
+              >
+                <option value="">N/A (None)</option>
                 {sectionOptions.map((v) => (
                   <option key={v} value={v}>
                     {v}
                   </option>
                 ))}
               </select>
-            </div>
-          ) : null}
+            )}
+          </div>
 
-          {hierarchy.availability.hasLine ? (
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Line</label>
-              <select
-                className="w-full rounded border bg-white px-3 py-2 text-sm"
-                value={selectedUser?.line ?? ""}
-                onChange={(e) =>
-                  setSelectedUser((prev) =>
-                    prev ? { ...prev, line: e.target.value } : prev,
-                  )
-                }
-                disabled={loading || erpLoading}
+          {/* Line */}
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-zinc-700">Line</label>
+              <button
+                type="button"
+                className="text-[11px] text-indigo-600 hover:underline cursor-pointer"
+                onClick={() => setCustomHierarchy((prev) => ({ ...prev, line: !prev.line }))}
               >
-                <option value="">N/A</option>
+                {customHierarchy.line ? "Choose list" : "+ Custom"}
+              </button>
+            </div>
+            {customHierarchy.line ? (
+              <input
+                className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                value={formData.line}
+                onChange={(e) => updateField("line", e.target.value)}
+                placeholder="Type custom line"
+                disabled={loading || isFetchingErp}
+              />
+            ) : (
+              <select
+                className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 disabled:bg-zinc-100"
+                value={formData.line}
+                onChange={(e) => updateField("line", e.target.value)}
+                disabled={loading || isFetchingErp}
+              >
+                <option value="">N/A (None)</option>
                 {lineOptions.map((v) => (
                   <option key={v} value={v}>
                     {v}
                   </option>
                 ))}
               </select>
-            </div>
-          ) : null}
+            )}
+          </div>
         </div>
       </div>
 
-      <div className="flex justify-end gap-2 pt-2">
+      {/* Action Buttons */}
+      <div className="flex justify-end gap-2 pt-3 border-t border-zinc-100">
         <button
-          className="rounded border px-4 py-2 text-sm"
+          className="rounded-lg border border-zinc-200 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 transition cursor-pointer"
           onClick={onClose}
           type="button"
-          disabled={loading}
+          disabled={loading || isFetchingErp}
         >
           Cancel
         </button>
 
         <button
-          className="rounded bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-60"
+          className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-medium text-white shadow-xs hover:bg-indigo-700 disabled:opacity-50 transition cursor-pointer"
           type="button"
-          disabled={loading || !selectedUser}
-          onClick={() =>
-            onSave({
-              name: selectedUser?.name,
-              empId: selectedUser?.empId ?? null,
-              unit: toHierarchyWriteValue(selectedUser?.unit),
-              section: toHierarchyWriteValue(selectedUser?.section),
-              department: toHierarchyWriteValue(selectedUser?.department),
-              line: toHierarchyWriteValue(selectedUser?.line),
-              deptId: toHierarchyWriteValue(selectedUser?.deptId),
-              sectionId: toHierarchyWriteValue(selectedUser?.sectionId),
-              designationId: toHierarchyWriteValue(selectedUser?.designationId),
-              designation: toHierarchyWriteValue(selectedUser?.designation),
-              unitId: toHierarchyWriteValue(selectedUser?.unitId),
-              lineId: toHierarchyWriteValue(selectedUser?.lineId),
-              empPicUrl: toHierarchyWriteValue(selectedUser?.empPicUrl),
-            })
-          }
+          disabled={loading || isFetchingErp || !formData.name.trim()}
+          onClick={handleSave}
         >
-          {loading ? "Saving..." : "Save"}
+          {loading ? "Saving..." : "Save Changes"}
         </button>
       </div>
     </div>
@@ -329,3 +467,4 @@ const EmployeeEditForm: React.FC<Props> = ({
 };
 
 export default EmployeeEditForm;
+
