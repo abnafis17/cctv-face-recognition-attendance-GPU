@@ -19,6 +19,8 @@ import threading
 import requests
 import urllib.parse
 import urllib.request
+import json
+from datetime import datetime
 import numpy as np
 from typing import Optional, List, Dict
 
@@ -729,24 +731,30 @@ class LiteCameraStream:
             if not emp_pic_url:
                 emp_pic_url = f"{emp_id}.jpg"
 
-            # Door Silent Unlock URL matching main branch
+            # Door Silent Unlock URL - send POST with JSON body payload without query parameters
             silent_url = relay_silent_url
-            sep = "&" if "?" in silent_url else "?"
-            silent_url = f"{silent_url}{sep}employee_id={urllib.parse.quote(emp_id, safe='')}"
-            emp_name = str(name or "").strip()
-            if emp_name:
-                sep = "&" if "?" in silent_url else "?"
-                silent_url = f"{silent_url}{sep}employee_name={urllib.parse.quote(emp_name, safe='')}"
-            if emp_pic_url:
-                sep = "&" if "?" in silent_url else "?"
-                silent_url = f"{silent_url}{sep}empPicUrl={urllib.parse.quote(emp_pic_url, safe='')}"
 
-            # Execute Door Silent Unlock HTTP GET
+            now_dt = datetime.now()
+            time_str = now_dt.strftime("%H:%M:%S")
+            date_str = now_dt.strftime("%d-%m-%Y")
+
+            payload = {
+                "employee_id": str(emp_id or "").strip(),
+                "employee_name": str(name or "").strip(),
+                "time": time_str,
+                "date": date_str,
+            }
+
+            # Execute Door Silent Unlock HTTP POST with JSON body payload
             try:
                 door_timeout = float(os.getenv("DOOR_HTTP_TIMEOUT_S", "1.2"))
-                resp = urllib.request.urlopen(silent_url, timeout=door_timeout)
-                resp.close()
-                write_door_log(f"[DOOR] unlock fired cid={self.camera_id} emp={emp_id} url={silent_url} name={name} sim={score:.3f}")
+                resp = requests.post(silent_url, json=payload, headers={"Content-Type": "application/json"}, timeout=door_timeout)
+                resp_text = resp.text.strip() if resp.text else ""
+                write_door_log(
+                    f"[DOOR] unlock fired cid={self.camera_id} emp={emp_id} url={silent_url} "
+                    f"payload={json.dumps(payload)} status={resp.status_code} resp={resp_text} "
+                    f"name={name} sim={score:.3f}"
+                )
             except Exception as e:
                 err_str = "timed out" if ("timed out" in str(e).lower() or "timeout" in str(e).lower()) else str(e)
                 write_door_log(f"[DOOR] failed cid={self.camera_id} emp={emp_id} url={silent_url} err={err_str}")
@@ -914,6 +922,7 @@ class LiteCameraStream:
             ("attendance", "ERP 1"),
             ("attendance_two", "ERP 2"),
             ("attendance_two_log", "ERP 3"),
+            ("attendance_live", "ERP Live"),
         ]
 
         # Deduplicate terminal log output per employee recognition (print ONCE per recognition)
@@ -931,8 +940,8 @@ class LiteCameraStream:
 
             if q_type == "attendance_two":
                 file_payload_log = f"type=attendance_two | employee_id={emp_id} | name={name} | attendance_date={formatted_date} | time={time_str} | status=Present | source={self.camera_id}"
-            elif q_type == "attendance_two_log":
-                file_payload_log = f"type=attendance_two_log | employee_id={emp_id} | name={name} | attendance_date={formatted_date} | time={time_str} | status=present | source={self.camera_id}"
+            elif q_type in ("attendance_two_log", "attendance_live"):
+                file_payload_log = f"type={q_type} | employee_id={emp_id} | name={name} | attendance_date={formatted_date} | time={time_str} | status=present | source={self.camera_id}"
             else:
                 file_payload_log = f"type=attendance | empId={emp_id} | name={name} | attendanceDate={date_str} | inTime={time_str} | inLocation={self.camera_id}"
 
@@ -947,9 +956,15 @@ class LiteCameraStream:
                 
                 if b_url and e_point:
                     try:
+                        if "pakizaknit.pakizasoftware.com" in str(b_url):
+                            b_url = "http://pakizaknit.pakizasoftware.com:9070"
                         full_url = f"{b_url.rstrip('/')}{p_fix}{e_point}"
-                        if u_type in ("attendance_two", "attendance_two_log"):
-                            status_val = "present" if u_type == "attendance_two_log" else "Present"
+                        if "pakizaknit.pakizasoftware.com" in full_url:
+                            full_url = full_url.replace("https://", "http://")
+                            if ":9070" not in full_url:
+                                full_url = full_url.replace("pakizaknit.pakizasoftware.com", "pakizaknit.pakizasoftware.com:9070")
+                        if u_type in ("attendance_two", "attendance_two_log", "attendance_live"):
+                            status_val = "present" if u_type in ("attendance_two_log", "attendance_live") else "Present"
                             erp_payload = {
                                 "employee_id": emp_id,
                                 "attendance_date": formatted_date,
@@ -980,6 +995,8 @@ class LiteCameraStream:
                         print(f"[{tag}] queued ok=True emp={emp_id} name={name} date={date_str} in={time_str}", flush=True)
                     write_erp_log(f"PUSH REALTIME | {f_log} | STATUS=SUCCESS | erp_response={erp_response_str}")
                 else:
+                    if should_print:
+                        print(f"[{tag}] queued ok=False (FAILED) emp={emp_id} name={name} date={date_str} in={time_str} err={erp_response_str}", flush=True)
                     write_erp_log(f"PUSH REALTIME | {f_log} | STATUS=FAILED | erp_response={erp_response_str}")
 
             threading.Thread(target=_push_worker, daemon=True).start()

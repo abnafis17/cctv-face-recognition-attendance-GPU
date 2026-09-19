@@ -19,6 +19,7 @@ import masterDataRoutes from "./masterData/router";
 import headcountRoutes from "./headcount/router";
 import presenceControl from "./presence/router";
 import erpManualAttendanceRoutes from "./erp_manual_attendance/router";
+import attendanceLiveManualAttendanceRoutes from "./attendance_live_manual_attendance/router";
 
 import { updateGatepassErpStatus } from "./gatepass/controller";
 
@@ -40,6 +41,7 @@ router.use("/attendance", requireCompany, attendanceRoutes);
 router.use("/headcount", requireCompany, headcountRoutes);
 router.use("/stats", requireCompany, statsRoutes);
 router.use("/erp-manual-attendance", requireCompany, erpManualAttendanceRoutes);
+router.use("/attendance-live-manual-attendance", requireCompany, attendanceLiveManualAttendanceRoutes);
 
 // cameras
 router.use("/cameras", requireCompany, camerasRoutes);

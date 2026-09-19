@@ -192,25 +192,31 @@ class DoorRelayService:
         if not url:
             return
 
-        if emp_id:
-            sep = "&" if "?" in url else "?"
-            url = f"{url}{sep}employee_id={urllib.parse.quote(emp_id, safe='')}"
-            emp_name = str(name or "").strip()
-            if emp_name:
-                sep = "&" if "?" in url else "?"
-                url = f"{url}{sep}employee_name={urllib.parse.quote(emp_name, safe='')}"
-            emp_pic_url = self.company_cache.get_employee_pic_url(company_id, emp_id)
-            if emp_pic_url:
-                sep = "&" if "?" in url else "?"
-                url = f"{url}{sep}empPicUrl={urllib.parse.quote(emp_pic_url, safe='')}"
+        now_dt = datetime.now()
+        time_str = now_dt.strftime("%H:%M:%S")
+        date_str = now_dt.strftime("%d-%m-%Y")
+
+        emp_pic_url = self.company_cache.get_employee_pic_url(company_id, emp_id)
+        if not emp_pic_url:
+            emp_pic_url = f"{emp_id}.jpg"
+
+        payload = {
+            "employee_id": str(emp_id or "").strip(),
+            "employee_name": str(name or "").strip(),
+            "time": time_str,
+            "date": date_str,
+        }
 
         def _do() -> None:
+            import json
+            import requests
             try:
                 door_timeout = float(os.getenv("DOOR_HTTP_TIMEOUT_S", "3.0"))
-                resp = urllib.request.urlopen(url, timeout=door_timeout)
-                resp.close()
+                resp = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=door_timeout)
+                resp_text = resp.text.strip() if resp.text else ""
                 write_door_log(
                     f"[DOOR] unlock fired cid={camera_id} emp={emp_id} url={url} "
+                    f"payload={json.dumps(payload)} status={resp.status_code} resp={resp_text} "
                     f"name={name} sim={similarity:.3f}"
                 )
             except Exception as e:
