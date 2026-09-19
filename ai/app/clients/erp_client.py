@@ -32,12 +32,15 @@ class ERPClient:
             "accept": "*/*",
             "Content-Type": "application/json",
         }
-        if cfg.url_type not in ("attendance_two", "attendance_two_log"):
+        if cfg.url_type not in ("attendance_two", "attendance_two_log", "attendance_live"):
             default_headers["x-api-version"] = cfg.api_version
 
         self.url_type = cfg.url_type
+        base_url = cfg.base_url
+        if "pakizaknit.pakizasoftware.com" in str(base_url):
+            base_url = "http://pakizaknit.pakizasoftware.com:9070"
         self.http = HttpClient(
-            base_url=cfg.base_url,
+            base_url=base_url,
             prefix=cfg.prefix,
             timeout_s=cfg.timeout_s,
             default_headers=default_headers,
@@ -50,14 +53,14 @@ class ERPClient:
     def manual_attendance(
         self, attendance_date: str, emp_id: str, in_time: str, in_location: str
     ) -> Any:
-        if self.url_type in ("attendance_two", "attendance_two_log"):
+        if self.url_type in ("attendance_two", "attendance_two_log", "attendance_live"):
             try:
                 parts = attendance_date.split("/")
                 formatted_date = f"{parts[2]}-{parts[1]}-{parts[0]}"
             except Exception:
                 formatted_date = attendance_date
 
-            status_val = "present" if self.url_type == "attendance_two_log" else "Present"
+            status_val = "present" if self.url_type in ("attendance_two_log", "attendance_live") else "Present"
             payload: Dict[str, Any] = {
                 "employee_id": emp_id,
                 "attendance_date": formatted_date,

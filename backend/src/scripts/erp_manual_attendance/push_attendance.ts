@@ -2,15 +2,30 @@ import axios from "axios";
 import { prisma, disconnectPrisma } from "../../prisma";
 
 /**
- * Script to re-push DB Attendance records to ERP API within a given date range.
- * Defaults: From '07/09/2026' (07 Sep 2026 00:00:00) to current time.
+ * Unified script to re-push DB Attendance records to ERP APIs within a given date range.
+ * Supported URL Types: "attendance_live" | "attendance_two_log" | "attendance_two" | "attendance"
  */
 
 // Filter & Endpoint Configuration (Edit hardcoded values here)
-const START_DATE = "2026-09-07T00:00:00.000Z";
+export type ErpUrlType = "attendance_live" | "attendance_two_log" | "attendance_two" | "attendance";
+
+const START_DATE = "2026-09-01T00:00:00.000Z";
 const END_DATE = ""; // Leave empty to query up to current time (e.g. "2026-09-14T23:59:59.000Z")
-const COMPANY_ID = "cmth4dzas0002jx5hhmvnveag";
-const ERP_URL = "http://172.20.60.101:7001/api/v2/Attendance/manual-attendance";
+const COMPANY_ID = "cmk9dp01a0000vpskicoq1gj0";
+
+// Active ERP URL Type to use by default when running via CLI
+const DEFAULT_URL_TYPE: ErpUrlType = "attendance_live";
+
+// Optional direct URL override (leave empty to resolve dynamically from DB or defaults)
+const OVERRIDE_ERP_URL = "";
+
+// Default Fallback ERP URLs
+const DEFAULT_ERP_URLS: Record<ErpUrlType, string> = {
+  attendance_live: "http://pakizaknit.pakizasoftware.com:9070/api/v1/hrm/attendance/attendance-log/create",
+  attendance_two_log: "http://172.16.61.229:9070/api/v1/attendance/attendance-log/create",
+  attendance_two: "http://10.81.100.38:8111/api/v1/attendance/log/create",
+  attendance: "http://172.20.60.101:7001/api/v2/Attendance/manual-attendance",
+};
 
 // Format Date as DD/MM/YYYY (Asia/Dhaka time zone)
 function toDDMMYYYY(d: Date): string {
@@ -25,6 +40,21 @@ function toDDMMYYYY(d: Date): string {
   const mm = parts.find((p) => p.type === "month")?.value ?? "01";
   const yyyy = parts.find((p) => p.type === "year")?.value ?? "2026";
   return `${dd}/${mm}/${yyyy}`;
+}
+
+// Format Date as YYYY-MM-DD (Asia/Dhaka time zone)
+function toYYYYMMDD(d: Date): string {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Dhaka",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(d);
+
+  const yyyy = parts.find((p) => p.type === "year")?.value ?? "2026";
+  const mm = parts.find((p) => p.type === "month")?.value ?? "01";
+  const dd = parts.find((p) => p.type === "day")?.value ?? "01";
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 // Format Time as HH:MM:SS (Asia/Dhaka time zone)
@@ -48,18 +78,61 @@ export async function runErpManualAttendanceSync(params?: {
   endDate?: string;
   companyId?: string;
   erpUrl?: string;
+  urlType?: ErpUrlType | string;
 }) {
   const startTime = new Date(params?.startDate || START_DATE);
-  const endTime = params?.endDate
-    ? new Date(params.endDate)
-    : END_DATE
-      ? new Date(END_DATE)
-      : new Date();
+  const endTime = params?.endDate ? new Date(params.endDate) : (END_DATE ? new Date(END_DATE) : new Date());
   const companyId = params?.companyId || COMPANY_ID;
-  const targetErpUrl = params?.erpUrl || ERP_URL;
+  const urlType = (params?.urlType || DEFAULT_URL_TYPE) as ErpUrlType;
+
+  let targetErpUrl = params?.erpUrl || OVERRIDE_ERP_URL;
+
+  // Dynamically query DB setting if URL is not explicitly passed
+  if (!targetErpUrl && companyId) {
+    try {
+      const erpSetting = await prisma.companyErpSetting.findUnique({
+        where: {
+          companyId_urlType: {
+            companyId,
+            urlType,
+          },
+        },
+      });
+
+      if (erpSetting && erpSetting.isActive && erpSetting.erpBaseUrl) {
+        let baseUrl = erpSetting.erpBaseUrl.replace(/\/+$/, "");
+        if (baseUrl.includes("pakizaknit.pakizasoftware.com")) {
+          baseUrl = "http://pakizaknit.pakizasoftware.com:9070";
+        }
+        const prefix = (erpSetting.erpPrefix || "").startsWith("/")
+          ? erpSetting.erpPrefix
+          : `/${erpSetting.erpPrefix || ""}`;
+        const endpoint = (erpSetting.erpAttendanceEndpoint || "").startsWith("/")
+          ? erpSetting.erpAttendanceEndpoint
+          : `/${erpSetting.erpAttendanceEndpoint || ""}`;
+
+        targetErpUrl = `${baseUrl}${prefix}${endpoint}`;
+      }
+    } catch (e) {
+      console.warn(`[ERP MANUAL ATTENDANCE] Failed to load erpSetting from DB for urlType=${urlType}:`, e);
+    }
+  }
+
+  if (!targetErpUrl) {
+    targetErpUrl = DEFAULT_ERP_URLS[urlType] || DEFAULT_ERP_URLS.attendance_live;
+  }
+
+  // Safety override for pakizaknit domain: force HTTP + port 9070
+  if (targetErpUrl.includes("pakizaknit.pakizasoftware.com")) {
+    targetErpUrl = targetErpUrl
+      .replace(/^https:\/\//i, "http://")
+      .replace("pakizaknit.pakizasoftware.com:9070", "pakizaknit.pakizasoftware.com")
+      .replace("pakizaknit.pakizasoftware.com", "pakizaknit.pakizasoftware.com:9070");
+  }
 
   console.log("==========================================================================");
-  console.log(" [ERP MANUAL ATTENDANCE RE-PUSH SCRIPT]");
+  console.log(" [UNIFIED ERP MANUAL ATTENDANCE RE-PUSH SCRIPT]");
+  console.log(` URL Type          : ${urlType}`);
   console.log(` Date Range Filter : From ${startTime.toISOString()} to ${endTime.toISOString()}`);
   console.log(` Company ID Filter : ${companyId}`);
   console.log(` Target ERP URL    : ${targetErpUrl}`);
@@ -104,21 +177,30 @@ export async function runErpManualAttendanceSync(params?: {
       continue;
     }
 
-    const attendanceDate = toDDMMYYYY(rec.timestamp);
     const inTime = toHHMMSS(rec.timestamp);
-    const inLocation = rec.camera?.name || rec.camera?.camId || rec.cameraId || "Reception_Camera";
+    const source = rec.camera?.name || rec.camera?.camId || rec.cameraId || "Reception_Camera";
 
-    const payload = {
-      attendanceDate,
-      empId: empCode,
-      inTime,
-      inLocation,
-    };
+    let payload: any;
+    if (urlType === "attendance") {
+      payload = {
+        attendanceDate: toDDMMYYYY(rec.timestamp),
+        empId: empCode,
+        inTime,
+        inLocation: source,
+      };
+    } else {
+      const status = urlType === "attendance_two" ? "Present" : "present";
+      payload = {
+        employee_id: empCode,
+        attendance_date: toYYYYMMDD(rec.timestamp),
+        time: inTime,
+        status,
+        source,
+      };
+    }
 
     try {
-      console.log(
-        `\n[${i + 1}/${records.length}] Pushing ERP Payload for Emp: ${rec.employee.name} (${empCode}) ...`
-      );
+      console.log(`\n[${i + 1}/${records.length}] Pushing ERP [${urlType}] for Emp: ${rec.employee.name} (${empCode}) ...`);
       console.log(` Payload:`, JSON.stringify(payload));
 
       const res = await axios.post(targetErpUrl, payload, {
@@ -137,9 +219,7 @@ export async function runErpManualAttendanceSync(params?: {
         failCount++;
       }
     } catch (err: any) {
-      const errMsg = err.response
-        ? `HTTP ${err.response.status}: ${JSON.stringify(err.response.data)}`
-        : err.message;
+      const errMsg = err.response ? `HTTP ${err.response.status}: ${JSON.stringify(err.response.data)}` : err.message;
       console.error(` [FAILED] Error pushing to ERP (${targetErpUrl}): ${errMsg}`);
       failCount++;
     }
@@ -147,6 +227,7 @@ export async function runErpManualAttendanceSync(params?: {
 
   console.log("\n==========================================================================");
   console.log(" [SYNC COMPLETE SUMMARY]");
+  console.log(` URL Type    : ${urlType}`);
   console.log(` Total Found : ${records.length}`);
   console.log(` Pushed OK   : ${successCount}`);
   console.log(` Failed      : ${failCount}`);
@@ -154,7 +235,7 @@ export async function runErpManualAttendanceSync(params?: {
   console.log("==========================================================================");
 }
 
-// Execute directly if run via CLI: `ts-node src/scripts/erp_manual_attendance/push_attendance.ts`
+// Execute directly if run via CLI: `npm run sync:erp` or `ts-node src/scripts/erp_manual_attendance/push_attendance.ts`
 if (require.main === module) {
   runErpManualAttendanceSync()
     .then(async () => {

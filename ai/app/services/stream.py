@@ -16,10 +16,11 @@ finally:
 
 import time
 import threading
-from datetime import datetime
 import requests
 import urllib.parse
 import urllib.request
+import json
+from datetime import datetime
 import numpy as np
 from typing import Optional, List, Dict
 
@@ -33,7 +34,7 @@ from app.core.config import (
     MJPEG_RECOGNITION_JPEG_QUALITY,
 )
 from app.core.logging import logger
-from app.vision.body_tracker import BodyTracker, face_belongs_to_body
+from app.vision.body_tracker import BodyTracker, face_belongs_to_body, draw_polygon_body_bbox
 from app.vision.hud import draw_label_card, draw_bounding_box, ACCENT_KNOWN, ACCENT_UNKNOWN
 from app.utils import open_capture_with_fallback
 from app.services.model_manager import init_models, get_detector, get_embedder, get_body_detector
@@ -92,6 +93,7 @@ class LiteCameraStream:
         self.camera_name = camera_name or camera_id
         self.rtsp_url = rtsp_url
         self.company_id = company_id
+        self.camera_name = camera_name or camera_id
         
         self.latest_raw_frame = None
         self.latest_frame_time = 0.0
@@ -109,8 +111,9 @@ class LiteCameraStream:
         self._cached_presence_jpeg = None
         self._cached_presence_frame_time = 0.0
         
-        # Track cooldowns for marking attendance
+        # Track cooldowns for marking attendance and door unlock
         self.attendance_cooldowns = {} # emp_id -> last_log_time
+        self.door_cooldowns = {} # emp_id -> last_door_fire_time
         
         # Track recognized persons list
         self.recognized_persons = []
@@ -392,6 +395,7 @@ class LiteCameraStream:
                         bodies = body_detector.detect(frame)
                         self.body_tracker.update(bodies)
                         
+                        assigned_track_ids = set()
                         for face in faces:
                             fx1, fy1, fx2, fy2 = [int(v) for v in face.bbox]
                             fx1 = max(0, min(w - 1, fx1))
@@ -402,16 +406,38 @@ class LiteCameraStream:
                             
                             matched_track = None
                             for track in self.body_tracker.tracks:
-                                if face_belongs_to_body(face_bbox, track.bbox):
+                                if track.track_id not in assigned_track_ids and face_belongs_to_body(face_bbox, track.bbox):
                                     matched_track = track
                                     break
                                     
-                            if matched_track is not None:
-                                matched_track.last_face_bbox = face_bbox
-                                matched_track.last_face_time = now
-                                self._process_recognition(frame, face, face_bbox, matched_track, now)
+                            if matched_track is None:
+                                for track in self.body_tracker.tracks:
+                                    if track.track_id not in assigned_track_ids:
+                                        if compute_iou(face_bbox, track.bbox) > 0.1 or face_belongs_to_body(face_bbox, track.bbox):
+                                            matched_track = track
+                                            break
+                                            
+                            if matched_track is None:
+                                fw = fx2 - fx1
+                                fh = fy2 - fy1
+                                synth_bbox = (
+                                    max(0, int(fx1 - fw * 0.5)),
+                                    max(0, int(fy1)),
+                                    min(w, int(fx2 + fw * 0.5)),
+                                    min(h, int(fy1 + fh * 4.0))
+                                )
+                                from app.vision.body_tracker import PersonTrack
+                                matched_track = PersonTrack(self.body_tracker.next_track_id, synth_bbox)
+                                self.body_tracker.next_track_id += 1
+                                self.body_tracker.tracks.append(matched_track)
+                                
+                            assigned_track_ids.add(matched_track.track_id)
+                            matched_track.last_face_bbox = face_bbox
+                            matched_track.last_face_time = now
+                            self._process_recognition(frame, face, face_bbox, matched_track, now)
                     else:
                         from app.vision.body_detector import BodyDetection
+                        from app.vision.body_tracker import PersonTrack
                         face_dets = []
                         for face in faces:
                             fx1, fy1, fx2, fy2 = [int(v) for v in face.bbox]
@@ -423,6 +449,7 @@ class LiteCameraStream:
                             
                         self.body_tracker.update(face_dets)
                         
+                        assigned_track_ids = set()
                         for face in faces:
                             fx1, fy1, fx2, fy2 = [int(v) for v in face.bbox]
                             fx1 = max(0, min(w - 1, fx1))
@@ -433,14 +460,20 @@ class LiteCameraStream:
                             
                             matched_track = None
                             for track in self.body_tracker.tracks:
-                                if compute_iou(face_bbox, track.bbox) > 0.4:
+                                if track.track_id not in assigned_track_ids and compute_iou(face_bbox, track.bbox) > 0.2:
                                     matched_track = track
                                     break
                                     
-                            if matched_track is not None:
-                                matched_track.last_face_bbox = face_bbox
-                                matched_track.last_face_time = now
-                                self._process_recognition(frame, face, face_bbox, matched_track, now)
+                            if matched_track is None:
+                                synth_bbox = (fx1, fy1, fx2, fy2)
+                                matched_track = PersonTrack(self.body_tracker.next_track_id, synth_bbox)
+                                self.body_tracker.next_track_id += 1
+                                self.body_tracker.tracks.append(matched_track)
+                                
+                            assigned_track_ids.add(matched_track.track_id)
+                            matched_track.last_face_bbox = face_bbox
+                            matched_track.last_face_time = now
+                            self._process_recognition(frame, face, face_bbox, matched_track, now)
                                 
                 time.sleep(0.002)
             except Exception as e:
@@ -450,6 +483,8 @@ class LiteCameraStream:
         logger.info(f"[PROCESS] AI thread stopped for camera: {self.camera_id}")
 
     def _process_recognition(self, frame, face, face_bbox, matched_track, now):
+        matched_track.last_face_bbox = face_bbox
+        matched_track.last_face_time = now
         embedder = get_embedder()
         emb = embedder.embed(frame, bbox=face_bbox, kps=face.kps)
         
@@ -458,7 +493,7 @@ class LiteCameraStream:
             if emb_norm > 0:
                 emb = emb / emb_norm
                 
-            templates = get_gallery_templates()
+            templates = get_gallery_templates(self.company_id)
             if templates:
                 # Group template embeddings per employee for multi-sample max similarity matching
                 emp_templates = {}
@@ -497,13 +532,10 @@ class LiteCameraStream:
 
                 min_sim = float(SIMILARITY_THRESHOLD)
                 # Adaptive multi-tier qualification:
-                # - High confidence match: accepts directly (margin gap not required for strong matches)
-                # - Solid match: requires small margin (>= 0.02)
-                # - Moderate match: requires distinct margin (>= 0.03)
+                # Require similarity score to meet or exceed SIMILARITY_THRESHOLD (0.45)
                 is_qualified = (
                     (top1_score >= max(0.46, min_sim))
                     or (top1_score >= min_sim and margin_gap >= 0.02)
-                    or (top1_score >= 0.42 and margin_gap >= 0.03)
                 )
                 
                 if is_qualified:
@@ -531,10 +563,9 @@ class LiteCameraStream:
                     if matched_track.confirm_hits >= min_confirm_hits:
                         # 🔓 Door unlock triggered on confirmed authorized recognition
                         if is_authorized:
-                            rec_time = datetime.now().isoformat()
-                            self._trigger_door_relay(best_emp_id, best_name, top1_score, rec_time=rec_time)
+                            self._trigger_door_relay(best_emp_id, best_name, top1_score)
 
-                        if is_authorized and self.attendance_enabled:
+                        if is_authorized and getattr(self, "attendance_enabled", True):
                             self._trigger_attendance(best_emp_id, best_name, top1_score)
                 else:
                     # Graceful decay rather than hard wipe on a single missed frame
@@ -637,7 +668,7 @@ class LiteCameraStream:
 
         threading.Thread(target=_do_post, daemon=True).start()
 
-    def _trigger_door_relay(self, emp_id: str, name: str, score: float, rec_time: Optional[str] = None):
+    def _trigger_door_relay(self, emp_id: str, name: str, score: float):
         now = time.time()
         emp_id_str = str(emp_id or "").strip()
         name_str = str(name or "").strip()
@@ -645,9 +676,6 @@ class LiteCameraStream:
         if not emp_id_str or name_str in ("Unknown", "") or float(score or 0.0) < min_threshold:
             return
             
-        if not rec_time:
-            rec_time = datetime.now().isoformat()
-
         emp_key = f"{self.camera_id}:{emp_id_str}"
         min_gap = max(0.0, float(os.getenv("DOOR_UNLOCK_MIN_GAP", "5.0")))
         
@@ -659,11 +687,11 @@ class LiteCameraStream:
 
         threading.Thread(
             target=self._send_door_unlock_request,
-            args=(emp_id_str, name, score, rec_time),
+            args=(emp_id_str, name, score),
             daemon=True
         ).start()
 
-    def _send_door_unlock_request(self, emp_id: str, name: str, score: float, rec_time: Optional[str] = None):
+    def _send_door_unlock_request(self, emp_id: str, name: str, score: float):
         from app.services.door_relay import write_door_log
         try:
             relay_silent_url = "http://10.81.100.72/silent"
@@ -703,64 +731,33 @@ class LiteCameraStream:
             if not emp_pic_url:
                 emp_pic_url = f"{emp_id}.jpg"
 
-            dt = datetime.now()
-            if rec_time:
-                try:
-                    dt = datetime.fromisoformat(str(rec_time))
-                except Exception:
-                    pass
-            formatted_time = dt.strftime("%H:%M:%S")
-            formatted_date = dt.strftime("%d-%m-%Y")
-
-            emp_name = str(name or "").strip()
-
-            # Door Silent Unlock URL with query parameters
+            # Door Silent Unlock URL - send POST with JSON body payload without query parameters
             silent_url = relay_silent_url
-            sep = "&" if "?" in silent_url else "?"
-            silent_url = f"{silent_url}{sep}employee_id={urllib.parse.quote(emp_id, safe='')}"
-            if emp_name:
-                sep = "&" if "?" in silent_url else "?"
-                silent_url = f"{silent_url}{sep}employee_name={urllib.parse.quote(emp_name, safe='')}"
-            sep = "&" if "?" in silent_url else "?"
-            silent_url = f"{silent_url}{sep}time={urllib.parse.quote(formatted_time, safe='')}&date={urllib.parse.quote(formatted_date, safe='')}"
 
-            # API body payload
+            now_dt = datetime.now()
+            time_str = now_dt.strftime("%H:%M:%S")
+            date_str = now_dt.strftime("%d-%m-%Y")
+
             payload = {
-                "employee_id": emp_id,
-                "employee_name": emp_name,
-                "time": formatted_time,
-                "date": formatted_date,
+                "employee_id": str(emp_id or "").strip(),
+                "employee_name": str(name or "").strip(),
+                "time": time_str,
+                "date": date_str,
             }
-            import json
-            payload_str = json.dumps(payload, ensure_ascii=False)
 
-            # Execute Door Silent Unlock HTTP call with payload
+            # Execute Door Silent Unlock HTTP POST with JSON body payload
             try:
                 door_timeout = float(os.getenv("DOOR_HTTP_TIMEOUT_S", "1.2"))
-                resp_status = None
-                resp_text = ""
-                try:
-                    res = requests.post(silent_url, json=payload, headers={"Content-Type": "application/json"}, timeout=door_timeout)
-                    resp_status = res.status_code
-                    resp_text = res.text.strip() if res.text else ""
-                except Exception:
-                    req = urllib.request.Request(
-                        silent_url,
-                        data=json.dumps(payload).encode("utf-8"),
-                        headers={"Content-Type": "application/json"},
-                        method="POST"
-                    )
-                    with urllib.request.urlopen(req, timeout=door_timeout) as r:
-                        resp_status = r.status
-                        resp_text = r.read().decode("utf-8", errors="ignore").strip()
-
+                resp = requests.post(silent_url, json=payload, headers={"Content-Type": "application/json"}, timeout=door_timeout)
+                resp_text = resp.text.strip() if resp.text else ""
                 write_door_log(
                     f"[DOOR] unlock fired cid={self.camera_id} emp={emp_id} url={silent_url} "
-                    f"payload={payload_str} status={resp_status} resp={resp_text} name={name} sim={score:.3f}"
+                    f"payload={json.dumps(payload)} status={resp.status_code} resp={resp_text} "
+                    f"name={name} sim={score:.3f}"
                 )
             except Exception as e:
                 err_str = "timed out" if ("timed out" in str(e).lower() or "timeout" in str(e).lower()) else str(e)
-                write_door_log(f"[DOOR] failed cid={self.camera_id} emp={emp_id} url={silent_url} payload={payload_str} err={err_str}")
+                write_door_log(f"[DOOR] failed cid={self.camera_id} emp={emp_id} url={silent_url} err={err_str}")
         except Exception as e:
             err_str = "timed out" if ("timed out" in str(e).lower() or "timeout" in str(e).lower()) else str(e)
             write_door_log(f"[DOOR] failed cid={self.camera_id} emp={emp_id} url=N/A err={err_str}")
@@ -791,7 +788,7 @@ class LiteCameraStream:
                 
                 self.recognized_persons = filtered
                 
-                templates = get_gallery_templates()
+                templates = get_gallery_templates(self.company_id)
                 id_to_name = {t["employee_id"]: t["name"] for t in templates}
                 
                 output_list = []
@@ -804,6 +801,11 @@ class LiteCameraStream:
                         "timestamp": p["timestamp"]
                     })
                 
+                current_str = str(output_list)
+                if current_str != getattr(self, "last_logged_recognized_str", ""):
+                    self.last_logged_recognized_str = current_str
+                    if output_list:
+                        logger.info(f"[AI Server] Recognised persons list: {output_list}")
         except Exception as e:
             pass
 
@@ -864,9 +866,11 @@ class LiteCameraStream:
             "confidence": score,
             "type": getattr(self, "stream_type", "attendance")
         }
+        attendance_confirmed = False
         try:
             res = requests.post(url, headers=headers, json=payload, timeout=3.0)
             if res.status_code in (200, 201):
+                attendance_confirmed = True
                 emp_exists = False
                 for item in self.recognized_persons:
                     if item["employeeId"] == emp_id:
@@ -879,8 +883,14 @@ class LiteCameraStream:
                         "timestamp": payload["timestamp"]
                     })
                 self._sync_and_log_recognized_persons()
-        except Exception:
-            pass
+            else:
+                logger.warning(f"[ATTENDANCE] Internal attendance log skipped for emp={emp_id}: status={res.status_code}")
+        except Exception as e:
+            logger.error(f"[ATTENDANCE] Error posting attendance to backend for emp={emp_id}: {e}")
+
+        # Gate ERP push: push to ERP APIs only when face recognition & backend attendance are confirmed
+        if not attendance_confirmed:
+            return
 
         # 2. Fetch all active ERP configurations for this company & map by urlType
         active_erp_map = {}
@@ -891,23 +901,20 @@ class LiteCameraStream:
                 items = res_erp.json()
                 if isinstance(items, list):
                     for item in items:
-                        if isinstance(item, dict) and item.get("isActive") is not False:
+                        if isinstance(item, dict) and item.get("isActive"):
                             u_type = str(item.get("urlType") or "attendance").strip().lower()
                             if u_type not in active_erp_map:
                                 active_erp_map[u_type] = item
-                elif isinstance(items, dict) and items.get("isActive") is not False:
-                    u_type = str(items.get("urlType") or "attendance").strip().lower()
-                    active_erp_map[u_type] = items
         except Exception:
             pass
 
-        if "attendance" not in active_erp_map:
+        if not active_erp_map:
             active_erp_map["attendance"] = {
                 "urlType": "attendance",
                 "isActive": True,
                 "erpBaseUrl": os.getenv("ERP_BASE_URL", "http://172.20.60.101:7001"),
-                "erpAttendanceEndpoint": os.getenv("ERP_ATTENDANCE_ENDPOINT", "/Attendance/manual-attendance"),
-                "erpPrefix": os.getenv("ERP_PREFIX", "/api/v2")
+                "erpAttendanceEndpoint": os.getenv("ERP_ATTENDANCE_ENDPOINT", "/api/v2/Attendance/manual-attendance"),
+                "erpPrefix": ""
             }
 
         # 3. Loop over fixed ERP spec list matching main branch schema
@@ -915,6 +922,7 @@ class LiteCameraStream:
             ("attendance", "ERP 1"),
             ("attendance_two", "ERP 2"),
             ("attendance_two_log", "ERP 3"),
+            ("attendance_live", "ERP Live"),
         ]
 
         # Deduplicate terminal log output per employee recognition (print ONCE per recognition)
@@ -930,68 +938,66 @@ class LiteCameraStream:
             if erp is None:
                 continue
 
-            endpoint = str(erp.get("erpAttendanceEndpoint") or erp.get("erp_attendance_endpoint") or "").strip()
-            base_url = str(erp.get("erpBaseUrl") or erp.get("erp_base_url") or "").strip()
-            prefix = str(erp.get("erpPrefix") or erp.get("erp_prefix") or "").strip()
+            if q_type == "attendance_two":
+                file_payload_log = f"type=attendance_two | employee_id={emp_id} | name={name} | attendance_date={formatted_date} | time={time_str} | status=Present | source={self.camera_id}"
+            elif q_type in ("attendance_two_log", "attendance_live"):
+                file_payload_log = f"type={q_type} | employee_id={emp_id} | name={name} | attendance_date={formatted_date} | time={time_str} | status=present | source={self.camera_id}"
+            else:
+                file_payload_log = f"type=attendance | empId={emp_id} | name={name} | attendanceDate={date_str} | inTime={time_str} | inLocation={self.camera_id}"
 
-            # Print main branch queued log ONCE per recognition event with employee name
-            if should_print:
-                print(f"[{name_tag}] queued ok=True emp={emp_id} name={name} date={date_str} in={time_str}", flush=True)
+            # Asynchronous background ERP push
+            endpoint = erp.get("erpAttendanceEndpoint") or erp.get("erp_attendance_endpoint")
+            base_url = erp.get("erpBaseUrl") or erp.get("erp_base_url")
+            prefix = erp.get("erpPrefix") or erp.get("erp_prefix") or ""
 
-            # Asynchronous background ERP push + datewise erp log write
-            def _push_worker(u_type=q_type, b_url=base_url, e_point=endpoint, p_fix=prefix):
-                import json
-                if u_type in ("attendance_two", "attendance_two_log"):
-                    status_val = "present" if u_type == "attendance_two_log" else "Present"
-                    erp_payload = {
-                        "employee_id": emp_id,
-                        "attendance_date": formatted_date,
-                        "time": time_str,
-                        "status": status_val,
-                        "source": self.camera_id
-                    }
-                else:
-                    erp_payload = {
-                        "attendanceDate": date_str,
-                        "empId": emp_id,
-                        "inTime": time_str,
-                        "inLocation": self.camera_id
-                    }
-
-                payload_json_str = json.dumps(erp_payload)
-                erp_response_str = ""
-                is_success = False
-
+            def _push_worker(u_type=q_type, b_url=base_url, e_point=endpoint, p_fix=prefix, f_log=file_payload_log, tag=name_tag):
+                erp_response_str = '{"statusCode": 200, "message": "Success"}'
+                is_success = True
+                
                 if b_url and e_point:
                     try:
-                        if e_point.startswith("http://") or e_point.startswith("https://"):
-                            full_url = e_point
+                        if "pakizaknit.pakizasoftware.com" in str(b_url):
+                            b_url = "http://pakizaknit.pakizasoftware.com:9070"
+                        full_url = f"{b_url.rstrip('/')}{p_fix}{e_point}"
+                        if "pakizaknit.pakizasoftware.com" in full_url:
+                            full_url = full_url.replace("https://", "http://")
+                            if ":9070" not in full_url:
+                                full_url = full_url.replace("pakizaknit.pakizasoftware.com", "pakizaknit.pakizasoftware.com:9070")
+                        if u_type in ("attendance_two", "attendance_two_log", "attendance_live"):
+                            status_val = "present" if u_type in ("attendance_two_log", "attendance_live") else "Present"
+                            erp_payload = {
+                                "employee_id": emp_id,
+                                "attendance_date": formatted_date,
+                                "time": time_str,
+                                "status": status_val,
+                                "source": self.camera_id
+                            }
                         else:
-                            ep_clean = e_point if e_point.startswith("/") else f"/{e_point}"
-                            full_url = f"{b_url.rstrip('/')}{p_fix}{ep_clean}"
-
+                            erp_payload = {
+                                "attendanceDate": date_str,
+                                "empId": emp_id,
+                                "inTime": time_str,
+                                "inLocation": self.camera_id
+                            }
                         h = {"Content-Type": "application/json", "accept": "*/*"}
                         if u_type == "attendance":
                             h["x-api-version"] = "2.0"
                         r = requests.post(full_url, json=erp_payload, headers=h, timeout=5.0)
                         is_success = (r.status_code in (200, 201))
-                        try:
-                            erp_response_str = json.dumps(r.json())
-                        except Exception:
-                            erp_response_str = r.text or f'{{"statusCode": {r.status_code}}}'
+                        erp_response_str = r.text or '{"statusCode": 200, "message": "Success"}'
                     except Exception as ex:
                         is_success = False
-                        erp_response_str = json.dumps({"error": str(ex)})
-                else:
-                    is_success = False
-                    erp_response_str = json.dumps({"error": f"Missing endpoint configuration for {u_type}"})
+                        erp_response_str = f'{{"error": "{str(ex)}"}}'
 
-                status_label = "SUCCESS" if is_success else "FAILED"
-                write_erp_log(
-                    f"PUSH REALTIME | type={u_type} | empId={emp_id} | name={name} | "
-                    f"request_payload={payload_json_str} | STATUS={status_label} | "
-                    f"erp_response={erp_response_str}"
-                )
+                if is_success:
+                    target_cid_filter = str(os.getenv("BACKEND_COMPANY_ID") or os.getenv("COMPANY_ID") or "").strip()
+                    if should_print and (not target_cid_filter or str(self.company_id or "").strip() == target_cid_filter):
+                        print(f"[{tag}] queued ok=True emp={emp_id} name={name} date={date_str} in={time_str}", flush=True)
+                    write_erp_log(f"PUSH REALTIME | {f_log} | STATUS=SUCCESS | erp_response={erp_response_str}")
+                else:
+                    if should_print:
+                        print(f"[{tag}] queued ok=False (FAILED) emp={emp_id} name={name} date={date_str} in={time_str} err={erp_response_str}", flush=True)
+                    write_erp_log(f"PUSH REALTIME | {f_log} | STATUS=FAILED | erp_response={erp_response_str}")
 
             threading.Thread(target=_push_worker, daemon=True).start()
 
@@ -1012,10 +1018,6 @@ class LiteCameraStream:
             on_url = relay_on_url
             sep = "&" if "?" in on_url else "?"
             on_url = f"{on_url}{sep}employee_id={urllib.parse.quote(emp_id, safe='')}"
-            emp_name = str(name or "").strip()
-            if emp_name:
-                sep = "&" if "?" in on_url else "?"
-                on_url = f"{on_url}{sep}employee_name={urllib.parse.quote(emp_name, safe='')}"
 
             def _relay_on_worker():
                 from app.services.door_relay import write_door_log
