@@ -19,13 +19,23 @@ export function useVirtualKeyboardState() {
   const previousInputRef = useRef<HTMLElement | null>(null);
 
   const scrollToInput = useCallback((inputEl: HTMLElement) => {
-    const scrollParent = getScrollParent(inputEl) || document.documentElement || document.body;
+    const scrollParent =
+      getScrollParent(inputEl) ||
+      document.querySelector("main") ||
+      document.documentElement ||
+      document.body;
     const performScroll = () => {
       const rect = inputEl.getBoundingClientRect();
       const offset = rect.top - 160;
       if (Math.abs(offset) < 2) return;
-      if (scrollParent === document.documentElement || scrollParent === document.body) {
-        window.scrollTo({ top: window.scrollY + offset, behavior: "smooth" });
+      if (
+        scrollParent === document.documentElement ||
+        scrollParent === document.body
+      ) {
+        const mainEl = document.querySelector("main");
+        if (mainEl) {
+          mainEl.scrollTo({ top: mainEl.scrollTop + offset, behavior: "smooth" });
+        }
       } else {
         scrollParent.scrollTo({ top: scrollParent.scrollTop + offset, behavior: "smooth" });
       }

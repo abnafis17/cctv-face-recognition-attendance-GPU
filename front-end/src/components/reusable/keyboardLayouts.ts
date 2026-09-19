@@ -27,6 +27,7 @@ export const isTypeable = (
 
 export const getScrollParent = (node: HTMLElement | null): HTMLElement | null => {
   if (!node) return null;
+  if (node.tagName === "MAIN") return node;
   const style = window.getComputedStyle(node);
   const overflowY = style.overflowY;
   const isScrollable = overflowY === "auto" || overflowY === "scroll";

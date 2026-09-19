@@ -64,14 +64,32 @@ export default function ProtectedShell({
     const html = document.documentElement;
     const body = document.body;
 
-    html.classList.add("overflow-hidden", "h-screen");
-    body.classList.add("overflow-hidden", "h-screen");
+    html.classList.add("overflow-hidden", "h-screen", "w-full", "fixed", "inset-0");
+    body.classList.add("overflow-hidden", "h-screen", "w-full", "fixed", "inset-0");
+
+    const resetWindowScroll = () => {
+      if (window.scrollY !== 0 || window.scrollX !== 0) {
+        window.scrollTo(0, 0);
+      }
+    };
+
+    window.addEventListener("scroll", resetWindowScroll);
+    resetWindowScroll();
 
     return () => {
-      html.classList.remove("overflow-hidden", "h-screen");
-      body.classList.remove("overflow-hidden", "h-screen");
+      html.classList.remove("overflow-hidden", "h-screen", "w-full", "fixed", "inset-0");
+      body.classList.remove("overflow-hidden", "h-screen", "w-full", "fixed", "inset-0");
+      window.removeEventListener("scroll", resetWindowScroll);
     };
   }, []);
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+    const mainEl = document.querySelector("main");
+    if (mainEl) {
+      mainEl.scrollTop = 0;
+    }
+  }, [pathname]);
 
   useEffect(() => {
     let cancelled = false;
@@ -153,9 +171,9 @@ export default function ProtectedShell({
   return (
     <AuthGuard>
       <HeaderProvider>
-        <div className="flex h-dvh overflow-hidden bg-slate-50">
+        <div className="flex h-dvh w-full overflow-hidden bg-slate-50">
           <Sidebar />
-          <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
+          <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
             <AppHeader />
             <main className="ui-readable flex-1 overflow-y-auto overscroll-y-contain px-4 py-4 md:px-6 md:py-6 flex flex-col">
               {loading ? (
