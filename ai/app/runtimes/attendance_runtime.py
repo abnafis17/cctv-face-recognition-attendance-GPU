@@ -610,6 +610,7 @@ class AttendanceRuntime:
                 ("attendance", "ERP 1"),
                 ("attendance_two", "ERP 2"),
                 ("attendance_two_log", "ERP 3"),
+                ("attendance_live", "ERP Live"),
             ]:
                 q = self._erp_queue_for_company(company_id, q_type)
                 if q is not None:
