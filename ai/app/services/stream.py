@@ -990,8 +990,7 @@ class LiteCameraStream:
                         erp_response_str = f'{{"error": "{str(ex)}"}}'
 
                 if is_success:
-                    target_cid_filter = str(os.getenv("BACKEND_COMPANY_ID") or os.getenv("COMPANY_ID") or "").strip()
-                    if should_print and (not target_cid_filter or str(self.company_id or "").strip() == target_cid_filter):
+                    if should_print:
                         print(f"[{tag}] queued ok=True emp={emp_id} name={name} date={date_str} in={time_str}", flush=True)
                     write_erp_log(f"PUSH REALTIME | {f_log} | STATUS=SUCCESS | erp_response={erp_response_str}")
                 else:
