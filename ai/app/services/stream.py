@@ -205,8 +205,9 @@ class LiteCameraStream:
                 face_bbox = getattr(track, 'last_face_bbox', None)
                 last_time = getattr(track, 'last_face_time', 0.0)
                 
-                # Expire face boxes instantly if face is not actively detected in current frame (350ms window)
-                if not face_bbox or (now - last_time > 0.35):
+                # Use configurable face overlay stale timeout (default 1.0s) to prevent flickering on delayed frames
+                max_stale_s = float(os.getenv("FACE_OVERLAY_MAX_STALE_S", "1.0"))
+                if not face_bbox or (now - last_time > max_stale_s):
                     continue
                     
                 x1, y1, x2, y2 = face_bbox
