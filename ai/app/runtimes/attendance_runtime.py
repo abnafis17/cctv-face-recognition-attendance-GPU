@@ -625,13 +625,6 @@ class AttendanceRuntime:
                         f"[{name}] queued ok={ok} emp={erp_job.emp_id} date={erp_job.attendance_date} in={erp_job.in_time}"
                     )
 
-            self.door_service.trigger_relay_http(
-                cid,
-                True,
-                employee_id=str(job.employee_id),
-                company_id=company_id,
-                employee_name=str(job.name),
-            )
             self.voice_service.push_voice_event(
                 employee_id=str(job.employee_id),
                 name=str(job.name),
