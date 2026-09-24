@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Callable, Optional, Sequence
+import os
 import time
 
 import numpy as np
@@ -136,6 +137,32 @@ class Recognizer:
             kps_max_age = float(getattr(self.cfg, "kps_max_age_seconds", 0.0) or 0.0)
             if kps_max_age > 0.0 and det_age > kps_max_age:
                 kps = None
+
+            # ── Head-pose gate ───────────────────────────────────────────────
+            # Side-profile / extreme-pitch frames produce unreliable ArcFace
+            # embeddings. Skip the recognition call and briefly hold the
+            # current identity to avoid both false-positives and flicker.
+            pose_skip = False
+            try:
+                if kps is not None:
+                    _kps_arr = np.asarray(kps, dtype=np.float32)
+                    if _kps_arr.ndim == 2 and _kps_arr.shape == (5, 2):
+                        from ..utils import estimate_head_pose_deg
+                        _max_yaw   = float(os.getenv("RECOGNITION_MAX_ABS_YAW",   "65"))
+                        _max_pitch = float(os.getenv("RECOGNITION_MAX_ABS_PITCH",  "60"))
+                        _pose = estimate_head_pose_deg(_kps_arr, frame_bgr.shape)
+                        if _pose is not None:
+                            _yaw, _pitch, _ = _pose
+                            if abs(_yaw) > _max_yaw or abs(_pitch) > _max_pitch:
+                                pose_skip = True
+            except Exception:
+                pass
+
+            if pose_skip:
+                # Keep existing identity briefly during extreme angle
+                if tr.person_id is not None and hold_ok:
+                    tr.force_recognition_until_ts = max(tr.force_recognition_until_ts, now + 0.35)
+                continue
 
             emb = self._embedder.embed(frame_bgr, bbox=tr.bbox, kps=kps)
             tr.last_embed_ts = now

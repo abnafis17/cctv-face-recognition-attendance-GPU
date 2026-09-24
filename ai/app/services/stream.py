@@ -36,7 +36,7 @@ from app.core.config import (
 from app.core.logging import logger
 from app.vision.body_tracker import BodyTracker, face_belongs_to_body, draw_polygon_body_bbox
 from app.vision.hud import draw_label_card, draw_bounding_box, ACCENT_KNOWN, ACCENT_UNKNOWN
-from app.utils import open_capture_with_fallback
+from app.utils import open_capture_with_fallback, quality_score, estimate_head_pose_deg
 from app.services.model_manager import init_models, get_detector, get_embedder, get_body_detector
 from app.services.gallery import sync_gallery, get_gallery_templates
 from app.presence.runtime import PresenceRuntime
@@ -486,6 +486,43 @@ class LiteCameraStream:
     def _process_recognition(self, frame, face, face_bbox, matched_track, now):
         matched_track.last_face_bbox = face_bbox
         matched_track.last_face_time = now
+
+        # ── Gate 1: Face quality (size + sharpness) ──────────────────────────
+        # Reject tiny / heavily blurred faces that produce unreliable embeddings.
+        # quality_score returns 0-100; empirical floor of 5.0 filters tiny/blurry
+        # without dropping legitimate far-distance faces that are still sharp.
+        min_quality = float(os.getenv("RECOGNITION_MIN_FACE_QUALITY", "5.0"))
+        if min_quality > 0.0:
+            q = quality_score(face_bbox, frame)
+            if q < min_quality:
+                matched_track.last_recognize_time = now
+                return  # face too blurry / small — skip this frame entirely
+
+        # ── Gate 2: Head pose angle ───────────────────────────────────────────
+        # Side-profile and extreme-pitch faces produce unreliable ArcFace embeddings.
+        # We skip recognition (don't update identity) when pose is too extreme,
+        # but we still keep any previously-held identity via the hold mechanism below.
+        max_abs_yaw   = float(os.getenv("RECOGNITION_MAX_ABS_YAW",   "65"))
+        max_abs_pitch = float(os.getenv("RECOGNITION_MAX_ABS_PITCH",  "60"))
+        pose_skip = False
+        if face.kps is not None:
+            pose = estimate_head_pose_deg(face.kps, frame.shape)
+            if pose is not None:
+                yaw, pitch, _ = pose
+                if abs(yaw) > max_abs_yaw or abs(pitch) > max_abs_pitch:
+                    pose_skip = True
+
+        if pose_skip:
+            # Hold existing identity during extreme angle — do NOT update score/id
+            last_ts  = getattr(matched_track, 'last_known_time', 0.0)
+            last_emp = getattr(matched_track, 'last_known_emp_id', None)
+            identity_hold_s = float(os.getenv("IDENTITY_HOLD_SECONDS", "0.5"))
+            if (now - last_ts < identity_hold_s) and last_emp:
+                matched_track.name  = getattr(matched_track, 'last_known_name', 'Unknown')
+                matched_track.emp_id = last_emp
+            matched_track.last_recognize_time = now
+            return
+
         embedder = get_embedder()
         emb = embedder.embed(frame, bbox=face_bbox, kps=face.kps)
         
@@ -499,7 +536,7 @@ class LiteCameraStream:
                 # Group template embeddings per employee for multi-sample max similarity matching
                 emp_templates = {}
                 for t in templates:
-                    eid = t["employee_id"]
+                    eid  = t["employee_id"]
                     name = t["name"]
                     if eid not in emp_templates:
                         emp_templates[eid] = {"name": name, "embeddings": []}
@@ -507,7 +544,7 @@ class LiteCameraStream:
                 
                 emp_scores = []
                 for eid, info in emp_templates.items():
-                    # Calculate highest similarity score across all enrolled templates for this employee
+                    # Take the highest similarity across all enrolled templates for this employee
                     max_sim = max(float(np.dot(t_emb, emb)) for t_emb in info["embeddings"])
                     emp_scores.append((max_sim, eid, info["name"]))
                     
@@ -516,91 +553,126 @@ class LiteCameraStream:
                 top1_score, best_emp_id, best_name = emp_scores[0]
                 top2_score = emp_scores[1][0] if len(emp_scores) > 1 else 0.0
                 margin_gap = top1_score - top2_score
-                
+
+                # ── Anti-Flip Guard ──────────────────────────────────────────
+                # If track was recently verified as Person A, do not flip to
+                # Person B on an ambiguous low-margin edge-angle frame.
                 last_emp = getattr(matched_track, 'last_known_emp_id', None)
-                last_ts = getattr(matched_track, 'last_known_time', 0.0)
+                last_ts  = getattr(matched_track, 'last_known_time', 0.0)
                 is_recent_known = (now - last_ts < 3.0) and last_emp is not None
 
-                # Anti-Flip Guard for tight edge angles:
-                # If track was recently verified as Person A, do not flip to Person B on an ambiguous low-margin edge angle frame.
-                if is_recent_known and best_emp_id != last_emp and top1_score < 0.50 and margin_gap < 0.05:
+                if is_recent_known and best_emp_id != last_emp and top1_score < 0.52 and margin_gap < 0.07:
                     last_emp_score = next((s for (s, eid, _n) in emp_scores if eid == last_emp), 0.0)
-                    if top1_score - last_emp_score < 0.05:
+                    if top1_score - last_emp_score < 0.07:
                         best_emp_id = last_emp
-                        best_name = getattr(matched_track, 'last_known_name', best_name)
-                        top1_score = max(top1_score, last_emp_score)
-                        margin_gap = 0.05
+                        best_name   = getattr(matched_track, 'last_known_name', best_name)
+                        top1_score  = max(top1_score, last_emp_score)
+                        margin_gap  = 0.07
 
                 min_sim = float(SIMILARITY_THRESHOLD)
-                # Adaptive multi-tier qualification:
-                # Require similarity score to meet or exceed SIMILARITY_THRESHOLD (0.45)
+                # ── Strict multi-tier qualification ──────────────────────────
+                # Primary gate: score must exceed threshold with a meaningful
+                # margin over the second-best match (prevents edge-angle confusion
+                # where two employees score similarly close).
+                #
+                # Tier 1 — comfortable score: top1 >= max(0.47, min_sim+0.04)
+                #           AND margin_gap >= 0.06 (clear winner)
+                # Tier 2 — borderline score:  top1 >= min_sim
+                #           AND margin_gap >= 0.06 (SAME gap, just lower absolute)
+                #
+                # The old "OR top1 >= min_sim AND gap >= 0.02" path is removed
+                # because a 0.02 gap is within ArcFace noise at side profiles.
+                min_margin = float(os.getenv("DISTINCT_SIM_MARGIN", "0.06"))
                 is_qualified = (
-                    (top1_score >= max(0.46, min_sim))
-                    or (top1_score >= min_sim and margin_gap >= 0.02)
+                    top1_score >= max(min_sim, 0.43)
+                    and margin_gap >= min_margin
                 )
                 
                 if is_qualified:
-                    matched_track.name = best_name
-                    matched_track.emp_id = best_emp_id
-                    matched_track.score = top1_score
-                    matched_track.last_known_name = best_name
-                    matched_track.last_known_emp_id = best_emp_id
-                    matched_track.last_known_time = now
-                    
+                    # ── Rolling-average score confirmation ───────────────────
+                    # Build a running mean of qualifying scores per candidate.
+                    # A single outlier high-score frame cannot trigger attendance.
+                    strict_thr = float(os.getenv("STRICT_SIM_THRESHOLD", "0.45"))
+
                     if getattr(matched_track, 'confirmed_emp_id', None) == best_emp_id:
                         matched_track.confirm_hits = getattr(matched_track, 'confirm_hits', 0) + 1
+                        # Exponential moving average of confirmation scores
+                        prev_avg = getattr(matched_track, 'confirm_score_avg', top1_score)
+                        matched_track.confirm_score_avg = prev_avg * 0.6 + top1_score * 0.4
                     else:
-                        matched_track.confirmed_emp_id = best_emp_id
-                        matched_track.confirm_hits = 1
+                        matched_track.confirmed_emp_id  = best_emp_id
+                        matched_track.confirm_hits      = 1
+                        matched_track.confirm_score_avg = top1_score
+
+                    matched_track.name             = best_name
+                    matched_track.emp_id           = best_emp_id
+                    matched_track.score            = top1_score
+                    matched_track.last_known_name  = best_name
+                    matched_track.last_known_emp_id = best_emp_id
+                    matched_track.last_known_time  = now
 
                     is_authorized = True
                     has_auth_list = len(self.authorized_employee_ids) > 0
                     if has_auth_list and best_emp_id not in self.authorized_employee_ids:
                         is_authorized = False
                     matched_track.is_authorized = is_authorized
-                    
-                    # Require stable confirmation (at least 2 hits) to eliminate glitches/flicker
-                    min_confirm_hits = int(os.getenv("STABLE_ID_CONFIRMATIONS", "2"))
-                    if matched_track.confirm_hits >= min_confirm_hits:
-                        # 🔓 Door unlock triggered on confirmed authorized recognition
+
+                    # ── Stable confirmation gate ─────────────────────────────
+                    # Require N consecutive qualifying hits AND rolling average
+                    # score above strict threshold to trigger attendance/door.
+                    # Minimum is 3 (env can raise it) to filter single-frame noise.
+                    min_confirm_hits = max(3, int(os.getenv("STABLE_ID_CONFIRMATIONS", "3")))
+                    rolling_avg = getattr(matched_track, 'confirm_score_avg', 0.0)
+
+                    if (
+                        matched_track.confirm_hits >= min_confirm_hits
+                        and rolling_avg >= strict_thr
+                    ):
                         if is_authorized:
-                            self._trigger_door_relay(best_emp_id, best_name, top1_score)
+                            self._trigger_door_relay(best_emp_id, best_name, rolling_avg)
 
                         if is_authorized and getattr(self, "attendance_enabled", True):
-                            self._trigger_attendance(best_emp_id, best_name, top1_score)
+                            self._trigger_attendance(best_emp_id, best_name, rolling_avg)
+
                 else:
                     # Graceful decay rather than hard wipe on a single missed frame
                     matched_track.confirm_hits = max(0, getattr(matched_track, 'confirm_hits', 0) - 1)
                     if matched_track.confirm_hits == 0:
-                        matched_track.confirmed_emp_id = None
-                    
-                    # Identity hold hysteresis: if track was matched to known employee within 1.0s, keep green card on head turns, far distance & shadows
-                    last_ts = getattr(matched_track, 'last_known_time', 0.0)
+                        matched_track.confirmed_emp_id  = None
+                        matched_track.confirm_score_avg = 0.0
+
+                    # Identity hold hysteresis: keep the last known name briefly
+                    # on head turns / far distance / shadows, but use a shorter
+                    # window (0.5s) to avoid stale fake names persisting too long.
+                    last_ts  = getattr(matched_track, 'last_known_time', 0.0)
                     last_emp = getattr(matched_track, 'last_known_emp_id', None)
-                    if (now - last_ts < 1.0) and last_emp:
-                        matched_track.name = getattr(matched_track, 'last_known_name', 'Unknown')
+                    identity_hold_s = float(os.getenv("IDENTITY_HOLD_SECONDS", "0.5"))
+                    if (now - last_ts < identity_hold_s) and last_emp:
+                        matched_track.name   = getattr(matched_track, 'last_known_name', 'Unknown')
                         matched_track.emp_id = last_emp
-                        matched_track.score = top1_score
+                        matched_track.score  = top1_score
                     else:
-                        matched_track.name = "Unknown"
-                        matched_track.emp_id = None
-                        matched_track.score = top1_score
+                        matched_track.name         = "Unknown"
+                        matched_track.emp_id       = None
+                        matched_track.score        = top1_score
                         matched_track.is_authorized = True
             else:
-                last_ts = getattr(matched_track, 'last_known_time', 0.0)
+                last_ts  = getattr(matched_track, 'last_known_time', 0.0)
                 last_emp = getattr(matched_track, 'last_known_emp_id', None)
-                if (now - last_ts < 1.0) and last_emp:
-                    matched_track.name = getattr(matched_track, 'last_known_name', 'Unknown')
+                identity_hold_s = float(os.getenv("IDENTITY_HOLD_SECONDS", "0.5"))
+                if (now - last_ts < identity_hold_s) and last_emp:
+                    matched_track.name   = getattr(matched_track, 'last_known_name', 'Unknown')
                     matched_track.emp_id = last_emp
-                    matched_track.score = 0.0
+                    matched_track.score  = 0.0
                 else:
-                    matched_track.name = "Unknown"
-                    matched_track.emp_id = None
-                    matched_track.score = -1.0
-                    matched_track.is_authorized = True
-                    matched_track.confirm_hits = 0
+                    matched_track.name             = "Unknown"
+                    matched_track.emp_id           = None
+                    matched_track.score            = -1.0
+                    matched_track.is_authorized    = True
+                    matched_track.confirm_hits     = 0
                     matched_track.confirmed_emp_id = None
-                
+                    matched_track.confirm_score_avg = 0.0
+
         matched_track.last_recognize_time = now
 
     def _get_relay_url(self) -> str:
