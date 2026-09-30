@@ -1,0 +1,23 @@
+[Unit]
+Description=Camera Attendance Frontend (Next.js)
+After=network-online.target camera-attendance-backend.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=psl
+Group=psl
+WorkingDirectory=/home/psl/PSL_Projects/camera-auto-attendance-ai/front-end
+Environment=NODE_ENV=production
+Environment=PORT=3001
+Environment=NEXT_PUBLIC_BACKEND_URL=http://10.81.100.50:4000
+Environment=NODE_OPTIONS=--max-old-space-size=1536
+Environment=PATH=/home/psl/.nvm/versions/node/v24.20.0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/home/psl/.nvm/versions/node/v24.20.0/bin/npm run start
+
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target

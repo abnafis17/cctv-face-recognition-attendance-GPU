@@ -1,0 +1,23 @@
+[Unit]
+Description=Camera Attendance Backend (Node.js / Express / Prisma)
+After=network-online.target postgresql.service camera-attendance-ai.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=psl
+Group=psl
+WorkingDirectory=/home/psl/PSL_Projects/camera-auto-attendance-ai/backend
+Environment=NODE_ENV=production
+Environment=PORT=4000
+Environment=AI_BASE_URL=http://10.81.100.50:8080
+Environment=PATH=/home/psl/.nvm/versions/node/v24.20.0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/home/psl/.nvm/versions/node/v24.20.0/bin/node --max-old-space-size=1024 dist/index.js
+
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target

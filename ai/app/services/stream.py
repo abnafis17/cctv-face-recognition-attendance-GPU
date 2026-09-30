@@ -50,6 +50,13 @@ GLOBAL_DOOR_COOLDOWNS: Dict[str, float] = {}
 GLOBAL_ERP_LOCK = threading.Lock()
 GLOBAL_ERP_COOLDOWNS: Dict[str, float] = {}
 
+# ── Door relay offline circuit-breaker ─────────────────────────────────
+# When the relay server returns errno 111 (Connection refused) it is offline.
+# We suppress ALL outgoing relay calls for DOOR_OFFLINE_SUPPRESS_S seconds to
+# prevent a burst of blocked daemon threads clogging the thread pool.
+GLOBAL_DOOR_OFFLINE_LOCK = threading.Lock()
+GLOBAL_DOOR_OFFLINE_UNTIL: float = 0.0  # epoch time until which relay is suppressed
+
 # Compatibility wrapper for camera_rt to bridge LiteCameraStream to EnrollmentAutoService2
 class CameraRuntimeCompat:
     def get_frame(self, camera_id: str):
@@ -742,16 +749,24 @@ class LiteCameraStream:
         threading.Thread(target=_do_post, daemon=True).start()
 
     def _trigger_door_relay(self, emp_id: str, name: str, score: float):
+        """Rate-limited door unlock trigger with offline circuit breaker."""
+        global GLOBAL_DOOR_OFFLINE_UNTIL
         now = time.time()
+
+        # ── Circuit breaker: skip immediately when relay server is known offline ──
+        with GLOBAL_DOOR_OFFLINE_LOCK:
+            if now < GLOBAL_DOOR_OFFLINE_UNTIL:
+                return
+
         emp_id_str = str(emp_id or "").strip()
         name_str = str(name or "").strip()
-        min_threshold = min(0.42, float(SIMILARITY_THRESHOLD))
+        min_threshold = min(float(SIMILARITY_THRESHOLD), 0.43)
         if not emp_id_str or name_str in ("Unknown", "") or float(score or 0.0) < min_threshold:
             return
-            
+
         emp_key = f"{self.camera_id}:{emp_id_str}"
         min_gap = max(0.0, float(os.getenv("DOOR_UNLOCK_MIN_GAP", "5.0")))
-        
+
         with GLOBAL_DOOR_LOCK:
             last_fire = GLOBAL_DOOR_COOLDOWNS.get(emp_key, 0.0)
             if now - last_fire < min_gap:
@@ -764,76 +779,99 @@ class LiteCameraStream:
             daemon=True
         ).start()
 
+    def _mark_door_offline(self, suppress_s: float = None) -> None:
+        """Activate the offline circuit breaker for suppress_s seconds."""
+        global GLOBAL_DOOR_OFFLINE_UNTIL
+        if suppress_s is None:
+            suppress_s = float(os.getenv("DOOR_OFFLINE_SUPPRESS_S", "30.0"))
+        with GLOBAL_DOOR_OFFLINE_LOCK:
+            GLOBAL_DOOR_OFFLINE_UNTIL = max(GLOBAL_DOOR_OFFLINE_UNTIL, time.time() + suppress_s)
+
     def _send_door_unlock_request(self, emp_id: str, name: str, score: float):
+        """Execute the door silent-unlock POST. Activates circuit breaker on errno 111."""
         from app.services.door_relay import write_door_log
         try:
-            relay_silent_url = "http://10.81.100.72/silent"
-            try:
-                res = requests.get(f"{BACKEND_BASE_URL}/api/v1/settings/relay", headers={"x-company-id": self.company_id}, timeout=1.5)
-                if res.status_code == 200:
-                    data = res.json()
-                    if isinstance(data, list) and len(data) > 0:
-                        data = data[0]
-                    if isinstance(data, dict):
-                        relay_silent_url = data.get("relaySilentUrl") or data.get("relay_silent_url") or relay_silent_url
-            except Exception:
-                pass
-
-            emp_pic_url = ""
-            try:
-                emp_res = requests.get(f"{BACKEND_BASE_URL}/api/v1/employees", headers={"x-company-id": self.company_id}, timeout=1.5)
-                if emp_res.status_code == 200:
-                    employees = emp_res.json()
-                    if isinstance(employees, list):
-                        for emp in employees:
-                            if isinstance(emp, dict):
-                                candidate_ids = [
-                                    str(emp.get("empId") or ""),
-                                    str(emp.get("emp_id") or ""),
-                                    str(emp.get("employeeId") or ""),
-                                    str(emp.get("employee_id") or ""),
-                                    str(emp.get("id") or "")
-                                ]
-                                if emp_id in candidate_ids:
-                                    emp_pic_url = str(emp.get("empPicUrl") or emp.get("emp_pic_url") or emp.get("photoUrl") or "").strip()
-                                    if emp_pic_url:
-                                        break
-            except Exception:
-                pass
-
-            if not emp_pic_url:
-                emp_pic_url = f"{emp_id}.jpg"
-
-            # Door Silent Unlock URL - send POST with JSON body payload without query parameters
-            silent_url = relay_silent_url
+            # Resolve relay silent URL from backend settings (TTL-cached in _get_relay_silent_url)
+            relay_silent_url = self._get_relay_silent_url()
+            if not relay_silent_url:
+                write_door_log(
+                    f"[DOOR] skipped cid={self.camera_id} emp={emp_id} reason=no_relay_url_configured"
+                )
+                return
 
             now_dt = datetime.now()
-            time_str = now_dt.strftime("%H:%M:%S")
-            date_str = now_dt.strftime("%d-%m-%Y")
-
             payload = {
                 "employee_id": str(emp_id or "").strip(),
                 "employee_name": str(name or "").strip(),
-                "time": time_str,
-                "date": date_str,
+                "time": now_dt.strftime("%H:%M:%S"),
+                "date": now_dt.strftime("%d-%m-%Y"),
             }
 
-            # Execute Door Silent Unlock HTTP POST with JSON body payload
-            try:
-                door_timeout = float(os.getenv("DOOR_HTTP_TIMEOUT_S", "1.2"))
-                resp = requests.post(silent_url, json=payload, headers={"Content-Type": "application/json"}, timeout=door_timeout)
-                resp_text = resp.text.strip() if resp.text else ""
-                write_door_log(
-                    f"[DOOR] unlock fired cid={self.camera_id} emp={emp_id} url={silent_url} "
-                    f"payload={json.dumps(payload)} status={resp.status_code} resp={resp_text} "
-                    f"name={name} sim={score:.3f}"
-                )
-            except Exception as e:
-                err_str = "timed out" if ("timed out" in str(e).lower() or "timeout" in str(e).lower()) else str(e)
-                write_door_log(f"[DOOR] failed cid={self.camera_id} emp={emp_id} url={silent_url} err={err_str}")
+            door_timeout = float(os.getenv("DOOR_HTTP_TIMEOUT_S", "1.2"))
+            resp = requests.post(
+                relay_silent_url,
+                json=payload,
+                headers={"Content-Type": "application/json"},
+                timeout=door_timeout,
+            )
+            resp_text = resp.text.strip() if resp.text else ""
+            write_door_log(
+                f"[DOOR] unlock fired cid={self.camera_id} emp={emp_id} url={relay_silent_url} "
+                f"payload={json.dumps(payload)} status={resp.status_code} resp={resp_text} "
+                f"name={name} sim={score:.3f}"
+            )
         except Exception as e:
-            err_str = "timed out" if ("timed out" in str(e).lower() or "timeout" in str(e).lower()) else str(e)
-            write_door_log(f"[DOOR] failed cid={self.camera_id} emp={emp_id} url=N/A err={err_str}")
+            err_str = str(e)
+            is_conn_refused = "111" in err_str or "connection refused" in err_str.lower()
+            is_timeout = "timed out" in err_str.lower() or "timeout" in err_str.lower()
+            is_unreachable = "unreachable" in err_str.lower() or "no route" in err_str.lower() or "max retries" in err_str.lower()
+
+            if is_conn_refused or is_timeout or is_unreachable:
+                self._mark_door_offline()
+                friendly = "timed out" if is_timeout else ("connection refused" if is_conn_refused else "unreachable")
+                write_door_log(
+                    f"[DOOR] offline cid={self.camera_id} emp={emp_id} err={friendly} "
+                    f"circuit_breaker_activated=True suppress_s={os.getenv('DOOR_OFFLINE_SUPPRESS_S', '30.0')}"
+                )
+            else:
+                write_door_log(f"[DOOR] failed cid={self.camera_id} emp={emp_id} err={err_str}")
+
+    def _get_relay_silent_url(self) -> str:
+        """TTL-cached fetch of the relay silent URL from backend settings."""
+        now = time.time()
+        cached_url = getattr(self, "_cached_relay_silent_url", None)
+        cache_ts   = getattr(self, "_relay_silent_cache_ts", 0.0)
+        cache_ttl  = float(os.getenv("RELAY_SETTINGS_CACHE_TTL_S", "30.0"))
+        if cached_url is not None and (now - cache_ts) < cache_ttl:
+            return cached_url
+
+        url = None
+        try:
+            res = requests.get(
+                f"{BACKEND_BASE_URL}/api/v1/settings/relay",
+                headers={"x-company-id": self.company_id},
+                timeout=1.5,
+            )
+            if res.status_code == 200:
+                data = res.json()
+                if isinstance(data, list) and data:
+                    data = data[0]
+                if isinstance(data, dict):
+                    url = (
+                        data.get("relaySilentUrl")
+                        or data.get("relay_silent_url")
+                        or data.get("relayOnUrl")
+                        or data.get("relay_on_url")
+                    )
+                    url = str(url or "").strip() or None
+        except Exception:
+            pass
+
+        # Do NOT fall back to a hardcoded IP — if no URL is configured in the backend
+        # settings, we simply skip door relay rather than spamming a dead address.
+        self._cached_relay_silent_url = url or ""
+        self._relay_silent_cache_ts = now
+        return self._cached_relay_silent_url
 
     def _sync_and_log_recognized_persons(self):
         try:
@@ -1006,6 +1044,12 @@ class LiteCameraStream:
             if should_print:
                 GLOBAL_ERP_COOLDOWNS[erp_log_key] = time.time()
 
+        # ERP push workers are all fire-and-forget threads; door relay fires
+        # only AFTER the primary attendance record is confirmed (attendance_confirmed=True above).
+        # We collect ERP push results via a shared flag and only unlock the door
+        # after at least one ERP push returns HTTP 200/201.
+        erp_any_success = threading.Event()
+
         for q_type, name_tag in erp_specs:
             erp = active_erp_map.get(q_type)
             if erp is None:
@@ -1018,7 +1062,6 @@ class LiteCameraStream:
             else:
                 file_payload_log = f"type=attendance | empId={emp_id} | name={name} | attendanceDate={date_str} | inTime={time_str} | inLocation={self.camera_id}"
 
-            # Asynchronous background ERP push
             endpoint = erp.get("erpAttendanceEndpoint") or erp.get("erp_attendance_endpoint")
             base_url = erp.get("erpBaseUrl") or erp.get("erp_base_url")
             prefix = erp.get("erpPrefix") or erp.get("erp_prefix") or ""
@@ -1026,7 +1069,7 @@ class LiteCameraStream:
             def _push_worker(u_type=q_type, b_url=base_url, e_point=endpoint, p_fix=prefix, f_log=file_payload_log, tag=name_tag):
                 erp_response_str = '{"statusCode": 200, "message": "Success"}'
                 is_success = True
-                
+
                 if b_url and e_point:
                     try:
                         if "pakizaknit.pakizasoftware.com" in str(b_url):
@@ -1063,6 +1106,7 @@ class LiteCameraStream:
                         erp_response_str = f'{{"error": "{str(ex)}"}}'
 
                 if is_success:
+                    erp_any_success.set()  # Signal: at least one ERP push succeeded
                     if should_print:
                         print(f"[{tag}] queued ok=True emp={emp_id} name={name} date={date_str} in={time_str}", flush=True)
                     write_erp_log(f"PUSH REALTIME | {f_log} | STATUS=SUCCESS | erp_response={erp_response_str}")
@@ -1073,37 +1117,24 @@ class LiteCameraStream:
 
             threading.Thread(target=_push_worker, daemon=True).start()
 
-        # Trigger Relay On HTTP GET once when attendance is confirmed
-        try:
-            relay_on_url = "http://10.81.100.72/on"
-            try:
-                r_res = requests.get(f"{BACKEND_BASE_URL}/api/v1/settings/relay", headers={"x-company-id": self.company_id}, timeout=1.5)
-                if r_res.status_code == 200:
-                    d_data = r_res.json()
-                    if isinstance(d_data, list) and len(d_data) > 0:
-                        d_data = d_data[0]
-                    if isinstance(d_data, dict):
-                        relay_on_url = d_data.get("relayOnUrl") or d_data.get("relay_on_url") or relay_on_url
-            except Exception:
-                pass
+        # ── Door relay: fire ONLY after confirmed ERP push ───────────────────────────
+        # Wait up to DOOR_ERP_WAIT_S for at least one ERP push to succeed before
+        # firing the door relay. If no ERP succeeds within the window, we still
+        # unlock the door (backend attendance already confirmed above) so employees
+        # are never stuck, but we log a warning.
+        def _door_after_erp():
+            from app.services.door_relay import write_door_log
+            erp_wait_s = float(os.getenv("DOOR_ERP_WAIT_S", "3.0"))
+            got_erp = erp_any_success.wait(timeout=erp_wait_s)
+            if not got_erp:
+                write_door_log(
+                    f"[DOOR] erp_wait_timeout emp={emp_id} cid={self.camera_id} "
+                    f"unlocking_anyway=True (backend attendance already confirmed)"
+                )
+            # Fire silent unlock
+            self._send_door_unlock_request(emp_id, name, score)
 
-            on_url = relay_on_url
-            sep = "&" if "?" in on_url else "?"
-            on_url = f"{on_url}{sep}employee_id={urllib.parse.quote(emp_id, safe='')}"
-
-            def _relay_on_worker():
-                from app.services.door_relay import write_door_log
-                try:
-                    resp = urllib.request.urlopen(on_url, timeout=3.0)
-                    resp.close()
-                    write_door_log(f"[RELAY] on cid={self.camera_id} url={on_url}")
-                except Exception as ex:
-                    err_str = "timed out" if ("timed out" in str(ex).lower() or "timeout" in str(ex).lower()) else str(ex)
-                    write_door_log(f"[RELAY] failed cid={self.camera_id} url={on_url} err={err_str}")
-
-            threading.Thread(target=_relay_on_worker, daemon=True).start()
-        except Exception:
-            pass
+        threading.Thread(target=_door_after_erp, daemon=True).start()
 
     def stop(self):
         self.stopped = True
