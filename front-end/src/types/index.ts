@@ -45,3 +45,4 @@ export type Camera = {
 };
 
 export * from './visitor-types';
+export * from './new-hrm-module';

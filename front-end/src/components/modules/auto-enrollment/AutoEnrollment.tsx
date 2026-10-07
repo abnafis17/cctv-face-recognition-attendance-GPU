@@ -8,6 +8,7 @@ import { SetupPanel } from "./components/SetupPanel";
 import { EnrollmentPanel } from "./components/EnrollmentPanel";
 import { useErpEmployees, type ErpEmployee } from "@/hooks/useErpEmployees";
 import { useErpDepartments } from "@/hooks/useErpDepartments";
+import { useHrmEmployees } from "@/hooks/useHrmEmployees";
 import { useAutoEnrollmentContainer } from "./useAutoEnrollmentContainer";
 
 export default function AutoEnrollment({
@@ -103,6 +104,22 @@ export default function AutoEnrollment({
     };
   }, [container.session]);
 
+  // Mode: "hrm" (New HRM Module) or "erp" (Old ERP)
+  const [sourceMode, setSourceMode] = useState<"hrm" | "erp">("hrm");
+
+  // =========================================================================
+  // HRM Module Hook & State
+  // =========================================================================
+  const hrm = useHrmEmployees({
+    debounceMs: 350,
+    initialSearch: initialEmployeeId || "",
+  });
+
+  const [selectedHrmEmployeeId, setSelectedHrmEmployeeId] = useState(initialEmployeeId || "");
+
+  // =========================================================================
+  // Old ERP Hook & State
+  // =========================================================================
   const { employees, loading: erpLoading, error: erpError, setSearch: setErpSearch } = useErpEmployees({
     debounceMs: 350,
     initialSearch: initialEmployeeId || "",
@@ -120,10 +137,13 @@ export default function AutoEnrollment({
   React.useEffect(() => {
     if (!initialEmployeeId) return;
     setSelectedErpEmployeeId(initialEmployeeId);
+    setSelectedHrmEmployeeId(initialEmployeeId);
     setEmployeeSearch(initialEmployeeId);
     setErpSearch(initialEmployeeId);
-  }, [initialEmployeeId, setErpSearch]);
+    hrm.setSearch(initialEmployeeId);
+  }, [initialEmployeeId, setErpSearch, hrm]);
 
+  // Sync initial ERP employee
   React.useEffect(() => {
     if (!initialEmployeeId) return;
     const picked = employees.find((e) => e.employeeId === initialEmployeeId);
@@ -144,7 +164,35 @@ export default function AutoEnrollment({
     if (picked.picUrl) container.setEmpPicUrl(picked.picUrl);
   }, [employees, initialEmployeeId, container]);
 
-  const handleSearchChange = useCallback(
+  // Sync initial HRM employee
+  React.useEffect(() => {
+    if (!initialEmployeeId) return;
+    const picked = hrm.employees.find(
+      (e) =>
+        e.employee_id_system === initialEmployeeId ||
+        e.employee_code === initialEmployeeId ||
+        e.employee_id === initialEmployeeId ||
+        e.employee_id_company === initialEmployeeId ||
+        e.id === initialEmployeeId
+    );
+    if (!picked) return;
+    container.setEmployeeId(picked.employee_id_system || picked.employee_id || picked.employee_code || picked.id);
+    if (picked.name || picked.name_in_english) container.setName(picked.name || picked.name_in_english || "");
+    if (picked.unit_name) container.setUnit(picked.unit_name);
+    if (picked.department_name) container.setDepartment(picked.department_name);
+    if (picked.section_name) container.setSection(picked.section_name);
+    if (picked.line_name) container.setLine(picked.line_name);
+    if (picked.department_id) container.setDeptId(picked.department_id);
+    if (picked.section_id) container.setSectionId(picked.section_id);
+    if (picked.unit_id) container.setUnitId(picked.unit_id);
+    if (picked.line_id) container.setLineId(picked.line_id);
+    if (picked.designation_id) container.setDesignationId(picked.designation_id);
+    if (picked.designation) container.setDesignation(picked.designation);
+    if (picked.profile_pic || picked.employee_portrait) container.setEmpPicUrl(picked.profile_pic || picked.employee_portrait || "");
+  }, [hrm.employees, initialEmployeeId, container]);
+
+  // ERP Search & Department handlers
+  const handleErpSearchChange = useCallback(
     (q: string) => {
       setEmployeeSearch(q);
       if (q) {
@@ -202,12 +250,48 @@ export default function AutoEnrollment({
     [container, employees, selectedEmployee]
   );
 
+  // HRM Employee Pick handler
+  const onPickHrmEmployee = useCallback(
+    (empId: string) => {
+      const picked = hrm.employees.find(
+        (e) =>
+          e.employee_id_system === empId ||
+          e.employee_code === empId ||
+          e.employee_id === empId ||
+          e.employee_id_company === empId ||
+          e.id === empId
+      );
+      if (!picked) return;
+      container.setEmployeeId(picked.employee_id_system || picked.employee_id || picked.employee_code || picked.id);
+      container.setName(picked.name || picked.name_in_english || "");
+      container.setUnit(picked.unit_name || "");
+      container.setDepartment(picked.department_name || "");
+      container.setSection(picked.section_name || "");
+      container.setLine(picked.line_name || "");
+      container.setDeptId(picked.department_id || "");
+      container.setSectionId(picked.section_id || "");
+      container.setUnitId(picked.unit_id || "");
+      container.setLineId(picked.line_id || "");
+      container.setDesignationId(picked.designation_id || "");
+      container.setDesignation(picked.designation || "");
+      container.setEmpPicUrl(picked.profile_pic || picked.employee_portrait || "");
+    },
+    [container, hrm.employees]
+  );
+
   const handleReset = useCallback(() => {
+    // Reset ERP
     setSelectedErpEmployeeId("");
     setSelectedEmployee(null);
     setEmployeeSearch("");
     setErpSearch("");
     setDepartmentFilter("");
+
+    // Reset HRM
+    setSelectedHrmEmployeeId("");
+    hrm.resetFilters();
+
+    // Reset form fields
     container.setEmployeeId("");
     container.setName("");
     container.setUnit("");
@@ -221,7 +305,7 @@ export default function AutoEnrollment({
     container.setUnitId("");
     container.setLineId("");
     container.setEmpPicUrl("");
-  }, [container, setErpSearch]);
+  }, [container, setErpSearch, hrm]);
 
   const filteredEmployees = useMemo(() => {
     let list = employees;
@@ -276,12 +360,59 @@ export default function AutoEnrollment({
           camerasWithLaptop={container.camerasWithLaptop}
           selectedCamIsActive={container.selectedCamIsActive}
           busy={container.busy}
+
+          // Source mode
+          sourceMode={sourceMode}
+          setSourceMode={setSourceMode}
+
+          // HRM props
+          selectedHrmEmployeeId={selectedHrmEmployeeId}
+          setSelectedHrmEmployeeId={setSelectedHrmEmployeeId}
+          hrmCompanyId={hrm.companyId}
+          setHrmCompanyId={hrm.setCompanyId}
+          hrmAreaId={hrm.areaId}
+          setHrmAreaId={hrm.setAreaId}
+          hrmDepartmentId={hrm.departmentId}
+          setHrmDepartmentId={hrm.setDepartmentId}
+          hrmSectionId={hrm.sectionId}
+          setHrmSectionId={hrm.setSectionId}
+          hrmUnitId={hrm.unitId}
+          setHrmUnitId={hrm.setUnitId}
+          hrmLineId={hrm.lineId}
+          setHrmLineId={hrm.setLineId}
+          hrmCompanies={hrm.companies}
+          hrmCompaniesLoading={hrm.companiesLoading}
+          hrmAreas={hrm.areas}
+          hrmAreasLoading={hrm.areasLoading}
+          hrmDepartments={hrm.departments}
+          hrmDepartmentsLoading={hrm.departmentsLoading}
+          hrmSections={hrm.sections}
+          hrmSectionsLoading={hrm.sectionsLoading}
+          hrmUnits={hrm.units}
+          hrmUnitsLoading={hrm.unitsLoading}
+          hrmLines={hrm.lines}
+          hrmLinesLoading={hrm.linesLoading}
+          hrmItems={hrm.hrmItems}
+          hrmLoading={hrm.loading}
+          hrmError={hrm.error}
+          hrmSearch={hrm.search}
+          setHrmSearch={hrm.setSearch}
+          onPickHrmEmployee={onPickHrmEmployee}
+
+          // ERP props
           selectedErpEmployeeId={selectedErpEmployeeId}
           setSelectedErpEmployeeId={setSelectedErpEmployeeId}
           departmentFilter={departmentFilter}
           setDepartmentFilter={handleDepartmentChange}
           departmentsList={erpDepartments}
           erpLoading={erpLoading}
+          erpItems={erpItems}
+          erpError={erpError}
+          erpSearch={employeeSearch}
+          setErpSearch={handleErpSearchChange}
+          onPickEmployee={onPickEmployee}
+
+          // Form fields
           unit={container.unit}
           setUnit={container.setUnit}
           department={container.department}
@@ -290,17 +421,14 @@ export default function AutoEnrollment({
           setSection={container.setSection}
           line={container.line}
           setLine={container.setLine}
-          erpItems={erpItems}
-          erpError={erpError}
-          erpSearch={employeeSearch}
-          setErpSearch={handleSearchChange}
-          onPickEmployee={onPickEmployee}
           employeeId={container.employeeId}
           setEmployeeId={container.setEmployeeId}
           name={container.name}
           setName={container.setName}
           reEnroll={reEnroll}
           lockEmployeeIdentity={lockEmployeeIdentity}
+
+          // Actions
           start={container.start}
           startDisabled={container.startDisabled}
           tts={container.tts}

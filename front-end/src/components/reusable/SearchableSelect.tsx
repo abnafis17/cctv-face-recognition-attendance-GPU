@@ -57,6 +57,9 @@ export function SearchableSelect({
   const selected = React.useMemo(() => items.find((i) => i.value === value), [items, value]);
 
   const displayedItems = React.useMemo(() => {
+    if (onSearchChange) {
+      return items;
+    }
     const q = localQuery.trim().toLowerCase();
     if (!q) return items;
     return items.filter(
@@ -65,7 +68,7 @@ export function SearchableSelect({
         (item.keywords || "").toLowerCase().includes(q) ||
         item.value.toLowerCase().includes(q)
     );
-  }, [items, localQuery]);
+  }, [items, localQuery, onSearchChange]);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -80,7 +83,14 @@ export function SearchableSelect({
           <div className="flex items-center gap-2 truncate min-w-0">
             {selected && selected.image && (
               /* eslint-disable-next-line @next/next/no-img-element */
-              <img src={selected.image} alt={selected.label} className="h-5 w-5 rounded-full object-cover shrink-0 border border-zinc-200" />
+              <img
+                src={selected.image}
+                alt={selected.label}
+                onError={(e) => {
+                  (e.currentTarget as HTMLElement).style.display = "none";
+                }}
+                className="h-5 w-5 rounded-full object-cover shrink-0 border border-zinc-200"
+              />
             )}
             <span className="truncate">{selected ? selected.label : placeholder}</span>
           </div>
@@ -137,7 +147,14 @@ export function SearchableSelect({
                     <div className="flex items-center gap-2 truncate min-w-0">
                       {item.image && (
                         /* eslint-disable-next-line @next/next/no-img-element */
-                        <img src={item.image} alt={item.label} className="h-6 w-6 rounded-full object-cover shrink-0 border border-zinc-200" />
+                        <img
+                          src={item.image}
+                          alt={item.label}
+                          onError={(e) => {
+                            (e.currentTarget as HTMLElement).style.display = "none";
+                          }}
+                          className="h-6 w-6 rounded-full object-cover shrink-0 border border-zinc-200"
+                        />
                       )}
                       <span className="truncate">{item.label}</span>
                     </div>
