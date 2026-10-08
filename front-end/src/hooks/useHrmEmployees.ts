@@ -100,10 +100,6 @@ export function useHrmEmployees(options?: {
       const targetUrl = `${NEW_HRM_URL.replace(/\/+$/, "")}${HRM_API.COMPANY_LIST}`;
 
       const response = await axios.get(targetUrl, {
-        params: {
-          get_all: true,
-          status: "active",
-        },
         headers: {
           Accept: "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -153,16 +149,13 @@ export function useHrmEmployees(options?: {
       const token = getAuthToken();
       const targetUrl = `${NEW_HRM_URL.replace(/\/+$/, "")}${HRM_API.AREA_LIST}`;
 
-      const params: Record<string, any> = {
-        get_all: true,
-        status: "active",
-      };
+      const params: Record<string, any> = {};
       if (targetCompanyId) {
         params.company_id = targetCompanyId;
       }
 
       const response = await axios.get(targetUrl, {
-        params,
+        ...(Object.keys(params).length > 0 ? { params } : {}),
         headers: {
           Accept: "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -180,10 +173,18 @@ export function useHrmEmployees(options?: {
       if (Array.isArray(rawList)) {
         const mappedAreas: HrmArea[] = rawList.map((item: any) => ({
           id: String(item.id || "").trim(),
-          area_name: String(item.area_name || item.name || "").trim(),
-          area_code: String(item.area_code || item.code || "").trim(),
+          area_name: String(
+            item.area_name_in_english ||
+              item.area_name ||
+              item.name ||
+              item.area_name_in_bengali ||
+              ""
+          ).trim(),
+          area_code: String(item.area_code || item.code || item.short_name || "").trim(),
           company_id: String(item.company_id || targetCompanyId || "").trim(),
+          area_name_in_english: item.area_name_in_english,
           area_name_in_bengali: item.area_name_in_bengali,
+          short_name: item.short_name,
           status: item.status,
         }));
         setAreas(mappedAreas);
@@ -207,16 +208,13 @@ export function useHrmEmployees(options?: {
       const token = getAuthToken();
       const targetUrl = `${NEW_HRM_URL.replace(/\/+$/, "")}${HRM_API.DEPARTMENT_LIST}`;
 
-      const params: Record<string, any> = {
-        get_all: true,
-        status: "active",
-      };
+      const params: Record<string, any> = {};
       if (targetCompanyId) {
         params.company_id = targetCompanyId;
       }
 
       const response = await axios.get(targetUrl, {
-        params,
+        ...(Object.keys(params).length > 0 ? { params } : {}),
         headers: {
           Accept: "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -264,10 +262,7 @@ export function useHrmEmployees(options?: {
       const token = getAuthToken();
       const targetUrl = `${NEW_HRM_URL.replace(/\/+$/, "")}${HRM_API.SECTION_LIST}`;
 
-      const params: Record<string, any> = {
-        get_all: true,
-        status: "active",
-      };
+      const params: Record<string, any> = {};
       if (targetCompanyId) {
         params.company_id = targetCompanyId;
       }
@@ -276,7 +271,7 @@ export function useHrmEmployees(options?: {
       }
 
       const response = await axios.get(targetUrl, {
-        params,
+        ...(Object.keys(params).length > 0 ? { params } : {}),
         headers: {
           Accept: "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -324,16 +319,13 @@ export function useHrmEmployees(options?: {
       const token = getAuthToken();
       const targetUrl = `${NEW_HRM_URL.replace(/\/+$/, "")}${HRM_API.UNIT_LIST}`;
 
-      const params: Record<string, any> = {
-        get_all: true,
-        status: "active",
-      };
+      const params: Record<string, any> = {};
       if (targetCompanyId) {
         params.company_id = targetCompanyId;
       }
 
       const response = await axios.get(targetUrl, {
-        params,
+        ...(Object.keys(params).length > 0 ? { params } : {}),
         headers: {
           Accept: "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -381,16 +373,13 @@ export function useHrmEmployees(options?: {
       const token = getAuthToken();
       const targetUrl = `${NEW_HRM_URL.replace(/\/+$/, "")}${HRM_API.LINE_LIST}`;
 
-      const params: Record<string, any> = {
-        get_all: true,
-        status: "active",
-      };
+      const params: Record<string, any> = {};
       if (targetCompanyId) {
         params.company_id = targetCompanyId;
       }
 
       const response = await axios.get(targetUrl, {
-        params,
+        ...(Object.keys(params).length > 0 ? { params } : {}),
         headers: {
           Accept: "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -455,7 +444,6 @@ export function useHrmEmployees(options?: {
         const targetUrl = `${NEW_HRM_URL.replace(/\/+$/, "")}${HRM_API.EMPLOYEE_LIST}`;
 
         const params: Record<string, any> = {
-          get_all: true,
           status: "working",
           order: "desc",
           sort_by: "created_at",
@@ -463,8 +451,7 @@ export function useHrmEmployees(options?: {
 
         if (filters.companyId) params.company_id = filters.companyId;
         if (filters.areaId) {
-          params.working_area_id = filters.areaId;
-          params.area_id = filters.areaId;
+          params.region_id = filters.areaId;
         }
         if (filters.departmentId) params.department_id = filters.departmentId;
         if (filters.sectionId) params.section_id = filters.sectionId;

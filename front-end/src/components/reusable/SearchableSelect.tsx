@@ -26,6 +26,8 @@ export function SearchableSelect({
   onSearchChange,
   onChange,
   className,
+  popoverClassName,
+  minWidth,
 }: {
   value: string;
   items: ItemBase[];
@@ -38,6 +40,8 @@ export function SearchableSelect({
   onSearchChange?: (q: string) => void;
   onChange: (val: string) => void;
   className?: string;
+  popoverClassName?: string;
+  minWidth?: number | string;
 }) {
   const [open, setOpen] = React.useState(false);
   const [localQuery, setLocalQuery] = React.useState("");
@@ -78,7 +82,10 @@ export function SearchableSelect({
           role="combobox"
           aria-expanded={open}
           disabled={disabled}
-          className={cn("w-full justify-between", className)}
+          className={cn(
+            "w-full justify-between h-9 rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-800 shadow-none hover:bg-zinc-50/70 hover:border-zinc-300 transition-colors",
+            className
+          )}
         >
           <div className="flex items-center gap-2 truncate min-w-0">
             {selected && selected.image && (
@@ -94,15 +101,24 @@ export function SearchableSelect({
             )}
             <span className="truncate">{selected ? selected.label : placeholder}</span>
           </div>
-          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-60" />
+          <ChevronsUpDown className="ml-2 h-3.5 w-3.5 shrink-0 text-zinc-400" />
         </Button>
       </PopoverTrigger>
 
       <PopoverContent
-        style={{ width: "var(--radix-popover-trigger-width)" }}
-        className="p-0 shadow-2xl rounded-2xl border border-zinc-200/80 bg-white overflow-hidden"
+        style={{
+          width: "var(--radix-popover-trigger-width)",
+          minWidth: minWidth ?? "max(var(--radix-popover-trigger-width), 280px)",
+          maxWidth: "calc(100vw - 24px)",
+        }}
+        className={cn(
+          "p-0 shadow-2xl rounded-xl border border-zinc-200/90 bg-white overflow-hidden z-50",
+          popoverClassName
+        )}
         align="start"
         sideOffset={6}
+        avoidCollisions={true}
+        collisionPadding={12}
         onPointerDownOutside={(e) => {
           const target = e.target as HTMLElement | null;
           if (target?.closest?.('[data-virtual-keyboard="true"]')) e.preventDefault();
@@ -120,20 +136,24 @@ export function SearchableSelect({
           />
 
           {loading && displayedItems.length === 0 ? (
-            <div className="px-3 py-2 text-sm text-muted-foreground flex items-center gap-2">
+            <div className="px-3 py-3 text-xs text-muted-foreground flex items-center gap-2 justify-center">
               <Loader2 className="h-4 w-4 animate-spin text-zinc-400" />
-              {loadingText}
+              <span>{loadingText}</span>
             </div>
           ) : (
             <>
               {loading && (
-                <div className="px-3 py-1.5 text-xs text-muted-foreground border-b border-zinc-100 flex items-center gap-2 bg-zinc-50/50">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin text-zinc-400" />
-                  Updating results...
+                <div className="px-3 py-1.5 text-[11px] text-muted-foreground border-b border-zinc-100 flex items-center gap-2 bg-zinc-50/70">
+                  <Loader2 className="h-3 w-3 animate-spin text-violet-500" />
+                  <span>Updating results...</span>
                 </div>
               )}
-              {displayedItems.length === 0 && <CommandEmpty>{emptyText}</CommandEmpty>}
-              <CommandGroup className="max-h-72 overflow-auto">
+              {displayedItems.length === 0 && (
+                <CommandEmpty className="py-4 text-center text-xs text-zinc-400">
+                  {emptyText}
+                </CommandEmpty>
+              )}
+              <CommandGroup className="max-h-72 overflow-y-auto p-1">
                 {displayedItems.map((item) => (
                   <CommandItem
                     key={item.value}
@@ -142,9 +162,15 @@ export function SearchableSelect({
                       onChange(item.value);
                       setOpen(false);
                     }}
+                    className="flex items-center gap-2 px-2.5 py-2 text-xs text-zinc-700 rounded-md cursor-pointer aria-selected:bg-violet-50 aria-selected:text-violet-900 transition-colors"
                   >
-                    <Check className={cn("mr-2 h-4 w-4 shrink-0", value === item.value ? "opacity-100" : "opacity-0")} />
-                    <div className="flex items-center gap-2 truncate min-w-0">
+                    <Check
+                      className={cn(
+                        "h-3.5 w-3.5 shrink-0 text-violet-600 transition-opacity",
+                        value === item.value ? "opacity-100" : "opacity-0"
+                      )}
+                    />
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
                       {item.image && (
                         /* eslint-disable-next-line @next/next/no-img-element */
                         <img
@@ -153,10 +179,10 @@ export function SearchableSelect({
                           onError={(e) => {
                             (e.currentTarget as HTMLElement).style.display = "none";
                           }}
-                          className="h-6 w-6 rounded-full object-cover shrink-0 border border-zinc-200"
+                          className="h-5 w-5 rounded-full object-cover shrink-0 border border-zinc-200"
                         />
                       )}
-                      <span className="truncate">{item.label}</span>
+                      <span className="truncate flex-1 font-medium">{item.label}</span>
                     </div>
                   </CommandItem>
                 ))}

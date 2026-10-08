@@ -197,7 +197,8 @@ export const SetupPanel = React.memo(function SetupPanel({
       { value: "", label: "All Companies" },
       ...hrmCompanies.map((c) => ({
         value: c.id,
-        label: c.company_code ? `${c.company_name} (${c.company_code})` : c.company_name,
+        label: c.company_name,
+        keywords: `${c.company_name} ${c.company_code || ""} ${c.short_name || ""}`,
       })),
     ];
   }, [hrmCompanies]);
@@ -205,10 +206,14 @@ export const SetupPanel = React.memo(function SetupPanel({
   const areaOptions = React.useMemo(() => {
     return [
       { value: "", label: "All Areas" },
-      ...hrmAreas.map((a) => ({
-        value: a.id,
-        label: a.area_code ? `${a.area_name} (${a.area_code})` : a.area_name,
-      })),
+      ...hrmAreas.map((a) => {
+        const name = a.area_name || a.area_name_in_english || a.short_name || a.area_code || a.id;
+        return {
+          value: a.id,
+          label: name,
+          keywords: `${name} ${a.area_code || ""} ${a.short_name || ""}`,
+        };
+      }),
     ];
   }, [hrmAreas]);
 
@@ -384,7 +389,7 @@ export const SetupPanel = React.memo(function SetupPanel({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
                     {/* 1. Company */}
                     <div>
                       <Label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">
@@ -402,7 +407,8 @@ export const SetupPanel = React.memo(function SetupPanel({
                           searchPlaceholder="Search company..."
                           disabled={busy || lockEmployeeIdentity}
                           loading={hrmCompaniesLoading}
-                          className="h-8.5 rounded-md border border-zinc-200 bg-white text-xs"
+                          minWidth="280px"
+                          className="h-9 rounded-md border border-zinc-200 bg-white text-xs font-normal"
                         />
                       </div>
                     </div>
@@ -424,7 +430,8 @@ export const SetupPanel = React.memo(function SetupPanel({
                           searchPlaceholder="Search area..."
                           disabled={busy || lockEmployeeIdentity}
                           loading={hrmAreasLoading}
-                          className="h-8.5 rounded-md border border-zinc-200 bg-white text-xs"
+                          minWidth="280px"
+                          className="h-9 rounded-md border border-zinc-200 bg-white text-xs font-normal"
                         />
                       </div>
                     </div>
@@ -446,7 +453,8 @@ export const SetupPanel = React.memo(function SetupPanel({
                           searchPlaceholder="Search department..."
                           disabled={busy || lockEmployeeIdentity}
                           loading={hrmDepartmentsLoading}
-                          className="h-8.5 rounded-md border border-zinc-200 bg-white text-xs"
+                          minWidth="280px"
+                          className="h-9 rounded-md border border-zinc-200 bg-white text-xs font-normal"
                         />
                       </div>
                     </div>
@@ -468,7 +476,8 @@ export const SetupPanel = React.memo(function SetupPanel({
                           searchPlaceholder="Search section..."
                           disabled={busy || lockEmployeeIdentity}
                           loading={hrmSectionsLoading}
-                          className="h-8.5 rounded-md border border-zinc-200 bg-white text-xs"
+                          minWidth="280px"
+                          className="h-9 rounded-md border border-zinc-200 bg-white text-xs font-normal"
                         />
                       </div>
                     </div>
@@ -490,7 +499,8 @@ export const SetupPanel = React.memo(function SetupPanel({
                           searchPlaceholder="Search unit..."
                           disabled={busy || lockEmployeeIdentity}
                           loading={hrmUnitsLoading}
-                          className="h-8.5 rounded-md border border-zinc-200 bg-white text-xs"
+                          minWidth="280px"
+                          className="h-9 rounded-md border border-zinc-200 bg-white text-xs font-normal"
                         />
                       </div>
                     </div>
@@ -512,7 +522,8 @@ export const SetupPanel = React.memo(function SetupPanel({
                           searchPlaceholder="Search line..."
                           disabled={busy || lockEmployeeIdentity}
                           loading={hrmLinesLoading}
-                          className="h-8.5 rounded-md border border-zinc-200 bg-white text-xs"
+                          minWidth="280px"
+                          className="h-9 rounded-md border border-zinc-200 bg-white text-xs font-normal"
                         />
                       </div>
                     </div>
@@ -594,6 +605,7 @@ export const SetupPanel = React.memo(function SetupPanel({
                         searchPlaceholder="Search department..."
                         disabled={busy || lockEmployeeIdentity}
                         onSearchChange={(q) => setDeptSearch(q)}
+                        minWidth="280px"
                         className="h-9 rounded-md border border-zinc-200 bg-white pl-3 text-left text-xs font-normal text-zinc-750 shadow-none hover:bg-zinc-50/50"
                       />
                     </div>
