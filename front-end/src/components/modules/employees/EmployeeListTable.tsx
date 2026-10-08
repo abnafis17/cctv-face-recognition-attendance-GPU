@@ -130,17 +130,8 @@ const EmployeeListTable = () => {
       </div>
 
       {/* Edit Form Modal */}
-      <ReusableModal open={isOpen} onClose={handleModalClose} title="Edit Employee Info">
-        {selectedUser && (
-          <EmployeeEditForm
-            selectedUser={selectedUser}
-            setSelectedUser={setSelectedUser}
-            allEmployees={employees}
-            loading={loading}
-            onClose={handleModalClose}
-            onSave={handleUpdateEmployee}
-          />
-        )}
+      <ReusableModal open={isOpen} onClose={handleModalClose} title="Edit Employee Info" maxWidth="2xl">
+        {selectedUser && <EmployeeEditForm selectedUser={selectedUser} setSelectedUser={setSelectedUser} loading={loading} onClose={handleModalClose} onSave={handleUpdateEmployee} />}
       </ReusableModal>
 
       {/* Delete Confirmation Modal */}
