@@ -1,12 +1,12 @@
 "use client";
 
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Employee } from "@/types";
-import { useErpEmployees } from "@/hooks/useErpEmployees";
-import {
-  deriveEmployeeHierarchy,
-  normalizeHierarchyValue,
-} from "@/lib/employeeHierarchy";
+import { useHrmEmployees } from "@/hooks/useHrmEmployees";
+import { SearchableSelect } from "@/components/reusable/SearchableSelect";
+import { Label } from "@/components/ui/label";
+import { Building2, Layers, Save, X } from "lucide-react";
+import toast from "react-hot-toast";
 
 type Props = {
   selectedUser: Employee | null;
@@ -30,301 +30,448 @@ type Props = {
   }) => void;
 };
 
-function withCurrentOption(options: string[], current?: string | null): string[] {
-  const currentValue = normalizeHierarchyValue(current);
-  if (!currentValue) return options;
-  if (options.includes(currentValue)) return options;
-  return [currentValue, ...options];
-}
-
-function toHierarchyWriteValue(value?: string | null): string {
-  const normalized = normalizeHierarchyValue(value);
-  return normalized || "";
-}
-
 const EmployeeEditForm: React.FC<Props> = ({
   selectedUser,
-  setSelectedUser,
   loading,
   onClose,
   onSave,
 }) => {
-  const targetSearch = selectedUser?.empId || "";
   const {
-    employees: erpEmployees,
-    loading: erpLoading,
-    error: erpError,
-  } = useErpEmployees({ debounceMs: 350, initialSearch: targetSearch, autoFetch: true });
+    companies,
+    companiesLoading,
+    areas,
+    areasLoading,
+    departments,
+    departmentsLoading,
+    sections,
+    sectionsLoading,
+    units,
+    unitsLoading,
+    lines,
+    linesLoading,
+    fetchAreas,
+    fetchDepartments,
+    fetchSections,
+    fetchUnits,
+    fetchLines,
+  } = useHrmEmployees();
 
-  // When ERP search completes, if a matching employee is found, populate the fields
-  React.useEffect(() => {
-    if (erpLoading || !selectedUser?.empId) return;
-    const matched = erpEmployees.find((e) => e.employeeId === selectedUser.empId);
-    if (matched) {
-      setSelectedUser((prev) => {
-        if (!prev) return prev;
+  // Local form state initialized from selectedUser
+  const [empName, setEmpName] = useState(selectedUser?.name ?? "");
+  const [empId, setEmpId] = useState(selectedUser?.empId ?? "");
 
-        // Only update if there are differences to avoid infinite loops
-        if (
-          prev.name === matched.employeeName &&
-          prev.unit === matched.unit &&
-          prev.department === matched.department &&
-          prev.section === matched.section &&
-          prev.line === matched.line &&
-          prev.deptId === matched.deptId &&
-          prev.sectionId === matched.sectionId &&
-          prev.designationId === matched.designationId &&
-          prev.designation === matched.designation &&
-          prev.unitId === matched.unitId &&
-          prev.lineId === matched.lineId &&
-          prev.empPicUrl === matched.picUrl
-        ) {
-          return prev;
-        }
+  const [companyId, setCompanyId] = useState("");
+  const [areaId, setAreaId] = useState("");
 
-        return {
-          ...prev,
-          name: matched.employeeName,
-          unit: matched.unit,
-          department: matched.department,
-          section: matched.section,
-          line: matched.line,
-          deptId: matched.deptId ?? null,
-          sectionId: matched.sectionId ?? null,
-          designationId: matched.designationId ?? null,
-          designation: matched.designation ?? null,
-          unitId: matched.unitId ?? null,
-          lineId: matched.lineId ?? null,
-          empPicUrl: matched.picUrl ?? null,
-        };
+  const [unitId, setUnitId] = useState(selectedUser?.unitId ?? "");
+  const [unitName, setUnitName] = useState(selectedUser?.unit ?? "");
+
+  const [departmentId, setDepartmentId] = useState(selectedUser?.deptId ?? "");
+  const [departmentName, setDepartmentName] = useState(selectedUser?.department ?? "");
+
+  const [sectionId, setSectionId] = useState(selectedUser?.sectionId ?? "");
+  const [sectionName, setSectionName] = useState(selectedUser?.section ?? "");
+
+  const [lineId, setLineId] = useState(selectedUser?.lineId ?? "");
+  const [lineName, setLineName] = useState(selectedUser?.line ?? "");
+
+  const [designationId] = useState(selectedUser?.designationId ?? "");
+  const [designationName] = useState(selectedUser?.designation ?? "");
+  const [empPicUrl] = useState(selectedUser?.empPicUrl ?? "");
+
+  // Auto-match current employee names with HRM IDs once HRM master lists load
+  useEffect(() => {
+    if (unitName && !unitId && units.length > 0) {
+      const match = units.find(
+        (u) =>
+          u.unit_name?.trim().toLowerCase() === unitName.trim().toLowerCase() ||
+          u.unit_code?.trim().toLowerCase() === unitName.trim().toLowerCase()
+      );
+      if (match) setUnitId(match.id);
+    }
+  }, [units, unitName, unitId]);
+
+  useEffect(() => {
+    if (departmentName && !departmentId && departments.length > 0) {
+      const match = departments.find(
+        (d) =>
+          d.department_name?.trim().toLowerCase() === departmentName.trim().toLowerCase() ||
+          d.name_in_english?.trim().toLowerCase() === departmentName.trim().toLowerCase()
+      );
+      if (match) setDepartmentId(match.id);
+    }
+  }, [departments, departmentName, departmentId]);
+
+  useEffect(() => {
+    if (sectionName && !sectionId && sections.length > 0) {
+      const match = sections.find(
+        (s) =>
+          s.section_name?.trim().toLowerCase() === sectionName.trim().toLowerCase() ||
+          s.section_name_in_english?.trim().toLowerCase() === sectionName.trim().toLowerCase()
+      );
+      if (match) setSectionId(match.id);
+    }
+  }, [sections, sectionName, sectionId]);
+
+  useEffect(() => {
+    if (lineName && !lineId && lines.length > 0) {
+      const match = lines.find(
+        (l) =>
+          l.line_name?.trim().toLowerCase() === lineName.trim().toLowerCase() ||
+          l.line_name_in_english?.trim().toLowerCase() === lineName.trim().toLowerCase()
+      );
+      if (match) setLineId(match.id);
+    }
+  }, [lines, lineName, lineId]);
+
+  // Handle Company Selection
+  const handleCompanyChange = (id: string) => {
+    setCompanyId(id);
+    setAreaId("");
+    fetchAreas(id || undefined);
+    fetchDepartments(id || undefined);
+    fetchSections(id || undefined, departmentId || undefined);
+    fetchUnits(id || undefined);
+    fetchLines(id || undefined);
+  };
+
+  // Handle Area Selection
+  const handleAreaChange = (id: string) => {
+    setAreaId(id);
+  };
+
+  // Handle Unit Selection
+  const handleUnitChange = (id: string) => {
+    setUnitId(id);
+    const found = units.find((u) => u.id === id);
+    setUnitName(found?.unit_name || (id ? found?.unit_name_in_english || "" : ""));
+  };
+
+  // Handle Department Selection
+  const handleDepartmentChange = (id: string) => {
+    setDepartmentId(id);
+    const found = departments.find((d) => d.id === id);
+    setDepartmentName(found?.department_name || (id ? found?.name_in_english || "" : ""));
+    fetchSections(companyId || undefined, id || undefined);
+  };
+
+  // Handle Section Selection
+  const handleSectionChange = (id: string) => {
+    setSectionId(id);
+    const found = sections.find((s) => s.id === id);
+    setSectionName(found?.section_name || (id ? found?.section_name_in_english || "" : ""));
+  };
+
+  // Handle Line Selection
+  const handleLineChange = (id: string) => {
+    setLineId(id);
+    const found = lines.find((l) => l.id === id);
+    setLineName(found?.line_name || (id ? found?.line_name_in_english || "" : ""));
+  };
+
+  // 1. Company Options
+  const companyOptions = useMemo(() => {
+    const list = companies.map((c) => ({
+      value: c.id,
+      label: c.company_name || c.short_name || c.company_code || c.id,
+      keywords: `${c.company_name} ${c.company_code || ""} ${c.short_name || ""}`,
+    }));
+    return [{ value: "", label: "None / Not specified" }, ...list];
+  }, [companies]);
+
+  // 2. Area Options
+  const areaOptions = useMemo(() => {
+    const list = areas.map((a) => {
+      const label = a.area_name || a.area_name_in_english || a.short_name || a.area_code || a.id;
+      return {
+        value: a.id,
+        label,
+        keywords: `${label} ${a.area_code || ""} ${a.short_name || ""}`,
+      };
+    });
+    return [{ value: "", label: "None / Not specified" }, ...list];
+  }, [areas]);
+
+  // 3. Unit Options
+  const unitOptions = useMemo(() => {
+    const list = units.map((u) => {
+      const label = u.unit_name || u.unit_name_in_english || u.unit_code || u.id;
+      return {
+        value: u.id,
+        label,
+        keywords: `${label} ${u.unit_code || ""}`,
+      };
+    });
+
+    // Ensure the current employee unit value is available in the dropdown
+    if (unitName && !list.some((item) => item.value === unitId || item.label.toLowerCase() === unitName.toLowerCase())) {
+      list.unshift({
+        value: unitId || unitName,
+        label: unitName,
+        keywords: unitName,
       });
     }
-  }, [erpEmployees, erpLoading, selectedUser?.empId, setSelectedUser]);
 
-  const hierarchy = useMemo(
-    () =>
-      deriveEmployeeHierarchy(erpEmployees, {
-        unit: selectedUser?.unit ?? "",
-        department: selectedUser?.department ?? "",
-        section: selectedUser?.section ?? "",
-        line: selectedUser?.line ?? "",
-      }),
-    [
-      erpEmployees,
-      selectedUser?.department,
-      selectedUser?.line,
-      selectedUser?.section,
-      selectedUser?.unit,
-    ],
-  );
+    return [{ value: "", label: "None / Clear" }, ...list];
+  }, [units, unitId, unitName]);
 
-  const unitOptions = useMemo(
-    () => withCurrentOption(hierarchy.options.units, selectedUser?.unit),
-    [hierarchy.options.units, selectedUser?.unit],
-  );
-  const departmentOptions = useMemo(
-    () =>
-      withCurrentOption(
-        hierarchy.options.departments,
-        selectedUser?.department,
-      ),
-    [hierarchy.options.departments, selectedUser?.department],
-  );
-  const sectionOptions = useMemo(
-    () => withCurrentOption(hierarchy.options.sections, selectedUser?.section),
-    [hierarchy.options.sections, selectedUser?.section],
-  );
-  const lineOptions = useMemo(
-    () => withCurrentOption(hierarchy.options.lines, selectedUser?.line),
-    [hierarchy.options.lines, selectedUser?.line],
-  );
+  // 4. Department Options
+  const departmentOptions = useMemo(() => {
+    const list = departments.map((d) => {
+      const label = d.department_name || d.name_in_english || d.code || d.id;
+      return {
+        value: d.id,
+        label,
+        keywords: `${label} ${d.code || ""} ${d.short_name || ""}`,
+      };
+    });
+
+    if (departmentName && !list.some((item) => item.value === departmentId || item.label.toLowerCase() === departmentName.toLowerCase())) {
+      list.unshift({
+        value: departmentId || departmentName,
+        label: departmentName,
+        keywords: departmentName,
+      });
+    }
+
+    return [{ value: "", label: "None / Clear" }, ...list];
+  }, [departments, departmentId, departmentName]);
+
+  // 5. Section Options
+  const sectionOptions = useMemo(() => {
+    const list = sections.map((s) => {
+      const label = s.section_name || s.section_name_in_english || s.section_code || s.id;
+      return {
+        value: s.id,
+        label,
+        keywords: `${label} ${s.section_code || ""}`,
+      };
+    });
+
+    if (sectionName && !list.some((item) => item.value === sectionId || item.label.toLowerCase() === sectionName.toLowerCase())) {
+      list.unshift({
+        value: sectionId || sectionName,
+        label: sectionName,
+        keywords: sectionName,
+      });
+    }
+
+    return [{ value: "", label: "None / Clear" }, ...list];
+  }, [sections, sectionId, sectionName]);
+
+  // 6. Line Options
+  const lineOptions = useMemo(() => {
+    const list = lines.map((l) => {
+      const label = l.line_name || l.line_name_in_english || l.line_code || l.id;
+      return {
+        value: l.id,
+        label,
+        keywords: `${label} ${l.line_code || ""}`,
+      };
+    });
+
+    if (lineName && !list.some((item) => item.value === lineId || item.label.toLowerCase() === lineName.toLowerCase())) {
+      list.unshift({
+        value: lineId || lineName,
+        label: lineName,
+        keywords: lineName,
+      });
+    }
+
+    return [{ value: "", label: "None / Clear" }, ...list];
+  }, [lines, lineId, lineName]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!empName.trim()) {
+      toast.error("Employee Name cannot be empty");
+      return;
+    }
+
+    onSave({
+      name: empName.trim(),
+      empId: empId.trim() || null,
+      unit: unitName.trim() || null,
+      unitId: unitId.trim() || null,
+      department: departmentName.trim() || null,
+      deptId: departmentId.trim() || null,
+      section: sectionName.trim() || null,
+      sectionId: sectionId.trim() || null,
+      line: lineName.trim() || null,
+      lineId: lineId.trim() || null,
+      designation: designationName.trim() || null,
+      designationId: designationId.trim() || null,
+      empPicUrl: empPicUrl.trim() || null,
+    });
+  };
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-1">
-        <label className="text-sm font-medium">Employee ID</label>
-        <input
-          className="w-full rounded border px-3 py-2 text-sm"
-          value={selectedUser?.empId ?? ""}
-          onChange={(e) =>
-            setSelectedUser((prev) =>
-              prev ? { ...prev, empId: e.target.value } : prev,
-            )
-          }
-          placeholder="Employee ID"
-        />
-      </div>
-
-      <div className="space-y-1">
-        <label className="text-sm font-medium">Name</label>
-        <input
-          className="w-full rounded border px-3 py-2 text-sm"
-          value={selectedUser?.name ?? ""}
-          onChange={(e) =>
-            setSelectedUser((prev) =>
-              prev ? { ...prev, name: e.target.value } : prev,
-            )
-          }
-          placeholder="Name"
-        />
-      </div>
-
-      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-        <div className="text-sm font-semibold text-slate-900">Hierarchy</div>
-        <div className="mt-1 text-xs text-slate-600">
-          ERP hierarchy: Unit, Department, Section, Line.
+    <form onSubmit={handleSubmit} className="space-y-4">
+      {/* Basic Info */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+        <div className="space-y-1.5">
+          <Label htmlFor="edit-emp-id" className="text-xs font-semibold text-zinc-700">
+            Employee ID
+          </Label>
+          <input
+            id="edit-emp-id"
+            className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 transition-colors font-mono"
+            value={empId}
+            onChange={(e) => setEmpId(e.target.value)}
+            placeholder="e.g. 2025054707"
+            disabled={loading}
+          />
         </div>
 
-        {erpError ? (
-          <div className="mt-2 text-xs text-red-600">{erpError}</div>
-        ) : null}
-
-        <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-          {hierarchy.availability.hasUnit ? (
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Unit</label>
-              <select
-                className="w-full rounded border bg-white px-3 py-2 text-sm"
-                value={selectedUser?.unit ?? ""}
-                onChange={(e) =>
-                  setSelectedUser((prev) =>
-                    prev
-                      ? {
-                          ...prev,
-                          unit: e.target.value,
-                        }
-                      : prev,
-                  )
-                }
-                disabled={loading || erpLoading}
-              >
-                <option value="">N/A</option>
-                {unitOptions.map((v) => (
-                  <option key={v} value={v}>
-                    {v}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ) : null}
-
-          {hierarchy.availability.hasDepartment ? (
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Department</label>
-              <select
-                className="w-full rounded border bg-white px-3 py-2 text-sm"
-                value={selectedUser?.department ?? ""}
-                onChange={(e) =>
-                  setSelectedUser((prev) =>
-                    prev
-                      ? {
-                          ...prev,
-                          department: e.target.value,
-                        }
-                      : prev,
-                  )
-                }
-                disabled={loading || erpLoading}
-              >
-                <option value="">N/A</option>
-                {departmentOptions.map((v) => (
-                  <option key={v} value={v}>
-                    {v}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ) : null}
-
-          {hierarchy.availability.hasSection ? (
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Section</label>
-              <select
-                className="w-full rounded border bg-white px-3 py-2 text-sm"
-                value={selectedUser?.section ?? ""}
-                onChange={(e) =>
-                  setSelectedUser((prev) =>
-                    prev
-                      ? {
-                          ...prev,
-                          section: e.target.value,
-                        }
-                      : prev,
-                  )
-                }
-                disabled={loading || erpLoading}
-              >
-                <option value="">N/A</option>
-                {sectionOptions.map((v) => (
-                  <option key={v} value={v}>
-                    {v}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ) : null}
-
-          {hierarchy.availability.hasLine ? (
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Line</label>
-              <select
-                className="w-full rounded border bg-white px-3 py-2 text-sm"
-                value={selectedUser?.line ?? ""}
-                onChange={(e) =>
-                  setSelectedUser((prev) =>
-                    prev ? { ...prev, line: e.target.value } : prev,
-                  )
-                }
-                disabled={loading || erpLoading}
-              >
-                <option value="">N/A</option>
-                {lineOptions.map((v) => (
-                  <option key={v} value={v}>
-                    {v}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ) : null}
+        <div className="space-y-1.5">
+          <Label htmlFor="edit-emp-name" className="text-xs font-semibold text-zinc-700">
+            Employee Name <span className="text-red-500">*</span>
+          </Label>
+          <input
+            id="edit-emp-name"
+            className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 transition-colors"
+            value={empName}
+            onChange={(e) => setEmpName(e.target.value)}
+            placeholder="e.g. Allama Bakhtiyar Nafis"
+            required
+            disabled={loading}
+          />
         </div>
       </div>
 
-      <div className="flex justify-end gap-2 pt-2">
+      {/* HRM Hierarchy Section */}
+      <div className="rounded-xl border border-zinc-200/90 bg-zinc-50/60 p-4 space-y-3.5">
+        <div className="flex items-center justify-between border-b border-zinc-200/70 pb-2.5">
+          <div className="flex items-center gap-2">
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-zinc-200/80 text-zinc-700">
+              <Layers className="h-4 w-4" />
+            </div>
+            <div>
+              <div className="text-xs font-bold text-zinc-800">
+                HRM Hierarchy & Department Assignment
+              </div>
+              <div className="text-[11px] text-zinc-500">
+                Select Company, Area, Department, Section, Unit, or Line from HRM master data.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {/* 1. Company */}
+          <div className="space-y-1">
+            <Label className="text-[11px] font-semibold text-zinc-600 block">Company</Label>
+            <SearchableSelect
+              value={companyId}
+              onChange={handleCompanyChange}
+              items={companyOptions}
+              placeholder="Select Company..."
+              searchPlaceholder="Search company..."
+              disabled={loading}
+              loading={companiesLoading}
+              className="h-9.5 text-xs bg-white"
+            />
+          </div>
+
+          {/* 2. Area */}
+          <div className="space-y-1">
+            <Label className="text-[11px] font-semibold text-zinc-600 block">Area</Label>
+            <SearchableSelect
+              value={areaId}
+              onChange={handleAreaChange}
+              items={areaOptions}
+              placeholder="Select Area..."
+              searchPlaceholder="Search area..."
+              disabled={loading}
+              loading={areasLoading}
+              className="h-9.5 text-xs bg-white"
+            />
+          </div>
+
+          {/* 3. Unit */}
+          <div className="space-y-1">
+            <Label className="text-[11px] font-semibold text-zinc-600 block">Unit</Label>
+            <SearchableSelect
+              value={unitId || unitName}
+              onChange={handleUnitChange}
+              items={unitOptions}
+              placeholder="Select Unit..."
+              searchPlaceholder="Search unit..."
+              disabled={loading}
+              loading={unitsLoading}
+              className="h-9.5 text-xs bg-white"
+            />
+          </div>
+
+          {/* 4. Department */}
+          <div className="space-y-1">
+            <Label className="text-[11px] font-semibold text-zinc-600 block">Department</Label>
+            <SearchableSelect
+              value={departmentId || departmentName}
+              onChange={handleDepartmentChange}
+              items={departmentOptions}
+              placeholder="Select Department..."
+              searchPlaceholder="Search department..."
+              disabled={loading}
+              loading={departmentsLoading}
+              className="h-9.5 text-xs bg-white"
+            />
+          </div>
+
+          {/* 5. Section */}
+          <div className="space-y-1">
+            <Label className="text-[11px] font-semibold text-zinc-600 block">Section</Label>
+            <SearchableSelect
+              value={sectionId || sectionName}
+              onChange={handleSectionChange}
+              items={sectionOptions}
+              placeholder="Select Section..."
+              searchPlaceholder="Search section..."
+              disabled={loading}
+              loading={sectionsLoading}
+              className="h-9.5 text-xs bg-white"
+            />
+          </div>
+
+          {/* 6. Line */}
+          <div className="space-y-1">
+            <Label className="text-[11px] font-semibold text-zinc-600 block">Line</Label>
+            <SearchableSelect
+              value={lineId || lineName}
+              onChange={handleLineChange}
+              items={lineOptions}
+              placeholder="Select Line..."
+              searchPlaceholder="Search line..."
+              disabled={loading}
+              loading={linesLoading}
+              className="h-9.5 text-xs bg-white"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Footer Buttons */}
+      <div className="flex justify-end gap-2.5 pt-2 border-t border-zinc-100">
         <button
-          className="rounded border px-4 py-2 text-sm"
-          onClick={onClose}
           type="button"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-4 py-2 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 transition cursor-pointer disabled:opacity-50"
+          onClick={onClose}
           disabled={loading}
         >
+          <X className="h-3.5 w-3.5" />
           Cancel
         </button>
 
         <button
-          className="rounded bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-60"
-          type="button"
-          disabled={loading || !selectedUser}
-          onClick={() =>
-            onSave({
-              name: selectedUser?.name,
-              empId: selectedUser?.empId ?? null,
-              unit: toHierarchyWriteValue(selectedUser?.unit),
-              section: toHierarchyWriteValue(selectedUser?.section),
-              department: toHierarchyWriteValue(selectedUser?.department),
-              line: toHierarchyWriteValue(selectedUser?.line),
-              deptId: toHierarchyWriteValue(selectedUser?.deptId),
-              sectionId: toHierarchyWriteValue(selectedUser?.sectionId),
-              designationId: toHierarchyWriteValue(selectedUser?.designationId),
-              designation: toHierarchyWriteValue(selectedUser?.designation),
-              unitId: toHierarchyWriteValue(selectedUser?.unitId),
-              lineId: toHierarchyWriteValue(selectedUser?.lineId),
-              empPicUrl: toHierarchyWriteValue(selectedUser?.empPicUrl),
-            })
-          }
+          type="submit"
+          className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-900 px-4.5 py-2 text-xs font-semibold text-white hover:bg-zinc-800 transition cursor-pointer disabled:opacity-60 shadow-sm"
+          disabled={loading || !empName.trim()}
         >
-          {loading ? "Saving..." : "Save"}
+          <Save className="h-3.5 w-3.5" />
+          {loading ? "Saving Changes..." : "Save Changes"}
         </button>
       </div>
-    </div>
+    </form>
   );
 };
 

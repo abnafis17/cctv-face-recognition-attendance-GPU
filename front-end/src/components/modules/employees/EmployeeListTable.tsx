@@ -130,7 +130,7 @@ const EmployeeListTable = () => {
       </div>
 
       {/* Edit Form Modal */}
-      <ReusableModal open={isOpen} onClose={handleModalClose} title="Edit Employee Info">
+      <ReusableModal open={isOpen} onClose={handleModalClose} title="Edit Employee Info" maxWidth="2xl">
         {selectedUser && <EmployeeEditForm selectedUser={selectedUser} setSelectedUser={setSelectedUser} loading={loading} onClose={handleModalClose} onSave={handleUpdateEmployee} />}
       </ReusableModal>
 

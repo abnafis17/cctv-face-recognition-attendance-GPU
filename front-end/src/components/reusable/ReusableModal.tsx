@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef } from 'react';
 import { XIcon } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
 
 interface ReusableModalProps {
   open: boolean;
@@ -48,62 +49,82 @@ export default function ReusableModal({
     if (open) {
       const scrollY = window.scrollY;
       document.body.style.overflow = 'hidden';
-      document.body.style.position = 'fixed';
-      document.body.style.top = `-${scrollY}px`;
-      document.body.style.width = '100%';
+
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          onClose();
+        }
+      };
+      window.addEventListener('keydown', handleKeyDown);
 
       const previousActiveElement = document.activeElement as HTMLElement;
       modalRef.current?.focus();
 
       return () => {
         document.body.style.overflow = '';
-        document.body.style.position = '';
-        document.body.style.top = '';
-        document.body.style.width = '';
-        window.scrollTo(0, scrollY);
-        previousActiveElement?.focus();
+        window.removeEventListener('keydown', handleKeyDown);
+        previousActiveElement?.focus?.();
       };
     }
-  }, [open]);
-
-  if (!open) return null;
+  }, [open, onClose]);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 px-4"
-      role="dialog"
-      aria-modal="true"
-    >
-      <div
-        ref={modalRef}
-        className={`relative w-full ${maxWidthClasses[maxWidth]} bg-white rounded-lg shadow-lg focus:outline-none ${maxHeight ?? ''} max-h-[90vh] flex flex-col`}
-      >
-        {/* Header */}
-        {title && (
-          <div className="sticky top-0 z-10 flex justify-between items-center border-b px-6 py-4 bg-white rounded-t-lg">
-            <div>
-              <h2 className={titleClassName ?? 'text-lg font-semibold'}>{title}</h2>
-              <h4 className="text-[#64748B]">{description}</h4>
-            </div>
-            {showCloseIcon && (
-              <button
-                aria-label="Close"
-                className="p-2 rounded-full cursor-pointer text-gray-500 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
-                onClick={onClose}
-              >
-                <XIcon className="w-5 h-5" />
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* Scrollable Content */}
+    <AnimatePresence>
+      {open && (
         <div
-          className={`overflow-y-auto modal-scroll px-6 py-4 ${overflowAuto ? 'flex-grow' : ''}`}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto"
+          role="dialog"
+          aria-modal="true"
         >
-          {children}
+          {/* Backdrop with smooth fade */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
+            className="fixed inset-0 bg-black/40 backdrop-blur-[2px]"
+            onClick={onClose}
+          />
+
+          {/* Modal Content with smooth scale & fade */}
+          <motion.div
+            ref={modalRef}
+            initial={{ opacity: 0, scale: 0.95, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 10 }}
+            transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            onClick={(e) => e.stopPropagation()}
+            className={`relative z-10 w-full ${maxWidthClasses[maxWidth]} bg-white rounded-xl shadow-2xl focus:outline-none ${maxHeight ?? ''} max-h-[90vh] flex flex-col border border-zinc-200/80 overflow-hidden`}
+          >
+            {/* Header */}
+            {title && (
+              <div className="sticky top-0 z-10 flex justify-between items-center border-b border-zinc-100 px-6 py-4 bg-white/95 backdrop-blur-sm rounded-t-xl">
+                <div>
+                  <h2 className={titleClassName ?? 'text-base font-semibold text-zinc-900'}>{title}</h2>
+                  {description && <h4 className="text-xs text-zinc-500 mt-0.5">{description}</h4>}
+                </div>
+                {showCloseIcon && (
+                  <button
+                    type="button"
+                    aria-label="Close"
+                    className="p-1.5 rounded-lg cursor-pointer text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors focus:outline-none"
+                    onClick={onClose}
+                  >
+                    <XIcon className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Scrollable Content */}
+            <div
+              className={`overflow-y-auto modal-scroll px-6 py-5 ${overflowAuto ? 'flex-grow' : ''}`}
+            >
+              {children}
+            </div>
+          </motion.div>
         </div>
-      </div>
-    </div>
+      )}
+    </AnimatePresence>
   );
 }
