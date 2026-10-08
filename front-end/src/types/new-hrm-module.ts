@@ -23,7 +23,9 @@ export interface HrmArea {
   area_name: string;
   area_code: string;
   company_id: string;
+  area_name_in_english?: string;
   area_name_in_bengali?: string;
+  short_name?: string;
   status?: string;
 }
 

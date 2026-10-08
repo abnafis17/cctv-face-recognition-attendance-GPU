@@ -92,12 +92,12 @@ export const API = {
  */
 export const HRM_API = {
   EMPLOYEE_LIST: "/hrm/employee/list",
-  COMPANY_LIST: "/configure/structure-setup/company-profile/list",
-  AREA_LIST: "/configure/structure-setup/area/list",
-  DEPARTMENT_LIST: "/configure/company-setup/department/list",
-  SECTION_LIST: "/configure/company-setup/section/list",
-  UNIT_LIST: "/configure/company-setup/unit/list",
-  LINE_LIST: "/configure/company-setup/line/list",
+  COMPANY_LIST: "/hrm/recruitment/e-recruitment/master-data/company/list",
+  AREA_LIST: "/hrm/recruitment/e-recruitment/master-data/area/list",
+  DEPARTMENT_LIST: "/hrm/recruitment/e-recruitment/master-data/department/list",
+  SECTION_LIST: "/hrm/recruitment/e-recruitment/master-data/section/list",
+  UNIT_LIST: "/hrm/recruitment/e-recruitment/master-data/unit/list",
+  LINE_LIST: "/hrm/recruitment/e-recruitment/master-data/line/list",
 };
 
 export const AUTH = {

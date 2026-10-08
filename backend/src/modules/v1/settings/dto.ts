@@ -199,7 +199,8 @@ export const erpSettingsCreateSchema = z
     (value) =>
       value.erpBaseUrl !== undefined ||
       value.erpPrefix !== undefined ||
-      value.erpAttendanceEndpoint !== undefined,
+      value.erpAttendanceEndpoint !== undefined ||
+      value.isActive !== undefined,
     { message: "Nothing to save" }
   );
 
@@ -236,7 +237,9 @@ export const erpSettingsUpdateSchema = z
     (value) =>
       value.erpBaseUrl !== undefined ||
       value.erpPrefix !== undefined ||
-      value.erpAttendanceEndpoint !== undefined,
+      value.erpAttendanceEndpoint !== undefined ||
+      value.isActive !== undefined ||
+      value.urlType !== undefined,
     { message: "Nothing to save" }
   );
 
