@@ -8,7 +8,10 @@ import { deriveEmployeeHierarchy, normalizeHierarchyValue } from "@/lib/employee
 
 export type EmployeeRow = Employee & {
   empId: string | null; unit: string | null; department: string | null;
-  section: string | null; line: string | null; createdAt: string; updatedAt: string;
+  section: string | null; line: string | null;
+  erpCompanyId: string | null; erpCompanyName: string | null;
+  erpAreaId: string | null; erpAreaName: string | null;
+  createdAt: string; updatedAt: string;
 };
 
 export type HierarchyFilters = { unit: string; department: string; section: string; line: string; };
@@ -18,6 +21,8 @@ export type EmployeeUpdatePayload = {
   department?: string | null; line?: string | null; deptId?: string | null; sectionId?: string | null;
   designationId?: string | null; designation?: string | null; unitId?: string | null; lineId?: string | null;
   empPicUrl?: string | null;
+  erpCompanyId?: string | null; erpCompanyName?: string | null;
+  erpAreaId?: string | null; erpAreaName?: string | null;
 };
 
 export function normalizeApiError(error: unknown, fallback: string): string {
@@ -37,7 +42,12 @@ export function normalizeEmployeeRow(employee: Employee): EmployeeRow {
     id: String(employee.id ?? "").trim(), name: String(employee.name ?? "").trim(),
     empId: toNullableTrimmed(employee.empId), unit: toNullableTrimmed(employee.unit),
     department: toNullableTrimmed(employee.department), section: toNullableTrimmed(employee.section),
-    line: toNullableTrimmed(employee.line), createdAt: String(raw.createdAt ?? "").trim(),
+    line: toNullableTrimmed(employee.line),
+    erpCompanyId: toNullableTrimmed(employee.erpCompanyId),
+    erpCompanyName: toNullableTrimmed(employee.erpCompanyName),
+    erpAreaId: toNullableTrimmed(employee.erpAreaId),
+    erpAreaName: toNullableTrimmed(employee.erpAreaName),
+    createdAt: String(raw.createdAt ?? "").trim(),
     updatedAt: String(raw.updatedAt ?? "").trim(),
   };
 }

@@ -13,6 +13,10 @@ export type Employee = {
   unitId?: string | null;
   lineId?: string | null;
   empPicUrl?: string | null;
+  erpCompanyId?: string | null;
+  erpCompanyName?: string | null;
+  erpAreaId?: string | null;
+  erpAreaName?: string | null;
 };
 
 export type AttendanceRow = {

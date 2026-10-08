@@ -61,9 +61,6 @@ export function SearchableSelect({
   const selected = React.useMemo(() => items.find((i) => i.value === value), [items, value]);
 
   const displayedItems = React.useMemo(() => {
-    if (onSearchChange) {
-      return items;
-    }
     const q = localQuery.trim().toLowerCase();
     if (!q) return items;
     return items.filter(
@@ -72,7 +69,7 @@ export function SearchableSelect({
         (item.keywords || "").toLowerCase().includes(q) ||
         item.value.toLowerCase().includes(q)
     );
-  }, [items, localQuery, onSearchChange]);
+  }, [items, localQuery]);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>

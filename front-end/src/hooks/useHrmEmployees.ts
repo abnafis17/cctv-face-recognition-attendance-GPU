@@ -92,6 +92,33 @@ export function useHrmEmployees(options?: {
   const [lines, setLines] = useState<HrmLine[]>([]);
   const [linesLoading, setLinesLoading] = useState(false);
 
+  // Synchronous refs for lookup during employee mapping
+  const companiesRef = useRef<HrmCompany[]>([]);
+  const areasRef = useRef<HrmArea[]>([]);
+  const departmentsRef = useRef<HrmDepartment[]>([]);
+  const sectionsRef = useRef<HrmSection[]>([]);
+  const unitsRef = useRef<HrmUnit[]>([]);
+  const linesRef = useRef<HrmLine[]>([]);
+
+  useEffect(() => {
+    companiesRef.current = companies;
+  }, [companies]);
+  useEffect(() => {
+    areasRef.current = areas;
+  }, [areas]);
+  useEffect(() => {
+    departmentsRef.current = departments;
+  }, [departments]);
+  useEffect(() => {
+    sectionsRef.current = sections;
+  }, [sections]);
+  useEffect(() => {
+    unitsRef.current = units;
+  }, [units]);
+  useEffect(() => {
+    linesRef.current = lines;
+  }, [lines]);
+
   // 1. Fetch Companies from HRM API
   const fetchCompanies = useCallback(async () => {
     setCompaniesLoading(true);
@@ -443,16 +470,10 @@ export function useHrmEmployees(options?: {
         const token = getAuthToken();
         const targetUrl = `${NEW_HRM_URL.replace(/\/+$/, "")}${HRM_API.EMPLOYEE_LIST}`;
 
-        const params: Record<string, any> = {
-          status: "working",
-          order: "desc",
-          sort_by: "created_at",
-        };
+        const params: Record<string, any> = {};
 
         if (filters.companyId) params.company_id = filters.companyId;
-        if (filters.areaId) {
-          params.region_id = filters.areaId;
-        }
+        if (filters.areaId) params.region_id = filters.areaId;
         if (filters.departmentId) params.department_id = filters.departmentId;
         if (filters.sectionId) params.section_id = filters.sectionId;
         if (filters.unitId) params.unit_id = filters.unitId;
@@ -509,6 +530,7 @@ export function useHrmEmployees(options?: {
               item.company?.name ||
               item.company_name ||
               item.companyName ||
+              companiesRef.current.find((c) => c.id === companyId)?.company_name ||
               ""
           ).trim();
 
@@ -525,6 +547,7 @@ export function useHrmEmployees(options?: {
               item.working_area?.area_name ||
               item.area_name ||
               item.areaName ||
+              areasRef.current.find((a) => a.id === areaId)?.area_name ||
               ""
           ).trim();
 
@@ -537,11 +560,12 @@ export function useHrmEmployees(options?: {
           ).trim();
           const departmentName = String(
             item.department?.name_in_english ||
-              item.department?.name_in_bengali ||
               item.department?.department_name ||
               item.department?.name ||
+              item.department?.name_in_bengali ||
               item.department_name ||
               item.departmentName ||
+              departmentsRef.current.find((d) => d.id === departmentId)?.department_name ||
               ""
           ).trim();
 
@@ -550,11 +574,12 @@ export function useHrmEmployees(options?: {
           ).trim();
           const sectionName = String(
             item.section?.section_name_in_english ||
-              item.section?.section_name_in_bengali ||
               item.section?.section_name ||
               item.section?.name ||
+              item.section?.section_name_in_bengali ||
               item.section_name ||
               item.sectionName ||
+              sectionsRef.current.find((s) => s.id === sectionId)?.section_name ||
               ""
           ).trim();
 
@@ -563,11 +588,12 @@ export function useHrmEmployees(options?: {
           ).trim();
           const unitName = String(
             item.unit?.unit_name_in_english ||
-              item.unit?.unit_name_in_bengali ||
               item.unit?.unit_name ||
               item.unit?.name ||
+              item.unit?.unit_name_in_bengali ||
               item.unit_name ||
               item.unitName ||
+              unitsRef.current.find((u) => u.id === unitId)?.unit_name ||
               ""
           ).trim();
 
@@ -576,11 +602,12 @@ export function useHrmEmployees(options?: {
           ).trim();
           const lineName = String(
             item.line?.line_name_in_english ||
-              item.line?.line_name_in_bengali ||
               item.line?.line_name ||
               item.line?.name ||
+              item.line?.line_name_in_bengali ||
               item.line_name ||
               item.lineName ||
+              linesRef.current.find((l) => l.id === lineId)?.line_name ||
               ""
           ).trim();
 
@@ -720,6 +747,7 @@ export function useHrmEmployees(options?: {
         value: displayId,
         label: `${e.name} (${displayId})`,
         keywords: `${e.name} ${displayId} ${e.employee_id_system || ""} ${e.employee_id_company || ""} ${e.company_name || ""} ${e.area_name || ""} ${e.department_name || ""} ${e.section_name || ""} ${e.unit_name || ""} ${e.line_name || ""} ${e.designation || ""}`,
+        image: e.profile_pic,
       };
     });
   }, [employees]);

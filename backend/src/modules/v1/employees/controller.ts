@@ -134,6 +134,15 @@ export async function upsertEmployee(req: Request, res: Response) {
       req.body?.department ?? req.body?.department_name ?? undefined;
     const lineRaw = req.body?.line ?? req.body?.line_name ?? undefined;
 
+    const erpCompanyIdRaw =
+      req.body?.erpCompanyId ?? req.body?.erp_company_id ?? undefined;
+    const erpCompanyNameRaw =
+      req.body?.erpCompanyName ?? req.body?.erp_company_name ?? undefined;
+    const erpAreaIdRaw =
+      req.body?.erpAreaId ?? req.body?.erp_area_id ?? undefined;
+    const erpAreaNameRaw =
+      req.body?.erpAreaName ?? req.body?.erp_area_name ?? undefined;
+
     const groupData = {
       ...(unitRaw !== undefined ? { unit: normalizeHierarchyWrite(unitRaw) } : {}),
       ...(sectionRaw !== undefined
@@ -143,6 +152,18 @@ export async function upsertEmployee(req: Request, res: Response) {
         ? { department: normalizeHierarchyWrite(departmentRaw) }
         : {}),
       ...(lineRaw !== undefined ? { line: normalizeHierarchyWrite(lineRaw) } : {}),
+      ...(erpCompanyIdRaw !== undefined
+        ? { erpCompanyId: normalizeHierarchyWrite(erpCompanyIdRaw) }
+        : {}),
+      ...(erpCompanyNameRaw !== undefined
+        ? { erpCompanyName: normalizeHierarchyWrite(erpCompanyNameRaw) }
+        : {}),
+      ...(erpAreaIdRaw !== undefined
+        ? { erpAreaId: normalizeHierarchyWrite(erpAreaIdRaw) }
+        : {}),
+      ...(erpAreaNameRaw !== undefined
+        ? { erpAreaName: normalizeHierarchyWrite(erpAreaNameRaw) }
+        : {}),
     } as any;
 
     const identifier =
@@ -224,6 +245,15 @@ export async function updateEmployee(req: Request, res: Response) {
     const lineIdRaw = req.body?.lineId ?? undefined;
     const picUrlRaw = req.body?.empPicUrl ?? req.body?.picUrl ?? undefined;
 
+    const erpCompanyIdRaw =
+      req.body?.erpCompanyId ?? req.body?.erp_company_id ?? undefined;
+    const erpCompanyNameRaw =
+      req.body?.erpCompanyName ?? req.body?.erp_company_name ?? undefined;
+    const erpAreaIdRaw =
+      req.body?.erpAreaId ?? req.body?.erp_area_id ?? undefined;
+    const erpAreaNameRaw =
+      req.body?.erpAreaName ?? req.body?.erp_area_name ?? undefined;
+
     const data: {
       name?: string;
       empId?: string | null;
@@ -238,6 +268,10 @@ export async function updateEmployee(req: Request, res: Response) {
       unitId?: string | null;
       lineId?: string | null;
       empPicUrl?: string | null;
+      erpCompanyId?: string | null;
+      erpCompanyName?: string | null;
+      erpAreaId?: string | null;
+      erpAreaName?: string | null;
     } = {};
 
     if (nameRaw !== undefined) {
@@ -294,6 +328,22 @@ export async function updateEmployee(req: Request, res: Response) {
 
     if (picUrlRaw !== undefined) {
       data.empPicUrl = normalizeHierarchyWrite(picUrlRaw);
+    }
+
+    if (erpCompanyIdRaw !== undefined) {
+      data.erpCompanyId = normalizeHierarchyWrite(erpCompanyIdRaw);
+    }
+
+    if (erpCompanyNameRaw !== undefined) {
+      data.erpCompanyName = normalizeHierarchyWrite(erpCompanyNameRaw);
+    }
+
+    if (erpAreaIdRaw !== undefined) {
+      data.erpAreaId = normalizeHierarchyWrite(erpAreaIdRaw);
+    }
+
+    if (erpAreaNameRaw !== undefined) {
+      data.erpAreaName = normalizeHierarchyWrite(erpAreaNameRaw);
     }
 
     if (Object.keys(data).length === 0) {

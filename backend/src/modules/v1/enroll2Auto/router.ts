@@ -59,12 +59,25 @@ r.post("/session/start", async (req, res) => {
       lineId,
       empPicUrl,
       picUrl,
+      erpCompanyId,
+      erpCompanyName,
+      erpAreaId,
+      erpAreaName,
+      erp_company_id,
+      erp_company_name,
+      erp_area_id,
+      erp_area_name,
     } = req.body || {};
     const isReEnroll = toBoolean(reEnroll);
 
     const identifier = String(employeeId ?? "").trim();
     const employeeName = String(name ?? "").trim();
     const targetPicUrl = empPicUrl || picUrl;
+    const targetErpCompanyId = erpCompanyId ?? erp_company_id;
+    const targetErpCompanyName = erpCompanyName ?? erp_company_name;
+    const targetErpAreaId = erpAreaId ?? erp_area_id;
+    const targetErpAreaName = erpAreaName ?? erp_area_name;
+
     const body = req.body || {};
     const hasUnit = Object.prototype.hasOwnProperty.call(body, "unit");
     const hasDepartment = Object.prototype.hasOwnProperty.call(body, "department");
@@ -77,6 +90,10 @@ r.post("/session/start", async (req, res) => {
     const hasUnitId = Object.prototype.hasOwnProperty.call(body, "unitId");
     const hasLineId = Object.prototype.hasOwnProperty.call(body, "lineId");
     const hasPicUrl = Object.prototype.hasOwnProperty.call(body, "empPicUrl") || Object.prototype.hasOwnProperty.call(body, "picUrl");
+    const hasErpCompanyId = Object.prototype.hasOwnProperty.call(body, "erpCompanyId") || Object.prototype.hasOwnProperty.call(body, "erp_company_id");
+    const hasErpCompanyName = Object.prototype.hasOwnProperty.call(body, "erpCompanyName") || Object.prototype.hasOwnProperty.call(body, "erp_company_name");
+    const hasErpAreaId = Object.prototype.hasOwnProperty.call(body, "erpAreaId") || Object.prototype.hasOwnProperty.call(body, "erp_area_id");
+    const hasErpAreaName = Object.prototype.hasOwnProperty.call(body, "erpAreaName") || Object.prototype.hasOwnProperty.call(body, "erp_area_name");
 
     let employee = null as Awaited<ReturnType<typeof findEmployeeByAnyId>> | null;
     if (identifier) {
@@ -94,6 +111,10 @@ r.post("/session/start", async (req, res) => {
         unitId?: string | null;
         lineId?: string | null;
         empPicUrl?: string | null;
+        erpCompanyId?: string | null;
+        erpCompanyName?: string | null;
+        erpAreaId?: string | null;
+        erpAreaName?: string | null;
       } = {};
 
       if (hasUnit) hierarchyData.unit = normalizeOptionalHierarchy(unit);
@@ -109,6 +130,11 @@ r.post("/session/start", async (req, res) => {
       if (hasUnitId) hierarchyData.unitId = normalizeOptionalHierarchy(unitId);
       if (hasLineId) hierarchyData.lineId = normalizeOptionalHierarchy(lineId);
       if (hasPicUrl) hierarchyData.empPicUrl = normalizeOptionalHierarchy(targetPicUrl);
+
+      if (hasErpCompanyId) hierarchyData.erpCompanyId = normalizeOptionalHierarchy(targetErpCompanyId);
+      if (hasErpCompanyName) hierarchyData.erpCompanyName = normalizeOptionalHierarchy(targetErpCompanyName);
+      if (hasErpAreaId) hierarchyData.erpAreaId = normalizeOptionalHierarchy(targetErpAreaId);
+      if (hasErpAreaName) hierarchyData.erpAreaName = normalizeOptionalHierarchy(targetErpAreaName);
 
       if (employee) {
         employee = await prisma.employee.update({
@@ -157,6 +183,11 @@ r.post("/session/start", async (req, res) => {
             ...(hasUnitId ? { unitId: normalizeOptionalHierarchy(unitId) } : {}),
             ...(hasLineId ? { lineId: normalizeOptionalHierarchy(lineId) } : {}),
             ...(hasPicUrl ? { empPicUrl: normalizeOptionalHierarchy(targetPicUrl) } : {}),
+
+            ...(hasErpCompanyId ? { erpCompanyId: normalizeOptionalHierarchy(targetErpCompanyId) } : {}),
+            ...(hasErpCompanyName ? { erpCompanyName: normalizeOptionalHierarchy(targetErpCompanyName) } : {}),
+            ...(hasErpAreaId ? { erpAreaId: normalizeOptionalHierarchy(targetErpAreaId) } : {}),
+            ...(hasErpAreaName ? { erpAreaName: normalizeOptionalHierarchy(targetErpAreaName) } : {}),
           },
         });
       }

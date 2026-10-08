@@ -8,26 +8,14 @@ import { Label } from "@/components/ui/label";
 import { Building2, Layers, Save, X } from "lucide-react";
 import toast from "react-hot-toast";
 
+import { EmployeeUpdatePayload } from "./useEmployeeTableState";
+
 type Props = {
   selectedUser: Employee | null;
   setSelectedUser: React.Dispatch<React.SetStateAction<Employee | null>>;
   loading: boolean;
   onClose: () => void;
-  onSave: (payload: {
-    name?: string;
-    empId?: string | null;
-    unit?: string | null;
-    section?: string | null;
-    department?: string | null;
-    line?: string | null;
-    deptId?: string | null;
-    sectionId?: string | null;
-    designationId?: string | null;
-    designation?: string | null;
-    unitId?: string | null;
-    lineId?: string | null;
-    empPicUrl?: string | null;
-  }) => void;
+  onSave: (payload: EmployeeUpdatePayload) => void;
 };
 
 const EmployeeEditForm: React.FC<Props> = ({
@@ -60,8 +48,11 @@ const EmployeeEditForm: React.FC<Props> = ({
   const [empName, setEmpName] = useState(selectedUser?.name ?? "");
   const [empId, setEmpId] = useState(selectedUser?.empId ?? "");
 
-  const [companyId, setCompanyId] = useState("");
-  const [areaId, setAreaId] = useState("");
+  const [companyId, setCompanyId] = useState(selectedUser?.erpCompanyId ?? "");
+  const [companyName, setCompanyName] = useState(selectedUser?.erpCompanyName ?? "");
+
+  const [areaId, setAreaId] = useState(selectedUser?.erpAreaId ?? "");
+  const [areaName, setAreaName] = useState(selectedUser?.erpAreaName ?? "");
 
   const [unitId, setUnitId] = useState(selectedUser?.unitId ?? "");
   const [unitName, setUnitName] = useState(selectedUser?.unit ?? "");
@@ -79,7 +70,37 @@ const EmployeeEditForm: React.FC<Props> = ({
   const [designationName] = useState(selectedUser?.designation ?? "");
   const [empPicUrl] = useState(selectedUser?.empPicUrl ?? "");
 
-  // Auto-match current employee names with HRM IDs once HRM master lists load
+  // Auto-match current employee names with HRM IDs (and vice-versa) once HRM master lists load
+  useEffect(() => {
+    if (companyName && !companyId && companies.length > 0) {
+      const match = companies.find(
+        (c) =>
+          c.company_name?.trim().toLowerCase() === companyName.trim().toLowerCase() ||
+          c.company_code?.trim().toLowerCase() === companyName.trim().toLowerCase() ||
+          c.short_name?.trim().toLowerCase() === companyName.trim().toLowerCase()
+      );
+      if (match) setCompanyId(match.id);
+    } else if (companyId && !companyName && companies.length > 0) {
+      const match = companies.find((c) => c.id === companyId);
+      if (match?.company_name) setCompanyName(match.company_name);
+    }
+  }, [companies, companyName, companyId]);
+
+  useEffect(() => {
+    if (areaName && !areaId && areas.length > 0) {
+      const match = areas.find(
+        (a) =>
+          a.area_name?.trim().toLowerCase() === areaName.trim().toLowerCase() ||
+          a.area_name_in_english?.trim().toLowerCase() === areaName.trim().toLowerCase() ||
+          a.area_code?.trim().toLowerCase() === areaName.trim().toLowerCase()
+      );
+      if (match) setAreaId(match.id);
+    } else if (areaId && !areaName && areas.length > 0) {
+      const match = areas.find((a) => a.id === areaId);
+      if (match?.area_name) setAreaName(match.area_name);
+    }
+  }, [areas, areaName, areaId]);
+
   useEffect(() => {
     if (unitName && !unitId && units.length > 0) {
       const match = units.find(
@@ -88,6 +109,9 @@ const EmployeeEditForm: React.FC<Props> = ({
           u.unit_code?.trim().toLowerCase() === unitName.trim().toLowerCase()
       );
       if (match) setUnitId(match.id);
+    } else if (unitId && !unitName && units.length > 0) {
+      const match = units.find((u) => u.id === unitId);
+      if (match?.unit_name) setUnitName(match.unit_name);
     }
   }, [units, unitName, unitId]);
 
@@ -99,6 +123,9 @@ const EmployeeEditForm: React.FC<Props> = ({
           d.name_in_english?.trim().toLowerCase() === departmentName.trim().toLowerCase()
       );
       if (match) setDepartmentId(match.id);
+    } else if (departmentId && !departmentName && departments.length > 0) {
+      const match = departments.find((d) => d.id === departmentId);
+      if (match?.department_name) setDepartmentName(match.department_name);
     }
   }, [departments, departmentName, departmentId]);
 
@@ -110,6 +137,9 @@ const EmployeeEditForm: React.FC<Props> = ({
           s.section_name_in_english?.trim().toLowerCase() === sectionName.trim().toLowerCase()
       );
       if (match) setSectionId(match.id);
+    } else if (sectionId && !sectionName && sections.length > 0) {
+      const match = sections.find((s) => s.id === sectionId);
+      if (match?.section_name) setSectionName(match.section_name);
     }
   }, [sections, sectionName, sectionId]);
 
@@ -121,13 +151,19 @@ const EmployeeEditForm: React.FC<Props> = ({
           l.line_name_in_english?.trim().toLowerCase() === lineName.trim().toLowerCase()
       );
       if (match) setLineId(match.id);
+    } else if (lineId && !lineName && lines.length > 0) {
+      const match = lines.find((l) => l.id === lineId);
+      if (match?.line_name) setLineName(match.line_name);
     }
   }, [lines, lineName, lineId]);
 
   // Handle Company Selection
   const handleCompanyChange = (id: string) => {
     setCompanyId(id);
+    const found = companies.find((c) => c.id === id);
+    setCompanyName(found?.company_name || (id ? found?.short_name || "" : ""));
     setAreaId("");
+    setAreaName("");
     fetchAreas(id || undefined);
     fetchDepartments(id || undefined);
     fetchSections(id || undefined, departmentId || undefined);
@@ -138,6 +174,8 @@ const EmployeeEditForm: React.FC<Props> = ({
   // Handle Area Selection
   const handleAreaChange = (id: string) => {
     setAreaId(id);
+    const found = areas.find((a) => a.id === id);
+    setAreaName(found?.area_name || (id ? found?.area_name_in_english || "" : ""));
   };
 
   // Handle Unit Selection
@@ -176,8 +214,17 @@ const EmployeeEditForm: React.FC<Props> = ({
       label: c.company_name || c.short_name || c.company_code || c.id,
       keywords: `${c.company_name} ${c.company_code || ""} ${c.short_name || ""}`,
     }));
+
+    if (companyName && !list.some((item) => item.value === companyId || item.label.toLowerCase() === companyName.toLowerCase())) {
+      list.unshift({
+        value: companyId || companyName,
+        label: companyName,
+        keywords: companyName,
+      });
+    }
+
     return [{ value: "", label: "None / Not specified" }, ...list];
-  }, [companies]);
+  }, [companies, companyId, companyName]);
 
   // 2. Area Options
   const areaOptions = useMemo(() => {
@@ -189,8 +236,17 @@ const EmployeeEditForm: React.FC<Props> = ({
         keywords: `${label} ${a.area_code || ""} ${a.short_name || ""}`,
       };
     });
+
+    if (areaName && !list.some((item) => item.value === areaId || item.label.toLowerCase() === areaName.toLowerCase())) {
+      list.unshift({
+        value: areaId || areaName,
+        label: areaName,
+        keywords: areaName,
+      });
+    }
+
     return [{ value: "", label: "None / Not specified" }, ...list];
-  }, [areas]);
+  }, [areas, areaId, areaName]);
 
   // 3. Unit Options
   const unitOptions = useMemo(() => {
@@ -302,6 +358,10 @@ const EmployeeEditForm: React.FC<Props> = ({
       designation: designationName.trim() || null,
       designationId: designationId.trim() || null,
       empPicUrl: empPicUrl.trim() || null,
+      erpCompanyId: companyId.trim() || null,
+      erpCompanyName: companyName.trim() || null,
+      erpAreaId: areaId.trim() || null,
+      erpAreaName: areaName.trim() || null,
     });
   };
 
