@@ -31,6 +31,10 @@ type UseAutoEnrollSessionArgs = {
   unitId?: string;
   lineId?: string;
   empPicUrl?: string;
+  erpCompanyId?: string;
+  erpCompanyName?: string;
+  erpAreaId?: string;
+  erpAreaName?: string;
   reEnroll: boolean;
   ensureCameraOn: (camId: string) => Promise<boolean>;
   stopCamera: (camId: string) => Promise<void>;
@@ -52,6 +56,10 @@ export function useAutoEnrollSession({
   unitId,
   lineId,
   empPicUrl,
+  erpCompanyId,
+  erpCompanyName,
+  erpAreaId,
+  erpAreaName,
   reEnroll,
   ensureCameraOn,
   stopCamera,
@@ -139,6 +147,11 @@ export function useAutoEnrollSession({
           ...(lineId?.trim() ? { lineId: lineId.trim() } : {}),
           ...(empPicUrl?.trim() ? { empPicUrl: empPicUrl.trim() } : {}),
 
+          ...(erpCompanyId?.trim() ? { erpCompanyId: erpCompanyId.trim() } : {}),
+          ...(erpCompanyName?.trim() ? { erpCompanyName: erpCompanyName.trim() } : {}),
+          ...(erpAreaId?.trim() ? { erpAreaId: erpAreaId.trim() } : {}),
+          ...(erpAreaName?.trim() ? { erpAreaName: erpAreaName.trim() } : {}),
+
           cameraId,
           ...(reEnroll ? { reEnroll: true } : {}),
         }
@@ -163,21 +176,24 @@ export function useAutoEnrollSession({
   }, [
     cameraId,
     department,
+    deptId,
+    designation,
+    designationId,
+    empPicUrl,
     employeeId,
     ensureCameraOn,
+    erpAreaId,
+    erpAreaName,
+    erpCompanyId,
+    erpCompanyName,
     line,
+    lineId,
     name,
     reEnroll,
     section,
+    sectionId,
     stopCamera,
     unit,
-    deptId,
-    sectionId,
-    designationId,
-    designation,
-    unitId,
-    lineId,
-    empPicUrl,
   ]);
 
   const stop = useCallback(async () => {

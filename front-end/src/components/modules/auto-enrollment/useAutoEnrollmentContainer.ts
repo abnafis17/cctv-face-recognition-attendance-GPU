@@ -51,6 +51,10 @@ export function useAutoEnrollmentContainer({
   const [unitId, setUnitId] = useState("");
   const [lineId, setLineId] = useState("");
   const [empPicUrl, setEmpPicUrl] = useState("");
+  const [erpCompanyId, setErpCompanyId] = useState("");
+  const [erpCompanyName, setErpCompanyName] = useState("");
+  const [erpAreaId, setErpAreaId] = useState("");
+  const [erpAreaName, setErpAreaName] = useState("");
 
   useEffect(() => { if (initialEmployeeId) setEmployeeId(initialEmployeeId); }, [initialEmployeeId]);
   useEffect(() => { if (initialName) setName(initialName); }, [initialName]);
@@ -122,6 +126,10 @@ export function useAutoEnrollmentContainer({
     unitId,
     lineId,
     empPicUrl,
+    erpCompanyId,
+    erpCompanyName,
+    erpAreaId,
+    erpAreaName,
     reEnroll,
     ensureCameraOn,
     stopCamera,
@@ -170,6 +178,14 @@ export function useAutoEnrollmentContainer({
     setLineId,
     empPicUrl,
     setEmpPicUrl,
+    erpCompanyId,
+    setErpCompanyId,
+    erpCompanyName,
+    setErpCompanyName,
+    erpAreaId,
+    setErpAreaId,
+    erpAreaName,
+    setErpAreaName,
     previewVideoRef,
     laptopActive,
     camerasWithLaptop,

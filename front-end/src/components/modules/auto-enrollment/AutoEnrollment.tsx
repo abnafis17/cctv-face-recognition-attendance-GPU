@@ -176,20 +176,105 @@ export default function AutoEnrollment({
         e.id === initialEmployeeId
     );
     if (!picked) return;
-    container.setEmployeeId(picked.employee_id_system || picked.employee_id || picked.employee_code || picked.id);
-    if (picked.name || picked.name_in_english) container.setName(picked.name || picked.name_in_english || "");
-    if (picked.unit_name) container.setUnit(picked.unit_name);
-    if (picked.department_name) container.setDepartment(picked.department_name);
-    if (picked.section_name) container.setSection(picked.section_name);
-    if (picked.line_name) container.setLine(picked.line_name);
-    if (picked.department_id) container.setDeptId(picked.department_id);
-    if (picked.section_id) container.setSectionId(picked.section_id);
-    if (picked.unit_id) container.setUnitId(picked.unit_id);
-    if (picked.line_id) container.setLineId(picked.line_id);
+    const resolvedEmpId = picked.employee_id_system || picked.employee_id || picked.employee_code || picked.id;
+    const resolvedName = picked.name || picked.name_in_english || picked.name_in_bengali || "";
+    const resolvedDeptId = picked.department_id || "";
+    const resolvedDeptName =
+      picked.department_name ||
+      hrm.departments.find((d) => d.id === resolvedDeptId)?.department_name ||
+      "";
+    const resolvedUnitId = picked.unit_id || "";
+    const resolvedUnitName =
+      picked.unit_name ||
+      hrm.units.find((u) => u.id === resolvedUnitId)?.unit_name ||
+      "";
+    const resolvedSectionId = picked.section_id || "";
+    const resolvedSectionName =
+      picked.section_name ||
+      hrm.sections.find((s) => s.id === resolvedSectionId)?.section_name ||
+      "";
+    const resolvedLineId = picked.line_id || "";
+    const resolvedLineName =
+      picked.line_name ||
+      hrm.lines.find((l) => l.id === resolvedLineId)?.line_name ||
+      "";
+    const resolvedCompanyId = picked.company_id || "";
+    const resolvedCompanyName =
+      picked.company_name ||
+      hrm.companies.find((c) => c.id === resolvedCompanyId)?.company_name ||
+      "";
+    const resolvedAreaId = picked.area_id || picked.working_area_id || "";
+    const resolvedAreaName =
+      picked.area_name ||
+      hrm.areas.find((a) => a.id === resolvedAreaId)?.area_name ||
+      "";
+
+    container.setEmployeeId(resolvedEmpId);
+    if (resolvedName) container.setName(resolvedName);
+    if (resolvedUnitName) container.setUnit(resolvedUnitName);
+    if (resolvedDeptName) container.setDepartment(resolvedDeptName);
+    if (resolvedSectionName) container.setSection(resolvedSectionName);
+    if (resolvedLineName) container.setLine(resolvedLineName);
+    if (resolvedDeptId) container.setDeptId(resolvedDeptId);
+    if (resolvedSectionId) container.setSectionId(resolvedSectionId);
+    if (resolvedUnitId) container.setUnitId(resolvedUnitId);
+    if (resolvedLineId) container.setLineId(resolvedLineId);
     if (picked.designation_id) container.setDesignationId(picked.designation_id);
     if (picked.designation) container.setDesignation(picked.designation);
     if (picked.profile_pic || picked.employee_portrait) container.setEmpPicUrl(picked.profile_pic || picked.employee_portrait || "");
-  }, [hrm.employees, initialEmployeeId, container]);
+    if (resolvedCompanyId) container.setErpCompanyId(resolvedCompanyId);
+    if (resolvedCompanyName) container.setErpCompanyName(resolvedCompanyName);
+    if (resolvedAreaId) container.setErpAreaId(resolvedAreaId);
+    if (resolvedAreaName) container.setErpAreaName(resolvedAreaName);
+  }, [hrm.employees, hrm.departments, hrm.units, hrm.sections, hrm.lines, hrm.companies, hrm.areas, initialEmployeeId, container]);
+
+  // Reactive sync when master lists load after an employee ID was already set
+  React.useEffect(() => {
+    if (container.deptId && !container.department && hrm.departments.length > 0) {
+      const match = hrm.departments.find((d) => d.id === container.deptId);
+      if (match?.department_name) container.setDepartment(match.department_name);
+    }
+    if (container.unitId && !container.unit && hrm.units.length > 0) {
+      const match = hrm.units.find((u) => u.id === container.unitId);
+      if (match?.unit_name) container.setUnit(match.unit_name);
+    }
+    if (container.sectionId && !container.section && hrm.sections.length > 0) {
+      const match = hrm.sections.find((s) => s.id === container.sectionId);
+      if (match?.section_name) container.setSection(match.section_name);
+    }
+    if (container.lineId && !container.line && hrm.lines.length > 0) {
+      const match = hrm.lines.find((l) => l.id === container.lineId);
+      if (match?.line_name) container.setLine(match.line_name);
+    }
+    if (container.erpCompanyId && !container.erpCompanyName && hrm.companies.length > 0) {
+      const match = hrm.companies.find((c) => c.id === container.erpCompanyId);
+      if (match?.company_name) container.setErpCompanyName(match.company_name);
+    }
+    if (container.erpAreaId && !container.erpAreaName && hrm.areas.length > 0) {
+      const match = hrm.areas.find((a) => a.id === container.erpAreaId);
+      if (match?.area_name) container.setErpAreaName(match.area_name);
+    }
+  }, [
+    container.deptId,
+    container.department,
+    container.unitId,
+    container.unit,
+    container.sectionId,
+    container.section,
+    container.lineId,
+    container.line,
+    container.erpCompanyId,
+    container.erpCompanyName,
+    container.erpAreaId,
+    container.erpAreaName,
+    hrm.departments,
+    hrm.units,
+    hrm.sections,
+    hrm.lines,
+    hrm.companies,
+    hrm.areas,
+    container,
+  ]);
 
   // ERP Search & Department handlers
   const handleErpSearchChange = useCallback(
@@ -262,21 +347,59 @@ export default function AutoEnrollment({
           e.id === empId
       );
       if (!picked) return;
-      container.setEmployeeId(picked.employee_id_system || picked.employee_id || picked.employee_code || picked.id);
-      container.setName(picked.name || picked.name_in_english || "");
-      container.setUnit(picked.unit_name || "");
-      container.setDepartment(picked.department_name || "");
-      container.setSection(picked.section_name || "");
-      container.setLine(picked.line_name || "");
-      container.setDeptId(picked.department_id || "");
-      container.setSectionId(picked.section_id || "");
-      container.setUnitId(picked.unit_id || "");
-      container.setLineId(picked.line_id || "");
+
+      const resolvedEmpId = picked.employee_id_system || picked.employee_id || picked.employee_code || picked.id;
+      const resolvedName = picked.name || picked.name_in_english || picked.name_in_bengali || "";
+      const resolvedDeptId = picked.department_id || "";
+      const resolvedDeptName =
+        picked.department_name ||
+        hrm.departments.find((d) => d.id === resolvedDeptId)?.department_name ||
+        "";
+      const resolvedUnitId = picked.unit_id || "";
+      const resolvedUnitName =
+        picked.unit_name ||
+        hrm.units.find((u) => u.id === resolvedUnitId)?.unit_name ||
+        "";
+      const resolvedSectionId = picked.section_id || "";
+      const resolvedSectionName =
+        picked.section_name ||
+        hrm.sections.find((s) => s.id === resolvedSectionId)?.section_name ||
+        "";
+      const resolvedLineId = picked.line_id || "";
+      const resolvedLineName =
+        picked.line_name ||
+        hrm.lines.find((l) => l.id === resolvedLineId)?.line_name ||
+        "";
+      const resolvedCompanyId = picked.company_id || "";
+      const resolvedCompanyName =
+        picked.company_name ||
+        hrm.companies.find((c) => c.id === resolvedCompanyId)?.company_name ||
+        "";
+      const resolvedAreaId = picked.area_id || picked.working_area_id || "";
+      const resolvedAreaName =
+        picked.area_name ||
+        hrm.areas.find((a) => a.id === resolvedAreaId)?.area_name ||
+        "";
+
+      container.setEmployeeId(resolvedEmpId);
+      container.setName(resolvedName);
+      container.setUnit(resolvedUnitName);
+      container.setDepartment(resolvedDeptName);
+      container.setSection(resolvedSectionName);
+      container.setLine(resolvedLineName);
+      container.setDeptId(resolvedDeptId);
+      container.setSectionId(resolvedSectionId);
+      container.setUnitId(resolvedUnitId);
+      container.setLineId(resolvedLineId);
       container.setDesignationId(picked.designation_id || "");
       container.setDesignation(picked.designation || "");
       container.setEmpPicUrl(picked.profile_pic || picked.employee_portrait || "");
+      container.setErpCompanyId(resolvedCompanyId);
+      container.setErpCompanyName(resolvedCompanyName);
+      container.setErpAreaId(resolvedAreaId);
+      container.setErpAreaName(resolvedAreaName);
     },
-    [container, hrm.employees]
+    [container, hrm.departments, hrm.units, hrm.sections, hrm.lines, hrm.companies, hrm.areas, hrm.employees]
   );
 
   const handleReset = useCallback(() => {
@@ -305,6 +428,10 @@ export default function AutoEnrollment({
     container.setUnitId("");
     container.setLineId("");
     container.setEmpPicUrl("");
+    container.setErpCompanyId("");
+    container.setErpCompanyName("");
+    container.setErpAreaId("");
+    container.setErpAreaName("");
   }, [container, setErpSearch, hrm]);
 
   const filteredEmployees = useMemo(() => {

@@ -104,6 +104,10 @@ model Employee {
   unitId                  String?
   lineId                  String?
   empPicUrl               String?
+  erpCompanyId            String?                     @map("erp_company_id")
+  erpCompanyName          String?                     @map("erp_company_name")
+  erpAreaId               String?                     @map("erp_area_id")
+  erpAreaName             String?                     @map("erp_area_name")
   attendance              Attendance[]
   cameraAuthorizations    CameraAuthorizedEmployee[]
   boundingBoxAssignments  CameraBoundingBoxEmployee[]

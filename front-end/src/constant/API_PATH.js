@@ -91,7 +91,7 @@ export const API = {
  * =============================================================================
  */
 export const HRM_API = {
-  EMPLOYEE_LIST: "/hrm/employee/list",
+  EMPLOYEE_LIST: "/hrm/recruitment/e-recruitment/master-data/employee/list",
   COMPANY_LIST: "/hrm/recruitment/e-recruitment/master-data/company/list",
   AREA_LIST: "/hrm/recruitment/e-recruitment/master-data/area/list",
   DEPARTMENT_LIST: "/hrm/recruitment/e-recruitment/master-data/department/list",
